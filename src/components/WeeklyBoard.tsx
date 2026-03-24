@@ -1192,19 +1192,36 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               onClick={e => e.stopPropagation()}
             >
               {/* Employee */}
-              <label style={popoverLabelStyle}>עובדת:</label>
-              {isMiyaFixed ? (
-                <div style={{ fontWeight: 700, fontSize: 13, color: '#1a4a2e', marginBottom: 8 }}>מיה (קבועה)</div>
-              ) : (
-                <select
-                  value={slot.employeeId ?? ''}
-                  onChange={e => updateSlotField(day, shift, slotIdx, { employeeId: e.target.value !== '' ? Number(e.target.value) : null })}
-                  style={{ ...popoverSelectStyle, marginBottom: 8 }}
-                >
-                  <option value="">— ריק —</option>
-                  {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                </select>
-              )}
+              {(() => {
+                const shiftSlots = schedule[`${day}_${shift}`] || [];
+                const isDuplicate = slot.employeeId !== null && shiftSlots.some((s, i) => i !== slotIdx && s.employeeId === slot.employeeId);
+                return (
+                  <>
+                    <label style={popoverLabelStyle}>עובדת:</label>
+                    {isMiyaFixed ? (
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#1a4a2e', marginBottom: 8 }}>מיה (קבועה)</div>
+                    ) : (
+                      <select
+                        value={slot.employeeId ?? ''}
+                        onChange={e => {
+                          const newId = e.target.value !== '' ? Number(e.target.value) : null;
+                          if (newId !== null && shiftSlots.some((s, i) => i !== slotIdx && s.employeeId === newId)) return;
+                          updateSlotField(day, shift, slotIdx, { employeeId: newId });
+                        }}
+                        style={{ ...popoverSelectStyle, marginBottom: isDuplicate ? 4 : 8, ...(isDuplicate ? { borderColor: '#ef4444' } : {}) }}
+                      >
+                        <option value="">— ריק —</option>
+                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                      </select>
+                    )}
+                    {isDuplicate && (
+                      <div style={{ fontSize: 11, color: '#dc2626', background: '#fef2f2', padding: '4px 8px', borderRadius: 4, marginBottom: 8 }}>
+                        עובדת זו כבר משובצת במשמרת זו
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Times */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
@@ -1498,10 +1515,11 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                     const hasVolt = d.day === 'שישי' || !!voltFlags[cellKey];
                     const stations = getStations(d.day, hasVolt);
 
-                    // Dynamic cell coloring based on staffing status
+                    // Dynamic cell coloring — read directly from schedule state for reactivity
+                    const currentSlots = schedule[cellKey] || [];
                     const requiredCount = (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
-                    const filledRegular = slots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
-                    const hasAnyAssignment = slots.some(s => !s.locked && s.employeeId !== null);
+                    const filledRegular = currentSlots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
+                    const hasAnyAssignment = currentSlots.some(s => !s.locked && s.employeeId !== null);
                     let shiftBg: string;
                     let borderRight: string | undefined;
                     if (!hasAnyAssignment) {
