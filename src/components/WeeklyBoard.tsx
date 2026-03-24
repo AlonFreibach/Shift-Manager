@@ -84,9 +84,9 @@ function getBaseStations(day: string): string[] {
 function getStations(day: string, hasVolt: boolean): string[] {
   const base = getBaseStations(day);
   if (day !== 'שישי' && hasVolt) {
-    return [...base, 'וולט', 'אחר'];
+    return [...base, 'וולט', 'התלמדות', 'אחר'];
   }
-  return [...base, 'אחר'];
+  return [...base, 'התלמדות', 'אחר'];
 }
 
 function getWeekStart(offset = 0): Date {
@@ -112,7 +112,8 @@ function isEmployeeAvailable(emp: Employee, day: string, shift: string): boolean
 
 interface ShortageItem { emp: Employee; needed: number; got: number; }
 interface TieItem { day: string; shift: string; slotIdx: number; candidates: Employee[]; scores: Record<number, number>; }
-interface AutoResultModal { isOpen: boolean; shortages: ShortageItem[]; ties: TieItem[]; emptySlots: { day: string; shift: string }[]; pendingSchedule: Schedule; }
+interface TraineeResult { name: string; assigned: boolean; reason?: string; }
+interface AutoResultModal { isOpen: boolean; shortages: ShortageItem[]; ties: TieItem[]; emptySlots: { day: string; shift: string }[]; pendingSchedule: Schedule; traineeResults: TraineeResult[]; }
 
 function calculateNewStabilityScore(emp: Employee): number {
   const now = new Date();
@@ -146,7 +147,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
 
   const [preferences, setPreferences] = useState<Record<number, EmployeePrefs>>({});
   const [autoResultModal, setAutoResultModal] = useState<AutoResultModal>({
-    isOpen: false, shortages: [], ties: [], emptySlots: [], pendingSchedule: {},
+    isOpen: false, shortages: [], ties: [], emptySlots: [], pendingSchedule: {}, traineeResults: [],
   });
   const [manualShortages, setManualShortages] = useState<ShortageItem[]>([]);
   const [resetToast, setResetToast] = useState(false);
@@ -423,8 +424,10 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       const empPrefs = prefs[e.id];
       return empPrefs && Object.values(empPrefs).flat().length > 0;
     });
+    const regularEmployees = activeEmployees.filter(e => !e.isTrainee);
+    const traineeEmployees = activeEmployees.filter(e => e.isTrainee);
     console.log('[AutoSchedule] active employees this week:', activeEmployees.length,
-      activeEmployees.map(e => e.name));
+      '(regular:', regularEmployees.length, ', trainees:', traineeEmployees.length, ')');
 
     const shortages: ShortageItem[] = [];
 
@@ -433,7 +436,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     const originalNeeded: Record<number, number> = {};
     // Count total requested slots per employee (for margin-based priority)
     const totalRequested: Record<number, number> = {};
-    for (const emp of activeEmployees) {
+    for (const emp of regularEmployees) {
       const n = Math.max(0, emp.shiftsPerWeek - (assignedCount[emp.id] || 0));
       neededMap[emp.id] = n;
       originalNeeded[emp.id] = n;
@@ -469,7 +472,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     // ── Step 1: Minimum guarantee — assign each employee up to her minimum ──
     // Order by margin ascending (least flexible first). Each employee fills
     // all her minimum slots before the next employee is considered.
-    const minimumOrder = [...activeEmployees]
+    const minimumOrder = [...regularEmployees]
       .filter(e => neededMap[e.id] > 0)
       .sort((a, b) => {
         const marginA = totalRequested[a.id] - neededMap[a.id];
@@ -505,7 +508,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     }
 
     // Displacement: for still-short employees, take slots from over-assigned ones (iron rule)
-    for (const emp of activeEmployees) {
+    for (const emp of regularEmployees) {
       if (neededMap[emp.id] <= 0) continue;
       let remaining = neededMap[emp.id];
       const displaceSlots: { key: string; day: string; shift: string; slotIdx: number; currentEmpId: number }[] = [];
@@ -541,7 +544,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     }
 
     // Collect shortages
-    for (const emp of activeEmployees) {
+    for (const emp of regularEmployees) {
       if (neededMap[emp.id] > 0)
         shortages.push({ emp, needed: originalNeeded[emp.id], got: originalNeeded[emp.id] - neededMap[emp.id] });
     }
@@ -559,7 +562,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
           const alreadyInShift = new Set(
             slots.map(s => s.employeeId).filter((id): id is number => id !== null)
           );
-          const candidates = activeEmployees.filter(e =>
+          const candidates = regularEmployees.filter(e =>
             isEmployeeAvailable(e, day, shift) &&
             !alreadyInShift.has(e.id) &&
             (prefs[e.id]?.[day] || []).some(p => p.shift === shift)
@@ -609,8 +612,80 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       }
     }
 
+    // ── Phase 3: Assign trainees alongside veteran employees ──
+    const traineeResults: TraineeResult[] = [];
+
+    for (const trainee of traineeEmployees) {
+      const traineePrefs = prefs[trainee.id];
+      if (!traineePrefs || Object.values(traineePrefs).flat().length === 0) {
+        traineeResults.push({ name: trainee.name, assigned: false, reason: 'לא הוזנו העדפות' });
+        continue;
+      }
+
+      // Collect all valid shifts with their veteran seniority score
+      const candidateShifts: { day: string; shift: string; seniorityDate: string }[] = [];
+
+      for (const { day, shifts } of WEEK_STRUCTURE) {
+        for (const shift of shifts) {
+          if (!isEmployeeAvailable(trainee, day, shift)) continue;
+          if (!(traineePrefs[day] || []).some(p => p.shift === shift)) continue;
+
+          const key = `${day}_${shift}`;
+          const slots = workingSlots[key];
+          // Check if trainee already in this shift
+          if (slots.some(s => s.employeeId === trainee.id)) continue;
+          // Must have at least one regular (non-trainee, non-locked) employee assigned
+          const traineeIds = new Set(traineeEmployees.map(t => t.id));
+          const regularInShift = slots.filter(s =>
+            s.employeeId !== null && !s.locked && !traineeIds.has(s.employeeId)
+          );
+          if (regularInShift.length === 0) continue;
+
+          // Find the most veteran employee in this shift (earliest availableFromDate)
+          let bestSeniority = '';
+          for (const rs of regularInShift) {
+            const emp = employees.find(e => e.id === rs.employeeId);
+            if (emp?.availableFromDate && (!bestSeniority || emp.availableFromDate < bestSeniority)) {
+              bestSeniority = emp.availableFromDate;
+            }
+          }
+          candidateShifts.push({ day, shift, seniorityDate: bestSeniority || '9999-99-99' });
+        }
+      }
+
+      // Sort: prefer shifts with most veteran employee (earliest date = most senior)
+      candidateShifts.sort((a, b) => a.seniorityDate.localeCompare(b.seniorityDate));
+
+      // Assign up to trainee.shiftsPerWeek shifts
+      let tAssigned = 0;
+      for (const cs of candidateShifts) {
+        if (tAssigned >= trainee.shiftsPerWeek) break;
+        const key = `${cs.day}_${cs.shift}`;
+        const prefEntry = (traineePrefs[cs.day] || []).find(p => p.shift === cs.shift);
+        const defaultSlot = SLOT_DEFAULTS[cs.day]?.[cs.shift]?.[0];
+        workingSlots[key] = [
+          ...workingSlots[key],
+          {
+            employeeId: trainee.id,
+            arrivalTime: prefEntry?.customArrival || defaultSlot?.arrival || '',
+            departureTime: prefEntry?.customDeparture || defaultSlot?.departure || '',
+            station: 'התלמדות',
+          },
+        ];
+        tAssigned++;
+      }
+
+      if (tAssigned === 0) {
+        traineeResults.push({ name: trainee.name, assigned: false, reason: 'לא נמצאה משמרת עם עובדת ותיקה' });
+      } else if (tAssigned < trainee.shiftsPerWeek) {
+        traineeResults.push({ name: trainee.name, assigned: true, reason: `שובצה ל-${tAssigned} מתוך ${trainee.shiftsPerWeek} משמרות` });
+      } else {
+        traineeResults.push({ name: trainee.name, assigned: true });
+      }
+    }
+
     // Always show the result modal for review
-    setAutoResultModal({ isOpen: true, shortages, ties, emptySlots, pendingSchedule: { ...workingSlots } });
+    setAutoResultModal({ isOpen: true, shortages, ties, emptySlots, pendingSchedule: { ...workingSlots }, traineeResults });
   }
 
   function resolveTie(tie: TieItem, chosen: Employee) {
@@ -859,7 +934,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     }
     saveSchedule(finalSchedule);
     addFairnessEvents(finalSchedule, weekKey);
-    setAutoResultModal({ isOpen: false, shortages: [], ties: [], emptySlots: [], pendingSchedule: {} });
+    setAutoResultModal({ isOpen: false, shortages: [], ties: [], emptySlots: [], pendingSchedule: {}, traineeResults: [] });
   }
 
   function generateWhatsAppText(): string {
@@ -946,16 +1021,20 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     stations: string[],
   ) {
     const isMiyaFixed = slot.locked === true || slot.employeeId === 0;
+    const isTraineeSlot = slot.station === 'התלמדות';
     const availableEmps = employees;
 
-    const inputStyle: React.CSSProperties = {
-      width: isMobile ? '100%' : 52, fontSize: isMobile ? 12 : 11, padding: '2px 4px',
-      border: 'none', borderRadius: 4, background: 'transparent',
+    const timeInputStyle: React.CSSProperties = {
+      width: isMobile ? '100%' : 44, fontSize: isMobile ? 12 : 12, padding: '2px 4px',
+      border: 'none', borderRadius: 4, background: 'transparent', fontWeight: 500,
     };
     const selectStyle: React.CSSProperties = {
       fontSize: isMobile ? 12 : 11, padding: '2px 4px',
       border: 'none', borderRadius: 4, maxWidth: '100%', background: 'transparent',
       ...(isMobile ? { flex: 1, minWidth: 0 } : { flex: 1, minWidth: 0 }),
+    };
+    const stationSelectStyle: React.CSSProperties = {
+      ...selectStyle, width: isMobile ? undefined : 58, flex: isMobile ? 1 : 'none',
     };
 
     if (isMobile) {
@@ -965,8 +1044,8 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
           style={{
             display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4,
             padding: 6, borderRadius: 6,
-            background: isMiyaFixed ? '#f0fdf4' : 'white',
-            border: isMiyaFixed ? '1px solid #a7d5b8' : '1px solid #e8e0d4',
+            background: isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : 'white',
+            border: isMiyaFixed ? '1px solid #a7d5b8' : isTraineeSlot ? '1px solid #fed7aa' : '1px solid #e8e0d4',
             fontSize: 12,
           }}
         >
@@ -977,7 +1056,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                 type="time"
                 value={slot.arrivalTime}
                 onChange={e => updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value })}
-                style={{ ...inputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
+                style={{ ...timeInputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
               />
             ) : (
               <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>
@@ -989,7 +1068,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               type="time"
               value={slot.departureTime}
               onChange={e => updateSlotField(day, shift, slotIdx, { departureTime: e.target.value })}
-              style={{ ...inputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
+              style={{ ...timeInputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
             />
           </div>
           {/* Row 2: station + employee + X */}
@@ -1020,6 +1099,9 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                 ))}
               </select>
             )}
+            {isTraineeSlot && (
+              <span style={{ fontSize: 9, background: '#c17f3b', color: 'white', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>מתלמד</span>
+            )}
             {!isMiyaFixed && (
               <button
                 onClick={() => removeSlot(day, shift, slotIdx)}
@@ -1042,80 +1124,80 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       <div
         key={slotIdx}
         style={{
-          display: 'flex', alignItems: 'center', gap: 2, marginBottom: 3,
-          padding: 4, borderRadius: 6,
-          background: isMiyaFixed ? '#f0fdf4' : 'white',
-          border: isMiyaFixed ? '1px solid #a7d5b8' : '1px solid #e8e0d4',
-          fontSize: 11, overflow: 'hidden',
+          display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 3,
+          padding: '6px 4px', borderRadius: 6,
+          background: isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : 'white',
+          border: isMiyaFixed ? '1px solid #a7d5b8' : isTraineeSlot ? '1px solid #fed7aa' : '1px solid #e8e0d4',
+          overflow: 'hidden',
         }}
       >
-        {/* Arrival time — editable for evening shifts and Miya */}
-        {shift === 'ערב' || isMiyaFixed ? (
+        {/* Row 1: arrival → departure */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 13, fontWeight: 500 }}>
+          {shift === 'ערב' || isMiyaFixed ? (
+            <input
+              type="time"
+              value={slot.arrivalTime}
+              onChange={e => updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value })}
+              style={{ ...timeInputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
+            />
+          ) : (
+            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>
+              {slot.arrivalTime || '—'}
+            </span>
+          )}
+          <span style={{ fontSize: 10, color: '#94a3b8' }}>→</span>
           <input
             type="time"
-            value={slot.arrivalTime}
-            onChange={e => updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value })}
-            style={{ ...inputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
+            value={slot.departureTime}
+            onChange={e => updateSlotField(day, shift, slotIdx, { departureTime: e.target.value })}
+            style={{ ...timeInputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
           />
-        ) : (
-          <span style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>
-            {slot.arrivalTime || '—'}
-          </span>
-        )}
-
-        {/* Station dropdown — always editable */}
-        <select
-          value={slot.station}
-          onChange={e => updateSlotField(day, shift, slotIdx, { station: e.target.value })}
-          style={{ ...selectStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
-        >
-          <option value="">— עמדה —</option>
-          {stations.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-
-        {/* Employee name or picker */}
-        {isMiyaFixed ? (
-          <span style={{ fontWeight: 700, fontSize: 11, color: '#1a4a2e', whiteSpace: 'nowrap' }}>מיה</span>
-        ) : (
+          {!isMiyaFixed && (
+            <button
+              onClick={() => removeSlot(day, shift, slotIdx)}
+              title="הסר סלוט"
+              style={{
+                background: 'none', border: 'none', color: '#ef4444',
+                cursor: 'pointer', fontSize: 14, padding: '0 2px',
+                lineHeight: 1, flexShrink: 0, marginRight: 'auto',
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+        {/* Row 2: employee + station */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          {isMiyaFixed ? (
+            <span style={{ fontWeight: 700, fontSize: 11, color: '#1a4a2e', flex: 1 }}>מיה</span>
+          ) : (
+            <select
+              value={slot.employeeId ?? ''}
+              onChange={e =>
+                updateSlotField(day, shift, slotIdx, {
+                  employeeId: e.target.value !== '' ? Number(e.target.value) : null,
+                })
+              }
+              style={{ ...selectStyle }}
+            >
+              <option value="">— ריק —</option>
+              {availableEmps.map(e => (
+                <option key={e.id} value={e.id}>{e.name}</option>
+              ))}
+            </select>
+          )}
           <select
-            value={slot.employeeId ?? ''}
-            onChange={e =>
-              updateSlotField(day, shift, slotIdx, {
-                employeeId: e.target.value !== '' ? Number(e.target.value) : null,
-              })
-            }
-            style={{ ...selectStyle }}
+            value={slot.station}
+            onChange={e => updateSlotField(day, shift, slotIdx, { station: e.target.value })}
+            style={{ ...stationSelectStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
           >
-            <option value="">— ריק —</option>
-            {availableEmps.map(e => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
+            <option value="">— עמדה —</option>
+            {stations.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-        )}
-
-        {/* Departure time — always editable */}
-        <span style={{ fontSize: 10, color: '#94a3b8' }}>→</span>
-        <input
-          type="time"
-          value={slot.departureTime}
-          onChange={e => updateSlotField(day, shift, slotIdx, { departureTime: e.target.value })}
-          style={{ ...inputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
-        />
-
-        {/* Remove button */}
-        {!isMiyaFixed && (
-          <button
-            onClick={() => removeSlot(day, shift, slotIdx)}
-            title="הסר סלוט"
-            style={{
-              background: 'none', border: 'none', color: '#ef4444',
-              cursor: 'pointer', fontSize: 14, padding: '0 2px',
-              lineHeight: 1, flexShrink: 0,
-            }}
-          >
-            ×
-          </button>
-        )}
+          {isTraineeSlot && (
+            <span style={{ fontSize: 9, background: '#c17f3b', color: 'white', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>מתלמד</span>
+          )}
+        </div>
       </div>
     );
   }
@@ -1312,9 +1394,9 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       <div style={{ overflowX: isMobile ? 'auto' : 'hidden' }}>
         <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
           <colgroup>
-            <col style={{ width: 60 }} />
+            <col style={{ width: 52 }} />
             {visibleDays.map(d => (
-              <col key={d.day} />
+              <col key={d.day} style={{ width: 'calc((100% - 52px) / 6)' }} />
             ))}
           </colgroup>
           <thead>
@@ -1563,9 +1645,31 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                 </div>
               )}
 
+              {/* Trainee results */}
+              {autoResultModal.traineeResults.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 8, color: '#c17f3b', fontSize: 14 }}>מתלמדות</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {autoResultModal.traineeResults.map(tr => (
+                      <div key={tr.name} style={{
+                        background: tr.assigned ? '#fff7ed' : '#fee2e2',
+                        border: `1px solid ${tr.assigned ? '#fed7aa' : '#fca5a5'}`,
+                        borderRadius: 6, padding: '6px 12px', fontSize: 12, marginBottom: 0,
+                        color: tr.assigned ? '#92400e' : '#991b1b',
+                      }}>
+                        {tr.assigned
+                          ? `${tr.name} — שובצה להתלמדות${tr.reason ? ` (${tr.reason})` : ''}`
+                          : `מתלמדת ${tr.name} לא שובצה — ${tr.reason}`
+                        }
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button
-                  onClick={() => setAutoResultModal({ isOpen: false, shortages: [], ties: [], emptySlots: [], pendingSchedule: {} })}
+                  onClick={() => setAutoResultModal({ isOpen: false, shortages: [], ties: [], emptySlots: [], pendingSchedule: {}, traineeResults: [] })}
                   style={{ padding: '8px 16px', background: '#f5f0e8', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#475569' }}
                 >
                   בטל

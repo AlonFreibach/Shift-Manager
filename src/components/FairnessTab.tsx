@@ -10,7 +10,7 @@ interface FairnessTabProps {
 export function FairnessTab({ employees }: FairnessTabProps) {
   const [, forceUpdate] = useState(0);
 
-  const rows = employees.map(emp => {
+  const rows = employees.filter(e => !e.isTrainee).map(emp => {
     const enriched = withAccumulatedHistory(emp);
     const fairness = calculateFairnessScore(enriched);
     const flexibility = calculateFlexibilityScore(enriched);

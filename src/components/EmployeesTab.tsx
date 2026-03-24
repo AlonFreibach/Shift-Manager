@@ -14,6 +14,7 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
     shiftsPerWeek: 3,
     friday: false,
     shiftType: 'הכל',
+    isTrainee: false,
     availableFrom: '',
     availableTo: '',
     availableFromDate: '',
@@ -39,6 +40,7 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
       shiftsPerWeek: newEmployee.shiftsPerWeek || 3,
       friday: newEmployee.friday || false,
       shiftType: newEmployee.shiftType || 'הכל',
+      isTrainee: newEmployee.isTrainee || false,
       availableFrom: '',
       availableTo: '',
       availableFromDate: newEmployee.availableFromDate || '',
@@ -57,6 +59,7 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
       shiftsPerWeek: 3,
       friday: false,
       shiftType: 'הכל',
+      isTrainee: false,
       availableFrom: '',
       availableTo: '',
       availableFromDate: '',
@@ -136,6 +139,17 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
                   checked={employee.friday}
                   onChange={(e) => handleUpdate(employee.id, 'friday', e.target.checked)}
                   style={{ width: 18, height: 18, accentColor: '#4a7c59' }}
+                />
+              </div>
+
+              {/* Trainee */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>מתלמדת (בהכשרה):</label>
+                <input
+                  type="checkbox"
+                  checked={employee.isTrainee}
+                  onChange={(e) => handleUpdate(employee.id, 'isTrainee', e.target.checked)}
+                  style={{ width: 18, height: 18, accentColor: '#c17f3b' }}
                 />
               </div>
 
@@ -272,6 +286,18 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
                   style={{ width: 18, height: 18, accentColor: '#4a7c59' }}
                 />
                 <label htmlFor="friday" style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>עבודה בשישי</label>
+              </div>
+
+              {/* Trainee */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  id="isTrainee"
+                  checked={newEmployee.isTrainee || false}
+                  onChange={(e) => setNewEmployee({...newEmployee, isTrainee: e.target.checked})}
+                  style={{ width: 18, height: 18, accentColor: '#c17f3b' }}
+                />
+                <label htmlFor="isTrainee" style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>מתלמדת (בהכשרה)</label>
               </div>
 
               {/* Shift Type */}
