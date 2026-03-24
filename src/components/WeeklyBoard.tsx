@@ -1514,7 +1514,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
 
                     // Dynamic cell coloring — computed from slots (already derived from schedule state)
                     const requiredCount = (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
-                    const filledRegular = slots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
+                    const filledRegular = slots.filter(s => !s.locked && s.employeeId !== null && s.station !== 'התלמדות').length;
                     const hasAnyAssignment = slots.some(s => !s.locked && s.employeeId !== null);
                     let shiftBg: string;
                     let borderRight: string | undefined;
