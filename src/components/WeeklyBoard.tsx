@@ -495,7 +495,8 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     // Count total requested slots per employee (for margin-based priority)
     const totalRequested: Record<number, number> = {};
     for (const emp of regularEmployees) {
-      const n = Math.max(0, emp.shiftsPerWeek - (assignedCount[emp.id] || 0));
+      const minimum = Math.ceil(emp.shiftsPerWeek * 0.75);
+      const n = Math.max(0, minimum - (assignedCount[emp.id] || 0));
       neededMap[emp.id] = n;
       originalNeeded[emp.id] = n;
       // Count how many distinct shift slots this employee can actually be assigned to
@@ -584,7 +585,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
             if (currEmpId === null) continue;
             const currEmp = employees.find(e => e.id === currEmpId);
             if (!currEmp) continue;
-            if ((assignedCount[currEmpId] || 0) <= currEmp.shiftsPerWeek) continue;
+            if ((assignedCount[currEmpId] || 0) <= Math.ceil(currEmp.shiftsPerWeek * 0.75)) continue;
             displaceSlots.push({ key, day, shift, slotIdx: i, currentEmpId: currEmpId });
           }
         }
