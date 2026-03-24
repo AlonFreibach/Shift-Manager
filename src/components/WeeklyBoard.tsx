@@ -1105,11 +1105,11 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     );
     const duplicateName = isDuplicate ? (employees.find(e => e.id === slot.employeeId)?.name || '') : '';
 
-    // Duplicate station check (skip 'התלמדות' which can be shared)
+    // Duplicate station check (skip 'התלמדות' which can be shared, skip locked Miya slots)
     const stationTaken = !isLockedSlot && !!slot.station && slot.station !== 'התלמדות' && shiftSlots.some((s, i) =>
-      i !== slotIdx && s.station === slot.station && s.employeeId !== null
+      i !== slotIdx && !s.locked && s.station === slot.station && s.employeeId !== null
     );
-    const stationOwner = stationTaken ? (employees.find(e => e.id === shiftSlots.find((s, i) => i !== slotIdx && s.station === slot.station && s.employeeId !== null)?.employeeId)?.name || '') : '';
+    const stationOwner = stationTaken ? (employees.find(e => e.id === shiftSlots.find((s, i) => i !== slotIdx && !s.locked && s.station === slot.station && s.employeeId !== null)?.employeeId)?.name || '') : '';
 
     // Card background & border
     const cardBg = isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : 'white';
