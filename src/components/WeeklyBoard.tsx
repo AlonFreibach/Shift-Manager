@@ -431,7 +431,9 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
   function addSlot(day: string, shift: string) {
     const key = `${day}_${shift}`;
     const slots = getOrInitializeSlots(day, shift);
-    saveSchedule({ ...schedule, [key]: [...slots, { employeeId: null, arrivalTime: '', departureTime: '', station: '' }] });
+    const defaultArrival = shift === 'בוקר' ? '07:00' : '14:00';
+    const defaultDeparture = shift === 'בוקר' ? '14:00' : '21:00';
+    saveSchedule({ ...schedule, [key]: [...slots, { employeeId: null, arrivalTime: defaultArrival, departureTime: defaultDeparture, station: '' }] });
   }
 
   function removeSlot(day: string, shift: string, slotIdx: number) {
@@ -1103,6 +1105,12 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     );
     const duplicateName = isDuplicate ? (employees.find(e => e.id === slot.employeeId)?.name || '') : '';
 
+    // Duplicate station check (skip 'התלמדות' which can be shared)
+    const stationTaken = !isLockedSlot && !!slot.station && slot.station !== 'התלמדות' && shiftSlots.some((s, i) =>
+      i !== slotIdx && s.station === slot.station && s.employeeId !== null
+    );
+    const stationOwner = stationTaken ? (employees.find(e => e.id === shiftSlots.find((s, i) => i !== slotIdx && s.station === slot.station && s.employeeId !== null)?.employeeId)?.name || '') : '';
+
     // Card background & border
     const cardBg = isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : 'white';
     const cardBorder = isMiyaFixed
@@ -1179,7 +1187,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 }}>
                 <span style={{ fontSize: 11, color: '#64748b' }}>
-                  {slot.arrivalTime || '—'} ← {slot.departureTime || '—'}
+                  {slot.arrivalTime && slot.arrivalTime !== '0' ? slot.arrivalTime : '—'} ← {slot.departureTime && slot.departureTime !== '0' ? slot.departureTime : '—'}
                 </span>
                 <span style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
                   {isTraineeSlot && (
@@ -1293,7 +1301,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               <select
                 value={slot.station}
                 onChange={e => { updateSlotField(day, shift, slotIdx, { station: e.target.value }); setPopoverValidationError(false); }}
-                style={{ ...popoverSelectStyle, marginBottom: 4, ...(popoverValidationError && !slot.station ? { borderColor: '#ef4444' } : {}) }}
+                style={{ ...popoverSelectStyle, marginBottom: 4, ...((popoverValidationError && !slot.station) || stationTaken ? { borderColor: '#ef4444' } : {}) }}
               >
                 <option value="">— בחר —</option>
                 {stations.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1301,13 +1309,18 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               {popoverValidationError && !slot.station && !isLockedSlot && (
                 <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4 }}>שדה חובה</div>
               )}
+              {stationTaken && (
+                <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, fontWeight: 600 }}>
+                  ⚠️ עמדה זו כבר תפוסה על ידי {stationOwner} — בחרי עמדה אחרת
+                </div>
+              )}
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                 {!isLockedSlot && (
                   <button
                     onClick={() => {
-                      if (isIncomplete || isDuplicate) {
+                      if (isIncomplete || isDuplicate || stationTaken) {
                         setPopoverValidationError(true);
                         return;
                       }
