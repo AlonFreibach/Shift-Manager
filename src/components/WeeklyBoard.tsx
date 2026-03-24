@@ -1498,12 +1498,29 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                     const hasVolt = d.day === 'שישי' || !!voltFlags[cellKey];
                     const stations = getStations(d.day, hasVolt);
 
-                    const shiftBg = shift === 'בוקר' ? '#e8f4ea' : '#fef3e8';
+                    // Dynamic cell coloring based on staffing status
+                    const requiredCount = (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
+                    const filledRegular = slots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
+                    const hasAnyAssignment = slots.some(s => !s.locked && s.employeeId !== null);
+                    let shiftBg: string;
+                    let borderRight: string | undefined;
+                    if (!hasAnyAssignment) {
+                      // Default — no assignments yet
+                      shiftBg = shift === 'בוקר' ? '#e8f4ea' : '#fef3e8';
+                    } else if (filledRegular >= requiredCount) {
+                      // Green — fully staffed
+                      shiftBg = '#f0fdf4';
+                      borderRight = '4px solid #16a34a';
+                    } else {
+                      // Red — under-staffed
+                      shiftBg = '#fef2f2';
+                      borderRight = '4px solid #ef4444';
+                    }
 
                     return (
                       <td
                         key={d.day}
-                        style={{ padding: 6, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}`, overflow: 'hidden' }}
+                        style={{ padding: 6, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}`, overflow: 'hidden', ...(borderRight ? { borderRight } : {}) }}
                       >
                         {/* Volt toggle — not for שישי */}
                         {d.day !== 'שישי' && (
