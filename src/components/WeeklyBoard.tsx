@@ -1008,7 +1008,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
         if (assigned.length > 0) {
           text += `${shift}:\n`;
           for (const slot of assigned) {
-            const name = (slot.locked || slot.employeeId === 0)
+            const name = (slot.locked && slot.employeeId !== null)
               ? 'מיה'
               : employees.find(e => e.id === slot.employeeId)?.name || '?';
             const station = slot.station ? ` (${slot.station})` : '';
@@ -1046,7 +1046,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
           const content = slots
             .filter(s => s.employeeId !== null)
             .map(s => {
-              const name = (s.locked || s.employeeId === 0) ? 'מיה' : employees.find(e => e.id === s.employeeId)?.name || '?';
+              const name = (s.locked && s.employeeId !== null) ? 'מיה' : employees.find(e => e.id === s.employeeId)?.name || '?';
               return `${s.arrivalTime} ${name}${s.station ? ` [${s.station}]` : ''}`;
             }).join('<br>');
           const empty = slots.every(s => s.employeeId === null);
@@ -1079,9 +1079,10 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     slotIdx: number,
     stations: string[],
   ) {
-    const isMiyaFixed = slot.locked === true || slot.employeeId === 0;
+    const isLockedSlot = slot.locked === true;
+    const isMiyaFixed = isLockedSlot && slot.employeeId !== null;
     const isTraineeSlot = slot.station === 'התלמדות';
-    const isEmpty = !isMiyaFixed && slot.employeeId === null;
+    const isEmpty = slot.employeeId === null;
     const empName = isMiyaFixed ? 'מיה' : employees.find(e => e.id === slot.employeeId)?.name || null;
     const isEditing = editingSlot?.day === day && editingSlot?.shift === shift && editingSlot?.slotIdx === slotIdx;
     const slotKey = `${day}_${shift}_${slotIdx}`;
@@ -1095,7 +1096,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     const duplicateName = isDuplicate ? (employees.find(e => e.id === slot.employeeId)?.name || '') : '';
 
     // Card background & border
-    const cardBg = isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : isEmpty ? 'white' : 'white';
+    const cardBg = isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : 'white';
     const cardBorder = isMiyaFixed
       ? '1px solid #a7d5b8'
       : isTraineeSlot
@@ -1198,8 +1199,10 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
             >
               {/* Employee */}
               <label style={popoverLabelStyle}>עובדת:</label>
-              {isMiyaFixed ? (
-                <div style={{ fontWeight: 700, fontSize: 13, color: '#1a4a2e', marginBottom: 8 }}>מיה (קבועה)</div>
+              {isLockedSlot ? (
+                <div style={{ fontWeight: 700, fontSize: 13, color: isMiyaFixed ? '#1a4a2e' : '#94a3b8', marginBottom: 8 }}>
+                  {isMiyaFixed ? 'מיה (קבועה)' : 'ריק (סלוט מיה)'}
+                </div>
               ) : (
                 <select
                   value={slot.employeeId ?? ''}
@@ -1262,7 +1265,15 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                 >
                   סגור
                 </button>
-                {!isMiyaFixed && (
+                {isLockedSlot && isMiyaFixed && (
+                  <button
+                    onClick={() => { updateSlotField(day, shift, slotIdx, { employeeId: null, station: '' }); setEditingSlot(null); setPopoverPos(null); }}
+                    style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#fff7ed', color: '#c17f3b', border: '1px solid #fed7aa', borderRadius: 5, cursor: 'pointer' }}
+                  >
+                    נקה משמרת
+                  </button>
+                )}
+                {!isLockedSlot && (
                   <button
                     onClick={() => { removeSlot(day, shift, slotIdx); setEditingSlot(null); setPopoverPos(null); }}
                     style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 5, cursor: 'pointer' }}
