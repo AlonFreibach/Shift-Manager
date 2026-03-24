@@ -178,6 +178,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
   const [editingSlot, setEditingSlot] = useState<{ day: string; shift: string; slotIdx: number } | null>(null);
   const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const [popoverValidationError, setPopoverValidationError] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -206,26 +207,43 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     return { top, left };
   }, [isMobile]);
 
+  function isEditingSlotComplete(): boolean {
+    if (!editingSlot) return true;
+    const key = `${editingSlot.day}_${editingSlot.shift}`;
+    const slot = schedule[key]?.[editingSlot.slotIdx];
+    if (!slot) return true;
+    if (slot.locked) return true; // Miya slots always OK
+    return slot.employeeId !== null && !!slot.arrivalTime && !!slot.departureTime && !!slot.station;
+  }
+
   useEffect(() => {
     if (!editingSlot) return;
     function handleClickOutside(e: MouseEvent) {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        if (!isEditingSlotComplete()) {
+          setPopoverValidationError(true);
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         setEditingSlot(null);
+        setPopoverPos(null);
+        setPopoverValidationError(false);
       }
     }
     function recalcPos() {
       const pos = calcPopoverPos();
       if (pos) setPopoverPos(pos);
     }
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside, true);
     window.addEventListener('scroll', recalcPos, true);
     window.addEventListener('resize', recalcPos);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
       window.removeEventListener('scroll', recalcPos, true);
       window.removeEventListener('resize', recalcPos);
     };
-  }, [editingSlot, calcPopoverPos]);
+  }, [editingSlot, calcPopoverPos, schedule]);
 
   const weekStart = getWeekStart(weekOffset);
   const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
@@ -1091,8 +1109,12 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     const stationLabel = getStationBadge(slot.station);
 
     // Duplicate check: is this employee already in another slot of the same shift?
+    // Compare by numeric ID; skip locked (Miya) slots in comparison
     const shiftSlots = schedule[`${day}_${shift}`] || [];
-    const isDuplicate = !isMiyaFixed && slot.employeeId !== null && shiftSlots.some((s, i) => i !== slotIdx && s.employeeId === slot.employeeId);
+    const currentEmpId = slot.employeeId !== null ? Number(slot.employeeId) : null;
+    const isDuplicate = !isLockedSlot && currentEmpId !== null && shiftSlots.some((s, i) =>
+      i !== slotIdx && !s.locked && s.employeeId !== null && Number(s.employeeId) === currentEmpId
+    );
     const duplicateName = isDuplicate ? (employees.find(e => e.id === slot.employeeId)?.name || '') : '';
 
     // Card background & border
@@ -1111,10 +1133,17 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     const popoverSelectStyle: React.CSSProperties = { ...popoverInputStyle };
     const popoverLabelStyle: React.CSSProperties = { fontSize: 11, color: '#64748b', display: 'block', marginBottom: 2 };
 
+    // Validation: locked (Miya) slots are always valid
+    const isIncomplete = !isLockedSlot && (slot.employeeId === null || !slot.arrivalTime || !slot.departureTime || !slot.station);
+    const isBlocked = isDuplicate || (isIncomplete && popoverValidationError);
+
     function handleCardClick(e: React.MouseEvent<HTMLDivElement>) {
       if (isEditing) {
-        setEditingSlot(null);
-        setPopoverPos(null);
+        if (isLockedSlot || !isIncomplete) {
+          if (!isDuplicate) { setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false); }
+        } else {
+          setPopoverValidationError(true);
+        }
         return;
       }
       const rect = e.currentTarget.getBoundingClientRect();
@@ -1127,6 +1156,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
       setPopoverPos({ top, left });
       setEditingSlot({ day, shift, slotIdx });
+      setPopoverValidationError(false);
     }
 
     return (
@@ -1177,7 +1207,13 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
             {/* Backdrop (mobile: dim overlay, desktop: transparent click catcher) */}
             <div
               style={{ position: 'fixed', inset: 0, zIndex: 9998, background: isMobile ? 'rgba(0,0,0,0.3)' : 'transparent' }}
-              onClick={() => { setEditingSlot(null); setPopoverPos(null); }}
+              onClick={() => {
+                if (isLockedSlot || !isIncomplete) {
+                  setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false);
+                } else {
+                  setPopoverValidationError(true);
+                }
+              }}
             />
             <div
               ref={popoverRef}
@@ -1197,6 +1233,18 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               }}
               onClick={e => e.stopPropagation()}
             >
+              {/* X close button */}
+              {!isLockedSlot && (
+                <button
+                  onClick={() => {
+                    if (!isIncomplete || window.confirm('לבטל את השינויים?')) {
+                      setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false);
+                    }
+                  }}
+                  style={{ float: 'left', width: 22, height: 22, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', padding: 0, marginBottom: 4 }}
+                >✕</button>
+              )}
+
               {/* Employee */}
               <label style={popoverLabelStyle}>עובדת:</label>
               {isLockedSlot ? (
@@ -1209,6 +1257,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                   onChange={e => {
                     const newId = e.target.value !== '' ? Number(e.target.value) : null;
                     updateSlotField(day, shift, slotIdx, { employeeId: newId });
+                    setPopoverValidationError(false);
                   }}
                   style={{ ...popoverSelectStyle, marginBottom: isDuplicate ? 4 : 8, ...(isDuplicate ? { borderColor: '#ef4444' } : {}) }}
                 >
@@ -1229,7 +1278,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                   <input
                     type="time"
                     value={slot.arrivalTime}
-                    onChange={e => updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value })}
+                    onChange={e => { updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value }); setPopoverValidationError(false); }}
                     disabled={shift === 'בוקר' && !isMiyaFixed}
                     style={{ ...popoverInputStyle, ...(shift === 'בוקר' && !isMiyaFixed ? { background: '#f5f5f5', color: '#94a3b8' } : {}) }}
                   />
@@ -1239,7 +1288,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                   <input
                     type="time"
                     value={slot.departureTime}
-                    onChange={e => updateSlotField(day, shift, slotIdx, { departureTime: e.target.value })}
+                    onChange={e => { updateSlotField(day, shift, slotIdx, { departureTime: e.target.value }); setPopoverValidationError(false); }}
                     style={popoverInputStyle}
                   />
                 </div>
@@ -1249,19 +1298,32 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               <label style={popoverLabelStyle}>עמדה:</label>
               <select
                 value={slot.station}
-                onChange={e => updateSlotField(day, shift, slotIdx, { station: e.target.value })}
+                onChange={e => { updateSlotField(day, shift, slotIdx, { station: e.target.value }); setPopoverValidationError(false); }}
                 style={{ ...popoverSelectStyle, marginBottom: 10 }}
               >
                 <option value="">— בחר —</option>
                 {stations.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
 
+              {/* Validation error */}
+              {popoverValidationError && isIncomplete && (
+                <div style={{ fontSize: 11, color: '#dc2626', background: '#fef2f2', padding: '4px 8px', borderRadius: 4, marginBottom: 8, fontWeight: 600 }}>
+                  יש למלא את כל השדות לפני השמירה
+                </div>
+              )}
+
               {/* Actions */}
               <div style={{ display: 'flex', gap: 6 }}>
                 <button
-                  onClick={() => { if (!isDuplicate) { setEditingSlot(null); setPopoverPos(null); } }}
+                  onClick={() => {
+                    if (isLockedSlot || !isIncomplete) {
+                      if (!isDuplicate) { setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false); }
+                    } else {
+                      setPopoverValidationError(true);
+                    }
+                  }}
                   disabled={isDuplicate}
-                  style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: isDuplicate ? '#94a3b8' : '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: isDuplicate ? 'not-allowed' : 'pointer', opacity: isDuplicate ? 0.6 : 1 }}
+                  style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: isBlocked ? '#94a3b8' : '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: isBlocked ? 'not-allowed' : 'pointer', opacity: isBlocked ? 0.6 : 1 }}
                 >
                   סגור
                 </button>
@@ -1271,6 +1333,14 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                     style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#fff7ed', color: '#c17f3b', border: '1px solid #fed7aa', borderRadius: 5, cursor: 'pointer' }}
                   >
                     נקה משמרת
+                  </button>
+                )}
+                {isLockedSlot && !isMiyaFixed && (
+                  <button
+                    onClick={() => { updateSlotField(day, shift, slotIdx, { employeeId: MIYA_ID, station: 'קופה 1' }); setEditingSlot(null); setPopoverPos(null); }}
+                    style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#f0fdf4', color: '#16a34a', border: '1px solid #a7d5b8', borderRadius: 5, cursor: 'pointer' }}
+                  >
+                    שבץ מיה חזרה
                   </button>
                 )}
                 {!isLockedSlot && (
