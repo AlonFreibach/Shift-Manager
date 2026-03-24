@@ -953,13 +953,94 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     const availableEmps = employees.filter(e => !usedIds.has(e.id));
 
     const inputStyle: React.CSSProperties = {
-      width: 80, fontSize: 12, padding: '2px 4px',
+      width: isMobile ? '100%' : 80, fontSize: 12, padding: '2px 4px',
       border: 'none', borderRadius: 4, background: 'transparent',
     };
     const selectStyle: React.CSSProperties = {
       fontSize: 12, padding: '2px 4px',
-      border: 'none', borderRadius: 4, maxWidth: 80, background: 'transparent',
+      border: 'none', borderRadius: 4, maxWidth: isMobile ? '100%' : 80, background: 'transparent',
+      ...(isMobile ? { flex: 1, minWidth: 0 } : {}),
     };
+
+    if (isMobile) {
+      return (
+        <div
+          key={slotIdx}
+          style={{
+            display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4,
+            padding: 6, borderRadius: 6,
+            background: isMiyaFixed ? '#f0fdf4' : 'white',
+            border: isMiyaFixed ? '1px solid #a7d5b8' : '1px solid #e8e0d4',
+            fontSize: 12,
+          }}
+        >
+          {/* Row 1: arrival + departure times */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {shift === 'ערב' || isMiyaFixed ? (
+              <input
+                type="time"
+                value={slot.arrivalTime}
+                onChange={e => updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value })}
+                style={{ ...inputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
+              />
+            ) : (
+              <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>
+                {slot.arrivalTime || '—'}
+              </span>
+            )}
+            <span style={{ fontSize: 10, color: '#94a3b8' }}>→</span>
+            <input
+              type="time"
+              value={slot.departureTime}
+              onChange={e => updateSlotField(day, shift, slotIdx, { departureTime: e.target.value })}
+              style={{ ...inputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
+            />
+          </div>
+          {/* Row 2: station + employee + X */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <select
+              value={slot.station}
+              onChange={e => updateSlotField(day, shift, slotIdx, { station: e.target.value })}
+              style={{ ...selectStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
+            >
+              <option value="">— עמדה —</option>
+              {stations.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            {isMiyaFixed ? (
+              <span style={{ fontWeight: 700, fontSize: 12, color: '#1a4a2e', flex: 1 }}>מיה</span>
+            ) : (
+              <select
+                value={slot.employeeId ?? ''}
+                onChange={e =>
+                  updateSlotField(day, shift, slotIdx, {
+                    employeeId: e.target.value !== '' ? Number(e.target.value) : null,
+                  })
+                }
+                style={{ ...selectStyle }}
+              >
+                <option value="">— ריק —</option>
+                {availableEmps.map(e => (
+                  <option key={e.id} value={e.id}>{e.name}</option>
+                ))}
+              </select>
+            )}
+            {!isMiyaFixed && (
+              <button
+                onClick={() => removeSlot(day, shift, slotIdx)}
+                title="הסר סלוט"
+                style={{
+                  background: 'none', border: 'none', color: '#ef4444',
+                  cursor: 'pointer', fontSize: 16, padding: '0 4px',
+                  lineHeight: 1, flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div
@@ -1279,12 +1360,12 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                       >
                         {/* Volt toggle — not for שישי */}
                         {d.day !== 'שישי' && (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, marginBottom: 5, color: '#64748b', cursor: 'pointer' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, marginBottom: 5, color: '#64748b', cursor: 'pointer', ...(isMobile ? { width: '100%', padding: '4px 0' } : {}) }}>
                             <input
                               type="checkbox"
                               checked={!!voltFlags[cellKey]}
                               onChange={() => toggleVolt(cellKey)}
-                              style={{ width: 12, height: 12, accentColor: '#4a7c59' }}
+                              style={{ width: 14, height: 14, accentColor: '#4a7c59' }}
                             />
                             יש וולט?
                           </label>
@@ -1299,9 +1380,9 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                         <button
                           onClick={() => addSlot(d.day, shift)}
                           style={{
-                            fontSize: 10, color: '#4a7c59', background: 'transparent',
+                            fontSize: isMobile ? 12 : 10, color: '#4a7c59', background: 'transparent',
                             border: '1px dashed #a7d5b8', borderRadius: 4,
-                            cursor: 'pointer', padding: '3px 6px', marginTop: 5, width: '100%',
+                            cursor: 'pointer', padding: isMobile ? '6px 8px' : '3px 6px', marginTop: 5, width: '100%',
                           }}
                         >
                           + הוסף סלוט
