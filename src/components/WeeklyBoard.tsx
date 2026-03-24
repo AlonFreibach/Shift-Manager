@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { calculateFairnessScore, calculateFlexibilityScore } from '../utils/fairnessScore';
 import { addFairnessEvents } from '../utils/fairnessAccumulator';
 import type { Employee } from '../data/employees';
@@ -176,13 +177,34 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
   const pendingAutoScheduleRef = useRef(false);
   const [editingSlot, setEditingSlot] = useState<{ day: string; shift: string; slotIdx: number } | null>(null);
   const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const calcPopoverPos = useCallback(() => {
+    if (!cardRef.current) return null;
+    const rect = cardRef.current.getBoundingClientRect();
+    const popW = isMobile ? 260 : 220;
+    const popH = 280;
+    // Default: below card, aligned to right edge (RTL)
+    let top = rect.bottom + 4;
+    let left = rect.right - popW;
+    // Flip up if not enough space below
+    if (top + popH > window.innerHeight) {
+      top = rect.top - popH - 4;
+    }
+    // Push right if overflows left edge
+    if (left < 8) left = 8;
+    // Push left if overflows right edge
+    if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+    return { top, left };
+  }, [isMobile]);
 
   useEffect(() => {
     if (!editingSlot) return;
@@ -191,9 +213,19 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
         setEditingSlot(null);
       }
     }
+    function recalcPos() {
+      const pos = calcPopoverPos();
+      if (pos) setPopoverPos(pos);
+    }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [editingSlot]);
+    window.addEventListener('scroll', recalcPos, true);
+    window.addEventListener('resize', recalcPos);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', recalcPos, true);
+      window.removeEventListener('resize', recalcPos);
+    };
+  }, [editingSlot, calcPopoverPos]);
 
   const weekStart = getWeekStart(weekOffset);
   const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
@@ -1068,19 +1100,34 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       ? '1px solid #4a7c59'
       : '1px solid #e8e0d4';
 
-    const popoverStyle: React.CSSProperties = isMobile
-      ? { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 100, background: 'white', border: '1px solid #e8e0d4', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: 12, width: 260, direction: 'rtl' }
-      : { position: 'absolute', top: '100%', right: 0, zIndex: 100, background: 'white', border: '1px solid #e8e0d4', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: 10, width: 220, marginTop: 2, direction: 'rtl' };
-
     const popoverInputStyle: React.CSSProperties = { width: '100%', padding: '4px 6px', fontSize: 12, border: '1px solid #e8e0d4', borderRadius: 4 };
     const popoverSelectStyle: React.CSSProperties = { ...popoverInputStyle };
     const popoverLabelStyle: React.CSSProperties = { fontSize: 11, color: '#64748b', display: 'block', marginBottom: 2 };
 
+    function handleCardClick(e: React.MouseEvent<HTMLDivElement>) {
+      if (isEditing) {
+        setEditingSlot(null);
+        setPopoverPos(null);
+        return;
+      }
+      const rect = e.currentTarget.getBoundingClientRect();
+      const popW = isMobile ? 260 : 220;
+      const popH = 280;
+      let top = rect.bottom + 4;
+      let left = rect.right - popW;
+      if (top + popH > window.innerHeight) top = rect.top - popH - 4;
+      if (left < 8) left = 8;
+      if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+      setPopoverPos({ top, left });
+      setEditingSlot({ day, shift, slotIdx });
+    }
+
     return (
-      <div key={slotIdx} style={{ position: 'relative', marginBottom: 3 }}>
+      <div key={slotIdx} style={{ marginBottom: 3 }}>
         {/* Card */}
         <div
-          onClick={() => setEditingSlot(isEditing ? null : { day, shift, slotIdx })}
+          ref={isEditing ? cardRef : undefined}
+          onClick={handleCardClick}
           onMouseEnter={() => setHoveredSlot(slotKey)}
           onMouseLeave={() => setHoveredSlot(null)}
           style={{
@@ -1095,7 +1142,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
             <span style={{ color: '#94a3b8', fontSize: 12 }}>ריק</span>
           ) : (
             <>
-              <div style={{ fontSize: 13, fontWeight: 600, color: isMiyaFixed ? '#1a4a2e' : '#1a4a2e', lineHeight: 1.3 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1a4a2e', lineHeight: 1.3 }}>
                 {empName}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 }}>
@@ -1117,11 +1164,32 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
           )}
         </div>
 
-        {/* Popover */}
-        {isEditing && (
+        {/* Popover via Portal */}
+        {isEditing && popoverPos && createPortal(
           <>
-            {isMobile && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 99 }} onClick={() => setEditingSlot(null)} />}
-            <div ref={popoverRef} style={popoverStyle} onClick={e => e.stopPropagation()}>
+            {/* Backdrop (mobile: dim overlay, desktop: transparent click catcher) */}
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 9998, background: isMobile ? 'rgba(0,0,0,0.3)' : 'transparent' }}
+              onClick={() => { setEditingSlot(null); setPopoverPos(null); }}
+            />
+            <div
+              ref={popoverRef}
+              style={{
+                position: 'fixed',
+                top: isMobile ? '50%' : popoverPos.top,
+                left: isMobile ? '50%' : popoverPos.left,
+                transform: isMobile ? 'translate(-50%, -50%)' : undefined,
+                zIndex: 9999,
+                background: 'white',
+                border: '1px solid #e8e0d4',
+                borderRadius: 8,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                padding: isMobile ? 12 : 10,
+                width: isMobile ? 260 : 220,
+                direction: 'rtl',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
               {/* Employee */}
               <label style={popoverLabelStyle}>עובדת:</label>
               {isMiyaFixed ? (
@@ -1174,14 +1242,14 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               {/* Actions */}
               <div style={{ display: 'flex', gap: 6 }}>
                 <button
-                  onClick={() => setEditingSlot(null)}
+                  onClick={() => { setEditingSlot(null); setPopoverPos(null); }}
                   style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
                 >
                   סגור
                 </button>
                 {!isMiyaFixed && (
                   <button
-                    onClick={() => { removeSlot(day, shift, slotIdx); setEditingSlot(null); }}
+                    onClick={() => { removeSlot(day, shift, slotIdx); setEditingSlot(null); setPopoverPos(null); }}
                     style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 5, cursor: 'pointer' }}
                   >
                     מחק
@@ -1189,7 +1257,8 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                 )}
               </div>
             </div>
-          </>
+          </>,
+          document.body,
         )}
       </div>
     );
@@ -1455,7 +1524,18 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
 
                         {/* Add slot button */}
                         <button
-                          onClick={() => { addSlot(d.day, shift); setEditingSlot({ day: d.day, shift, slotIdx: slots.length }); }}
+                          onClick={(e) => {
+                            addSlot(d.day, shift);
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const popW = isMobile ? 260 : 220;
+                            let top = rect.bottom + 4;
+                            let left = rect.right - popW;
+                            if (top + 280 > window.innerHeight) top = rect.top - 280 - 4;
+                            if (left < 8) left = 8;
+                            if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+                            setPopoverPos({ top, left });
+                            setEditingSlot({ day: d.day, shift, slotIdx: slots.length });
+                          }}
                           style={{
                             fontSize: isMobile ? 12 : 10, color: '#4a7c59', background: 'transparent',
                             border: '1px dashed #a7d5b8', borderRadius: 4,
