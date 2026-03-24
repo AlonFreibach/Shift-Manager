@@ -89,6 +89,18 @@ function getStations(day: string, hasVolt: boolean): string[] {
   return [...base, 'התלמדות', 'אחר'];
 }
 
+function getStationBadge(station: string): string | null {
+  if (!station) return null;
+  if (station === 'קופה 1') return 'ק1';
+  if (station === 'קופה 2') return 'ק2';
+  if (station === 'קופה 3') return 'ק3';
+  if (station === 'קופה 4') return 'ק4';
+  if (station === 'וולט') return 'וו';
+  if (station === 'התלמדות') return null;
+  if (station === 'אחר') return 'אחר';
+  return station;
+}
+
 function getWeekStart(offset = 0): Date {
   const d = new Date();
   const sunday = new Date(d);
@@ -162,12 +174,26 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [mobileDayIndex, setMobileDayIndex] = useState(0);
   const pendingAutoScheduleRef = useRef(false);
+  const [editingSlot, setEditingSlot] = useState<{ day: string; shift: string; slotIdx: number } | null>(null);
+  const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!editingSlot) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setEditingSlot(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [editingSlot]);
 
   const weekStart = getWeekStart(weekOffset);
   const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
@@ -1022,182 +1048,149 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
   ) {
     const isMiyaFixed = slot.locked === true || slot.employeeId === 0;
     const isTraineeSlot = slot.station === 'התלמדות';
-    const availableEmps = employees;
+    const isEmpty = !isMiyaFixed && slot.employeeId === null;
+    const empName = isMiyaFixed ? 'מיה' : employees.find(e => e.id === slot.employeeId)?.name || null;
+    const isEditing = editingSlot?.day === day && editingSlot?.shift === shift && editingSlot?.slotIdx === slotIdx;
+    const slotKey = `${day}_${shift}_${slotIdx}`;
+    const isHovered = hoveredSlot === slotKey;
 
-    const timeInputStyle: React.CSSProperties = {
-      width: isMobile ? '100%' : 44, fontSize: isMobile ? 12 : 12, padding: '2px 4px',
-      border: 'none', borderRadius: 4, background: 'transparent', fontWeight: 500,
-    };
-    const selectStyle: React.CSSProperties = {
-      fontSize: isMobile ? 12 : 11, padding: '2px 4px',
-      border: 'none', borderRadius: 4, maxWidth: '100%', background: 'transparent',
-      ...(isMobile ? { flex: 1, minWidth: 0 } : { flex: 1, minWidth: 0 }),
-    };
-    const stationSelectStyle: React.CSSProperties = {
-      ...selectStyle, width: isMobile ? undefined : 58, flex: isMobile ? 1 : 'none',
-    };
+    const stationLabel = getStationBadge(slot.station);
 
-    if (isMobile) {
-      return (
-        <div
-          key={slotIdx}
-          style={{
-            display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4,
-            padding: 6, borderRadius: 6,
-            background: isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : 'white',
-            border: isMiyaFixed ? '1px solid #a7d5b8' : isTraineeSlot ? '1px solid #fed7aa' : '1px solid #e8e0d4',
-            fontSize: 12,
-          }}
-        >
-          {/* Row 1: arrival + departure times */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {shift === 'ערב' || isMiyaFixed ? (
-              <input
-                type="time"
-                value={slot.arrivalTime}
-                onChange={e => updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value })}
-                style={{ ...timeInputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
-              />
-            ) : (
-              <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>
-                {slot.arrivalTime || '—'}
-              </span>
-            )}
-            <span style={{ fontSize: 10, color: '#94a3b8' }}>→</span>
-            <input
-              type="time"
-              value={slot.departureTime}
-              onChange={e => updateSlotField(day, shift, slotIdx, { departureTime: e.target.value })}
-              style={{ ...timeInputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
-            />
-          </div>
-          {/* Row 2: station + employee + X */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <select
-              value={slot.station}
-              onChange={e => updateSlotField(day, shift, slotIdx, { station: e.target.value })}
-              style={{ ...selectStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
-            >
-              <option value="">— עמדה —</option>
-              {stations.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            {isMiyaFixed ? (
-              <span style={{ fontWeight: 700, fontSize: 12, color: '#1a4a2e', flex: 1 }}>מיה</span>
-            ) : (
-              <select
-                value={slot.employeeId ?? ''}
-                onChange={e =>
-                  updateSlotField(day, shift, slotIdx, {
-                    employeeId: e.target.value !== '' ? Number(e.target.value) : null,
-                  })
-                }
-                style={{ ...selectStyle }}
-              >
-                <option value="">— ריק —</option>
-                {availableEmps.map(e => (
-                  <option key={e.id} value={e.id}>{e.name}</option>
-                ))}
-              </select>
-            )}
-            {isTraineeSlot && (
-              <span style={{ fontSize: 9, background: '#c17f3b', color: 'white', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>מתלמד</span>
-            )}
-            {!isMiyaFixed && (
-              <button
-                onClick={() => removeSlot(day, shift, slotIdx)}
-                title="הסר סלוט"
-                style={{
-                  background: 'none', border: 'none', color: '#ef4444',
-                  cursor: 'pointer', fontSize: 16, padding: '0 4px',
-                  lineHeight: 1, flexShrink: 0,
-                }}
-              >
-                ×
-              </button>
-            )}
-          </div>
-        </div>
-      );
-    }
+    // Card background & border
+    const cardBg = isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : isEmpty ? 'white' : 'white';
+    const cardBorder = isMiyaFixed
+      ? '1px solid #a7d5b8'
+      : isTraineeSlot
+      ? '1px solid #fed7aa'
+      : isEmpty
+      ? '1px dashed #cbd5e1'
+      : isHovered
+      ? '1px solid #4a7c59'
+      : '1px solid #e8e0d4';
+
+    const popoverStyle: React.CSSProperties = isMobile
+      ? { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 100, background: 'white', border: '1px solid #e8e0d4', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: 12, width: 260, direction: 'rtl' }
+      : { position: 'absolute', top: '100%', right: 0, zIndex: 100, background: 'white', border: '1px solid #e8e0d4', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: 10, width: 220, marginTop: 2, direction: 'rtl' };
+
+    const popoverInputStyle: React.CSSProperties = { width: '100%', padding: '4px 6px', fontSize: 12, border: '1px solid #e8e0d4', borderRadius: 4 };
+    const popoverSelectStyle: React.CSSProperties = { ...popoverInputStyle };
+    const popoverLabelStyle: React.CSSProperties = { fontSize: 11, color: '#64748b', display: 'block', marginBottom: 2 };
 
     return (
-      <div
-        key={slotIdx}
-        style={{
-          display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 3,
-          padding: '6px 4px', borderRadius: 6,
-          background: isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : 'white',
-          border: isMiyaFixed ? '1px solid #a7d5b8' : isTraineeSlot ? '1px solid #fed7aa' : '1px solid #e8e0d4',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Row 1: arrival → departure */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 13, fontWeight: 500 }}>
-          {shift === 'ערב' || isMiyaFixed ? (
-            <input
-              type="time"
-              value={slot.arrivalTime}
-              onChange={e => updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value })}
-              style={{ ...timeInputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
-            />
+      <div key={slotIdx} style={{ position: 'relative', marginBottom: 3 }}>
+        {/* Card */}
+        <div
+          onClick={() => setEditingSlot(isEditing ? null : { day, shift, slotIdx })}
+          onMouseEnter={() => setHoveredSlot(slotKey)}
+          onMouseLeave={() => setHoveredSlot(null)}
+          style={{
+            borderRadius: 6, padding: '5px 7px', cursor: 'pointer',
+            background: cardBg,
+            border: cardBorder,
+            boxShadow: isHovered ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+            transition: 'box-shadow 0.15s, border-color 0.15s',
+          }}
+        >
+          {isEmpty ? (
+            <span style={{ color: '#94a3b8', fontSize: 12 }}>ריק</span>
           ) : (
-            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>
-              {slot.arrivalTime || '—'}
-            </span>
-          )}
-          <span style={{ fontSize: 10, color: '#94a3b8' }}>→</span>
-          <input
-            type="time"
-            value={slot.departureTime}
-            onChange={e => updateSlotField(day, shift, slotIdx, { departureTime: e.target.value })}
-            style={{ ...timeInputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
-          />
-          {!isMiyaFixed && (
-            <button
-              onClick={() => removeSlot(day, shift, slotIdx)}
-              title="הסר סלוט"
-              style={{
-                background: 'none', border: 'none', color: '#ef4444',
-                cursor: 'pointer', fontSize: 14, padding: '0 2px',
-                lineHeight: 1, flexShrink: 0, marginRight: 'auto',
-              }}
-            >
-              ×
-            </button>
+            <>
+              <div style={{ fontSize: 13, fontWeight: 600, color: isMiyaFixed ? '#1a4a2e' : '#1a4a2e', lineHeight: 1.3 }}>
+                {empName}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 }}>
+                <span style={{ fontSize: 11, color: '#64748b' }}>
+                  {slot.arrivalTime || '—'} ← {slot.departureTime || '—'}
+                </span>
+                <span style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                  {isTraineeSlot && (
+                    <span style={{ fontSize: 9, background: '#c17f3b', color: 'white', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>מתלמד</span>
+                  )}
+                  {stationLabel && (
+                    <span style={{ fontSize: 10, background: '#f1f5f9', color: '#475569', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      {stationLabel}
+                    </span>
+                  )}
+                </span>
+              </div>
+            </>
           )}
         </div>
-        {/* Row 2: employee + station */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-          {isMiyaFixed ? (
-            <span style={{ fontWeight: 700, fontSize: 11, color: '#1a4a2e', flex: 1 }}>מיה</span>
-          ) : (
-            <select
-              value={slot.employeeId ?? ''}
-              onChange={e =>
-                updateSlotField(day, shift, slotIdx, {
-                  employeeId: e.target.value !== '' ? Number(e.target.value) : null,
-                })
-              }
-              style={{ ...selectStyle }}
-            >
-              <option value="">— ריק —</option>
-              {availableEmps.map(e => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
-            </select>
-          )}
-          <select
-            value={slot.station}
-            onChange={e => updateSlotField(day, shift, slotIdx, { station: e.target.value })}
-            style={{ ...stationSelectStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
-          >
-            <option value="">— עמדה —</option>
-            {stations.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          {isTraineeSlot && (
-            <span style={{ fontSize: 9, background: '#c17f3b', color: 'white', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>מתלמד</span>
-          )}
-        </div>
+
+        {/* Popover */}
+        {isEditing && (
+          <>
+            {isMobile && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 99 }} onClick={() => setEditingSlot(null)} />}
+            <div ref={popoverRef} style={popoverStyle} onClick={e => e.stopPropagation()}>
+              {/* Employee */}
+              <label style={popoverLabelStyle}>עובדת:</label>
+              {isMiyaFixed ? (
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#1a4a2e', marginBottom: 8 }}>מיה (קבועה)</div>
+              ) : (
+                <select
+                  value={slot.employeeId ?? ''}
+                  onChange={e => updateSlotField(day, shift, slotIdx, { employeeId: e.target.value !== '' ? Number(e.target.value) : null })}
+                  style={{ ...popoverSelectStyle, marginBottom: 8 }}
+                >
+                  <option value="">— ריק —</option>
+                  {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+              )}
+
+              {/* Times */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={popoverLabelStyle}>התחלה:</label>
+                  <input
+                    type="time"
+                    value={slot.arrivalTime}
+                    onChange={e => updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value })}
+                    disabled={shift === 'בוקר' && !isMiyaFixed}
+                    style={{ ...popoverInputStyle, ...(shift === 'בוקר' && !isMiyaFixed ? { background: '#f5f5f5', color: '#94a3b8' } : {}) }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={popoverLabelStyle}>סיום:</label>
+                  <input
+                    type="time"
+                    value={slot.departureTime}
+                    onChange={e => updateSlotField(day, shift, slotIdx, { departureTime: e.target.value })}
+                    style={popoverInputStyle}
+                  />
+                </div>
+              </div>
+
+              {/* Station */}
+              <label style={popoverLabelStyle}>עמדה:</label>
+              <select
+                value={slot.station}
+                onChange={e => updateSlotField(day, shift, slotIdx, { station: e.target.value })}
+                style={{ ...popoverSelectStyle, marginBottom: 10 }}
+              >
+                <option value="">— בחר —</option>
+                {stations.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={() => setEditingSlot(null)}
+                  style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
+                >
+                  סגור
+                </button>
+                {!isMiyaFixed && (
+                  <button
+                    onClick={() => { removeSlot(day, shift, slotIdx); setEditingSlot(null); }}
+                    style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 5, cursor: 'pointer' }}
+                  >
+                    מחק
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -1426,7 +1419,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                   {visibleDays.map(d => {
                     if (!d.shifts.includes(shift)) {
                       return (
-                        <td key={d.day} style={{ padding: 6, textAlign: 'center', color: '#e8e0d4', background: '#faf7f2', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}` }}>—</td>
+                        <td key={d.day} style={{ padding: 6, textAlign: 'center', color: '#94a3b8', fontSize: 11, background: '#faf7f2', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}` }}>אין ערב בשישי</td>
                       );
                     }
 
@@ -1435,7 +1428,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                     const hasVolt = d.day === 'שישי' || !!voltFlags[cellKey];
                     const stations = getStations(d.day, hasVolt);
 
-                    const shiftBg = shift === 'בוקר' ? '#eef6f0' : '#fdf6ee';
+                    const shiftBg = shift === 'בוקר' ? '#e8f4ea' : '#fef3e8';
 
                     return (
                       <td
@@ -1462,14 +1455,14 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
 
                         {/* Add slot button */}
                         <button
-                          onClick={() => addSlot(d.day, shift)}
+                          onClick={() => { addSlot(d.day, shift); setEditingSlot({ day: d.day, shift, slotIdx: slots.length }); }}
                           style={{
                             fontSize: isMobile ? 12 : 10, color: '#4a7c59', background: 'transparent',
                             border: '1px dashed #a7d5b8', borderRadius: 4,
                             cursor: 'pointer', padding: isMobile ? '6px 8px' : '3px 6px', marginTop: 5, width: '100%',
                           }}
                         >
-                          + הוסף סלוט
+                          + הוסף
                         </button>
                       </td>
                     );
