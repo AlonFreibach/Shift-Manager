@@ -944,13 +944,10 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     slot: Slot,
     slotIdx: number,
     stations: string[],
-    allSlots: Slot[],
   ) {
     const isMiyaFixed = slot.locked === true || slot.employeeId === 0;
-    const usedIds = new Set(
-      allSlots.filter((_, i) => i !== slotIdx).map(s => s.employeeId).filter(id => id !== null) as number[]
-    );
-    const availableEmps = employees.filter(e => !usedIds.has(e.id));
+    const availableEmps = employees;
+    console.log('employees in slot:', day, shift, slotIdx, 'count:', availableEmps?.length, 'names:', availableEmps?.map(e => e.name));
 
     const inputStyle: React.CSSProperties = {
       width: isMobile ? '100%' : 80, fontSize: 12, padding: '2px 4px',
@@ -1373,7 +1370,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
 
                         {/* Slot rows */}
                         {slots.map((slot, idx) =>
-                          renderSlotRow(d.day, shift, slot, idx, stations, slots)
+                          renderSlotRow(d.day, shift, slot, idx, stations)
                         )}
 
                         {/* Add slot button */}
