@@ -1311,7 +1311,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               )}
               {stationTaken && (
                 <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, fontWeight: 600 }}>
-                  ⚠️ עמדה זו כבר תפוסה על ידי {stationOwner} — בחרי עמדה אחרת
+                  ⚠️ עמדה זו כבר תפוסה — בחר עמדה אחרת
                 </div>
               )}
 
