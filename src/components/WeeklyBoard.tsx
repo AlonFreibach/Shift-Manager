@@ -947,16 +947,15 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
   ) {
     const isMiyaFixed = slot.locked === true || slot.employeeId === 0;
     const availableEmps = employees;
-    console.log('employees in slot:', day, shift, slotIdx, 'count:', availableEmps?.length, 'names:', availableEmps?.map(e => e.name));
 
     const inputStyle: React.CSSProperties = {
-      width: isMobile ? '100%' : 80, fontSize: 12, padding: '2px 4px',
+      width: isMobile ? '100%' : 52, fontSize: isMobile ? 12 : 11, padding: '2px 4px',
       border: 'none', borderRadius: 4, background: 'transparent',
     };
     const selectStyle: React.CSSProperties = {
-      fontSize: 12, padding: '2px 4px',
-      border: 'none', borderRadius: 4, maxWidth: isMobile ? '100%' : 80, background: 'transparent',
-      ...(isMobile ? { flex: 1, minWidth: 0 } : {}),
+      fontSize: isMobile ? 12 : 11, padding: '2px 4px',
+      border: 'none', borderRadius: 4, maxWidth: '100%', background: 'transparent',
+      ...(isMobile ? { flex: 1, minWidth: 0 } : { flex: 1, minWidth: 0 }),
     };
 
     if (isMobile) {
@@ -1043,11 +1042,11 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       <div
         key={slotIdx}
         style={{
-          display: 'flex', alignItems: 'center', gap: 3, marginBottom: 4,
-          padding: '6px 8px', borderRadius: 6,
+          display: 'flex', alignItems: 'center', gap: 2, marginBottom: 3,
+          padding: 4, borderRadius: 6,
           background: isMiyaFixed ? '#f0fdf4' : 'white',
           border: isMiyaFixed ? '1px solid #a7d5b8' : '1px solid #e8e0d4',
-          fontSize: 11,
+          fontSize: 11, overflow: 'hidden',
         }}
       >
         {/* Arrival time — editable for evening shifts and Miya */}
@@ -1059,7 +1058,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
             style={{ ...inputStyle, ...(isMiyaFixed ? { fontWeight: 600, color: '#1a4a2e' } : {}) }}
           />
         ) : (
-          <span style={{ fontSize: 12, color: '#64748b', minWidth: 40 }}>
+          <span style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>
             {slot.arrivalTime || '—'}
           </span>
         )}
@@ -1076,7 +1075,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
 
         {/* Employee name or picker */}
         {isMiyaFixed ? (
-          <span style={{ fontWeight: 700, fontSize: 11, color: '#1a4a2e', minWidth: 28 }}>מיה</span>
+          <span style={{ fontWeight: 700, fontSize: 11, color: '#1a4a2e', whiteSpace: 'nowrap' }}>מיה</span>
         ) : (
           <select
             value={slot.employeeId ?? ''}
@@ -1085,7 +1084,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                 employeeId: e.target.value !== '' ? Number(e.target.value) : null,
               })
             }
-            style={{ ...selectStyle, maxWidth: 70 }}
+            style={{ ...selectStyle }}
           >
             <option value="">— ריק —</option>
             {availableEmps.map(e => (
@@ -1310,17 +1309,23 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
         </div>
       )}
 
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
+      <div style={{ overflowX: isMobile ? 'auto' : 'hidden' }}>
+        <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
+          <colgroup>
+            <col style={{ width: 60 }} />
+            {visibleDays.map(d => (
+              <col key={d.day} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              <th style={{ padding: '10px 12px', background: '#1a4a2e', color: 'white', minWidth: 50, fontWeight: 700, borderTopRightRadius: 8 }}>
+              <th style={{ padding: '8px 6px', background: '#1a4a2e', color: 'white', fontWeight: 700, borderTopRightRadius: 8 }}>
                 משמרת
               </th>
               {visibleDays.map((d, i) => (
                 <th
                   key={d.day}
-                  style={{ padding: '10px 12px', background: '#faf7f2', textAlign: 'center', minWidth: 220, borderBottom: '2px solid #e8e0d4', ...(i === visibleDays.length - 1 ? { borderTopLeftRadius: 8 } : {}) }}
+                  style={{ padding: '8px 6px', background: '#faf7f2', textAlign: 'center', borderBottom: '2px solid #e8e0d4', ...(i === visibleDays.length - 1 ? { borderTopLeftRadius: 8 } : {}) }}
                 >
                   <div style={{ fontWeight: 700, fontSize: 14, color: '#1a4a2e' }}>{d.day}</div>
                   <div style={{ fontWeight: 400, fontSize: 12, color: '#94a3b8' }}>{d.dateStr}</div>
@@ -1333,13 +1338,13 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               const shiftColor = shift === 'בוקר' ? '#4a7c59' : '#c17f3b';
               return (
                 <tr key={shift}>
-                  <td style={{ padding: '10px 12px', fontWeight: 700, background: '#1a4a2e', color: 'white', verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}` }}>
+                  <td style={{ padding: '8px 6px', fontWeight: 700, background: '#1a4a2e', color: 'white', verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}`, fontSize: 12 }}>
                     {shift}
                   </td>
                   {visibleDays.map(d => {
                     if (!d.shifts.includes(shift)) {
                       return (
-                        <td key={d.day} style={{ padding: 10, textAlign: 'center', color: '#e8e0d4', background: '#faf7f2', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}` }}>—</td>
+                        <td key={d.day} style={{ padding: 6, textAlign: 'center', color: '#e8e0d4', background: '#faf7f2', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}` }}>—</td>
                       );
                     }
 
@@ -1353,7 +1358,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                     return (
                       <td
                         key={d.day}
-                        style={{ padding: 10, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}` }}
+                        style={{ padding: 6, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}`, overflow: 'hidden' }}
                       >
                         {/* Volt toggle — not for שישי */}
                         {d.day !== 'שישי' && (
