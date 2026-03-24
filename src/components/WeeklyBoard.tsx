@@ -1089,6 +1089,11 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
 
     const stationLabel = getStationBadge(slot.station);
 
+    // Duplicate check: is this employee already in another slot of the same shift?
+    const shiftSlots = schedule[`${day}_${shift}`] || [];
+    const isDuplicate = !isMiyaFixed && slot.employeeId !== null && shiftSlots.some((s, i) => i !== slotIdx && s.employeeId === slot.employeeId);
+    const duplicateName = isDuplicate ? (employees.find(e => e.id === slot.employeeId)?.name || '') : '';
+
     // Card background & border
     const cardBg = isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : isEmpty ? 'white' : 'white';
     const cardBorder = isMiyaFixed
@@ -1192,36 +1197,27 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               onClick={e => e.stopPropagation()}
             >
               {/* Employee */}
-              {(() => {
-                const shiftSlots = schedule[`${day}_${shift}`] || [];
-                const isDuplicate = slot.employeeId !== null && shiftSlots.some((s, i) => i !== slotIdx && s.employeeId === slot.employeeId);
-                return (
-                  <>
-                    <label style={popoverLabelStyle}>עובדת:</label>
-                    {isMiyaFixed ? (
-                      <div style={{ fontWeight: 700, fontSize: 13, color: '#1a4a2e', marginBottom: 8 }}>מיה (קבועה)</div>
-                    ) : (
-                      <select
-                        value={slot.employeeId ?? ''}
-                        onChange={e => {
-                          const newId = e.target.value !== '' ? Number(e.target.value) : null;
-                          if (newId !== null && shiftSlots.some((s, i) => i !== slotIdx && s.employeeId === newId)) return;
-                          updateSlotField(day, shift, slotIdx, { employeeId: newId });
-                        }}
-                        style={{ ...popoverSelectStyle, marginBottom: isDuplicate ? 4 : 8, ...(isDuplicate ? { borderColor: '#ef4444' } : {}) }}
-                      >
-                        <option value="">— ריק —</option>
-                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                      </select>
-                    )}
-                    {isDuplicate && (
-                      <div style={{ fontSize: 11, color: '#dc2626', background: '#fef2f2', padding: '4px 8px', borderRadius: 4, marginBottom: 8 }}>
-                        עובדת זו כבר משובצת במשמרת זו
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
+              <label style={popoverLabelStyle}>עובדת:</label>
+              {isMiyaFixed ? (
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#1a4a2e', marginBottom: 8 }}>מיה (קבועה)</div>
+              ) : (
+                <select
+                  value={slot.employeeId ?? ''}
+                  onChange={e => {
+                    const newId = e.target.value !== '' ? Number(e.target.value) : null;
+                    updateSlotField(day, shift, slotIdx, { employeeId: newId });
+                  }}
+                  style={{ ...popoverSelectStyle, marginBottom: isDuplicate ? 4 : 8, ...(isDuplicate ? { borderColor: '#ef4444' } : {}) }}
+                >
+                  <option value="">— ריק —</option>
+                  {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+              )}
+              {isDuplicate && (
+                <div style={{ fontSize: 11, color: '#dc2626', background: '#fef2f2', padding: '4px 8px', borderRadius: 4, marginBottom: 8, fontWeight: 600 }}>
+                  ⚠️ {duplicateName} כבר משובצת במשמרת זו — לא ניתן לשבץ פעמיים באותה משמרת
+                </div>
+              )}
 
               {/* Times */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
@@ -1260,8 +1256,9 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               {/* Actions */}
               <div style={{ display: 'flex', gap: 6 }}>
                 <button
-                  onClick={() => { setEditingSlot(null); setPopoverPos(null); }}
-                  style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
+                  onClick={() => { if (!isDuplicate) { setEditingSlot(null); setPopoverPos(null); } }}
+                  disabled={isDuplicate}
+                  style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: isDuplicate ? '#94a3b8' : '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: isDuplicate ? 'not-allowed' : 'pointer', opacity: isDuplicate ? 0.6 : 1 }}
                 >
                   סגור
                 </button>
@@ -1515,11 +1512,10 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                     const hasVolt = d.day === 'שישי' || !!voltFlags[cellKey];
                     const stations = getStations(d.day, hasVolt);
 
-                    // Dynamic cell coloring — read directly from schedule state for reactivity
-                    const currentSlots = schedule[cellKey] || [];
+                    // Dynamic cell coloring — computed from slots (already derived from schedule state)
                     const requiredCount = (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
-                    const filledRegular = currentSlots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
-                    const hasAnyAssignment = currentSlots.some(s => !s.locked && s.employeeId !== null);
+                    const filledRegular = slots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
+                    const hasAnyAssignment = slots.some(s => !s.locked && s.employeeId !== null);
                     let shiftBg: string;
                     let borderRight: string | undefined;
                     if (!hasAnyAssignment) {
