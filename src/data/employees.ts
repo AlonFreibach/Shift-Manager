@@ -1,3 +1,10 @@
+export interface FixedShift {
+  day: string;
+  shift: string;
+  arrivalTime: string;
+  departureTime: string;
+}
+
 export interface Employee {
   id: number;
   name: string;
@@ -11,6 +18,7 @@ export interface Employee {
   availableToDate: string;
   fairnessHistory: { date: string; type: 1 | 2 }[];
   flexibilityHistory: { weekStart: string; submitted: number; committed: number }[];
+  fixedShifts?: FixedShift[];
 }
 
 export const employees: Employee[] = [

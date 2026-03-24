@@ -69,14 +69,11 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
   }
 
   const [preferences, setPreferences] = useState<Record<number, EmployeePrefs>>({});
-  const [modalStep, setModalStep] = useState<'input' | 'confirm' | 'summary'>('input');
-  const [prefEmployeeId, setPrefEmployeeId] = useState<number | null>(employees[0]?.id ?? null);
+  const [editModalEmpId, setEditModalEmpId] = useState<number | null>(null);
   const [prefsText, setPrefsText] = useState('');
   const [parserError, setParserError] = useState<string | null>(null);
-  const [lastConfirmed, setLastConfirmed] = useState<{ name: string; count: number } | null>(null);
-  const [submitToast, setSubmitToast] = useState(false);
+  const [saveToast, setSaveToast] = useState<string | null>(null);
   const [statusCopyToast, setStatusCopyToast] = useState(false);
-  const [showInputForm, setShowInputForm] = useState(false);
 
   const weekDays = WEEK_STRUCTURE.map((d, i) => {
     const date = new Date(weekStart);
@@ -299,9 +296,9 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
     return { prefs, badLines };
   }
 
-  function handlePreferencesParse() {
-    if (!prefEmployeeId) { setParserError('בחרי עובדת'); return; }
-    const emp = employees.find(e => e.id === prefEmployeeId);
+  function handleModalSave() {
+    if (!editModalEmpId) return;
+    const emp = employees.find(e => e.id === editModalEmpId);
     if (!emp) { setParserError('עובדת לא נמצאה'); return; }
     try {
       const { prefs, badLines } = parsePreferencesText(prefsText);
@@ -323,20 +320,14 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
         return;
       }
       setPreferencesForEmployee(emp.id, prefs);
-      setLastConfirmed({ name: emp.name, count });
-      setModalStep('confirm');
+      setEditModalEmpId(null);
+      setPrefsText('');
       setParserError(null);
+      setSaveToast(`העדפות ${emp.name} נשמרו — ${count} משמרות`);
+      setTimeout(() => setSaveToast(null), 3000);
     } catch (err: any) {
       setParserError(err?.message || 'שגיאה בפרסר');
     }
-  }
-
-  function handleSubmitAll() {
-    setShowInputForm(false);
-    setModalStep('input');
-    setPrefsText('');
-    setSubmitToast(true);
-    setTimeout(() => setSubmitToast(false), 3000);
   }
 
   const weekEnd = new Date(weekStart);
@@ -455,11 +446,9 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
                     <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
                       <button
                         onClick={() => {
-                          setPrefEmployeeId(emp.id);
+                          setEditModalEmpId(emp.id);
                           setPrefsText(hasPrefs ? serializePreferences(emp.id) : '');
                           setParserError(null);
-                          setModalStep('input');
-                          setShowInputForm(true);
                         }}
                         style={{ ...smallBtnBase, background: hasPrefs ? '#1a4a2e' : '#16a34a', color: 'white' }}
                       >
@@ -507,183 +496,60 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
         </div>
       )}
 
-      {/* Add preferences button */}
-      {!showInputForm && (
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <button
-            onClick={() => {
-              setModalStep('input');
-              setPrefsText('');
-              setParserError(null);
-              setPrefEmployeeId(employees[0]?.id ?? null);
-              setShowInputForm(true);
-            }}
-            style={{ ...btnBase, padding: '10px 28px', fontSize: 14, background: '#1a4a2e', color: 'white' }}
+      {/* Edit preferences modal */}
+      {editModalEmpId !== null && (() => {
+        const modalEmp = employees.find(e => e.id === editModalEmpId);
+        if (!modalEmp) return null;
+        return (
+          <div
+            onClick={() => { setEditModalEmpId(null); setPrefsText(''); setParserError(null); }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            + הזן העדפות
-          </button>
-        </div>
-      )}
-
-      {/* Input form (inline, not modal) */}
-      {showInputForm && (
-        <div style={{ background: 'white', borderRadius: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', padding: 20, position: 'relative', border: '1px solid #e8e0d4' }}>
-          {/* Navigation */}
-          {modalStep !== 'input' && (
-            <button
-              onClick={() => setModalStep(modalStep === 'summary' ? 'confirm' : 'input')}
-              style={{ position: 'absolute', left: 12, top: 12, fontSize: 12, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background: 'white', borderRadius: 12, padding: 24, width: 480, maxWidth: '90vw', maxHeight: '80vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', position: 'relative' }}
+              dir="rtl"
             >
-              ← חזור
-            </button>
-          )}
-          <button
-            onClick={() => { setShowInputForm(false); setModalStep('input'); setPrefsText(''); }}
-            style={{ position: 'absolute', right: 12, top: 12, width: 28, height: 28, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}
-            title="סגור"
-          >
-            ✕
-          </button>
-
-          {/* Step 1: Input */}
-          {modalStep === 'input' && (
-            <>
-              <h3 style={{ marginBottom: 12, fontSize: 16, marginTop: 0, fontWeight: 700, color: '#1a4a2e' }}>הזן העדפות</h3>
-              <label style={{ display: 'block', marginBottom: 6, fontWeight: 500, fontSize: 13, color: '#475569' }}>עובדת:</label>
-              <select
-                value={prefEmployeeId ?? ''}
-                onChange={e => setPrefEmployeeId(Number(e.target.value))}
-                style={{ width: '100%', marginBottom: 10, padding: '8px 10px', fontSize: 14, border: '1px solid #e8e0d4', borderRadius: 6 }}
+              <button
+                onClick={() => { setEditModalEmpId(null); setPrefsText(''); setParserError(null); }}
+                style={{ position: 'absolute', left: 12, top: 12, width: 28, height: 28, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}
               >
-                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-              </select>
+                ✕
+              </button>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: 17, fontWeight: 700, color: '#1a4a2e' }}>
+                עריכת העדפות — {modalEmp.name}
+              </h3>
               <textarea
                 value={prefsText}
                 onChange={e => setPrefsText(e.target.value)}
-                rows={8}
-                style={{ width: '100%', padding: 10, boxSizing: 'border-box', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6 }}
+                rows={10}
+                style={{ width: '100%', padding: 10, boxSizing: 'border-box', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6, fontFamily: 'inherit' }}
                 placeholder="הדבק כאן את ההעדפות כפי שקיבלת בווטסאפ"
+                autoFocus
               />
               {parserError && (
                 <div style={{ color: '#dc2626', marginTop: 8, fontSize: 12, whiteSpace: 'pre-wrap', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 12px' }}>
                   {parserError}
                 </div>
               )}
-              <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button
-                  onClick={handlePreferencesParse}
+                  onClick={() => { setEditModalEmpId(null); setPrefsText(''); setParserError(null); }}
+                  style={{ ...btnBase, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4' }}
+                >
+                  ביטול
+                </button>
+                <button
+                  onClick={handleModalSave}
                   style={{ ...btnBase, background: '#1a4a2e', color: 'white' }}
                 >
-                  פרסר והוסף
+                  שמור
                 </button>
               </div>
-            </>
-          )}
-
-          {/* Step 2: Confirm */}
-          {modalStep === 'confirm' && lastConfirmed && (
-            <>
-              <div style={{ background: '#dcfce7', border: '1px solid #86efac', borderRadius: 6, padding: '14px 16px', marginBottom: 20, color: '#166534', fontSize: 15 }}>
-                העדפות <strong>{lastConfirmed.name}</strong> התקבלו — {lastConfirmed.count} משמרות
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => { setModalStep('input'); setPrefsText(''); setPrefEmployeeId(employees[0]?.id ?? null); setParserError(null); }}
-                  style={{ ...btnBase, background: '#1a4a2e', color: 'white' }}
-                >
-                  הוסף עובדת נוספת
-                </button>
-                <button
-                  onClick={() => setModalStep('summary')}
-                  style={{ ...btnBase, background: '#16a34a', color: 'white' }}
-                >
-                  סיכום והגשה
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* Step 3: Summary */}
-          {modalStep === 'summary' && (() => {
-            const withPrefs = employees.filter(e => {
-              const p = preferences[e.id];
-              return p && Object.keys(p).length > 0;
-            });
-            return (
-              <>
-                <h3 style={{ marginBottom: 14, fontSize: 16, marginTop: 0, fontWeight: 700, color: '#1a4a2e' }}>סיכום העדפות השבוע</h3>
-                {withPrefs.length === 0 ? (
-                  <p style={{ color: '#64748b', marginBottom: 16 }}>לא הוזנו העדפות השבוע</p>
-                ) : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ background: '#1a4a2e', color: 'white', padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>עובדת</th>
-                        <th style={{ background: '#1a4a2e', color: 'white', padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>ימים ומשמרות</th>
-                        <th style={{ background: '#1a4a2e', color: 'white', padding: '8px 12px', textAlign: 'center', width: 100, fontWeight: 600 }}>פעולות</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {withPrefs.map((emp, idx) => {
-                        const empPrefs = preferences[emp.id] || {};
-                        const summary = weekDays
-                          .filter(d => (empPrefs[d.day] || []).length > 0)
-                          .map(d => `${d.day}: ${formatPrefShifts(empPrefs[d.day] || [])}`)
-                          .join(' | ');
-                        return (
-                          <tr key={emp.id} style={{ background: idx % 2 === 0 ? '#ffffff' : '#faf7f2' }}>
-                            <td style={{ padding: '8px 12px', borderBottom: '1px solid #e8e0d4', fontWeight: 600, color: '#1a4a2e' }}>{emp.name}</td>
-                            <td style={{ padding: '8px 12px', borderBottom: '1px solid #e8e0d4', color: '#475569', fontSize: 12 }}>{summary}</td>
-                            <td style={{ padding: '6px 8px', borderBottom: '1px solid #e8e0d4', textAlign: 'center' }}>
-                              <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                                <button
-                                  onClick={() => {
-                                    setPrefEmployeeId(emp.id);
-                                    setPrefsText(serializePreferences(emp.id));
-                                    setParserError(null);
-                                    setModalStep('input');
-                                  }}
-                                  style={{ ...smallBtnBase, background: '#1a4a2e', color: 'white' }}
-                                >
-                                  ערוך
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    if (window.confirm(`למחוק את ההעדפות של ${emp.name}?`)) {
-                                      deletePreferencesForEmployee(emp.id);
-                                    }
-                                  }}
-                                  style={{ ...smallBtnBase, background: '#fee2e2', color: '#dc2626' }}
-                                >
-                                  מחק
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button
-                    onClick={() => { setModalStep('input'); setPrefsText(''); setPrefEmployeeId(employees[0]?.id ?? null); setParserError(null); }}
-                    style={{ ...btnBase, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4' }}
-                  >
-                    + הוסף עובדת
-                  </button>
-                  <button
-                    onClick={handleSubmitAll}
-                    style={{ ...btnBase, background: '#16a34a', color: 'white' }}
-                  >
-                    אשר והגש
-                  </button>
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Toasts */}
       {statusCopyToast && (
@@ -691,9 +557,9 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
           הועתק!
         </div>
       )}
-      {submitToast && (
+      {saveToast && (
         <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: '#16a34a', color: 'white', padding: '12px 28px', borderRadius: 8, zIndex: 9999, fontSize: 15, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
-          ההעדפות נשמרו בהצלחה!
+          {saveToast}
         </div>
       )}
     </div>

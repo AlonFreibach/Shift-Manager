@@ -2,11 +2,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { calculateFairnessScore, calculateFlexibilityScore } from '../utils/fairnessScore';
 import { addFairnessEvents } from '../utils/fairnessAccumulator';
-import type { Employee } from '../data/employees';
+import type { Employee, FixedShift } from '../data/employees';
 import type { EmployeePrefs } from '../types';
 
 interface WeeklyBoardProps {
   employees: Employee[];
+  onUpdateEmployees?: (employees: Employee[]) => void;
   autoScheduleRequest?: string | null;
   onAutoScheduleHandled?: () => void;
   onNavigateToPreferences?: () => void;
@@ -20,6 +21,7 @@ interface Slot {
   departureTime: string;
   station: string;
   locked?: boolean;
+  isFixed?: boolean;
 }
 
 type Schedule = Record<string, Slot[]>;
@@ -152,7 +154,7 @@ function calculateCompositeScore(emp: Employee): number {
   return 0.5 * stability + 0.4 * flexibility + 0.1 / (1 + fairness);
 }
 
-export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHandled, onNavigateToPreferences }: WeeklyBoardProps) {
+export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest, onAutoScheduleHandled, onNavigateToPreferences }: WeeklyBoardProps) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [schedule, setSchedule] = useState<Schedule>({});
   const [voltFlags, setVoltFlags] = useState<VoltFlags>({});
@@ -180,8 +182,11 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const [popoverValidationError, setPopoverValidationError] = useState(false);
   const [slotAddToast, setSlotAddToast] = useState<string | null>(null);
+  const [fixedShiftToast, setFixedShiftToast] = useState<string | null>(null);
+  const [slotSaveToast, setSlotSaveToast] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const [tempSlotData, setTempSlotData] = useState<{ employeeId: number | null; arrivalTime: string; departureTime: string; station: string }>({ employeeId: null, arrivalTime: '', departureTime: '', station: '' });
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -208,13 +213,25 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     return { top, left };
   }, [isMobile]);
 
+  const closePopover = useCallback((discard = true) => {
+    if (discard && editingSlot?.isNew) {
+      const key = `${editingSlot.day}_${editingSlot.shift}`;
+      const slots = schedule[key] || [];
+      if (slots[editingSlot.slotIdx] && slots[editingSlot.slotIdx].employeeId === null) {
+        const newSlots = slots.filter((_, i) => i !== editingSlot.slotIdx);
+        saveSchedule({ ...schedule, [key]: newSlots });
+      }
+    }
+    setEditingSlot(null);
+    setPopoverPos(null);
+    setPopoverValidationError(false);
+  }, [editingSlot, schedule]);
+
   useEffect(() => {
     if (!editingSlot) return;
     function handleClickOutside(e: MouseEvent) {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setEditingSlot(null);
-        setPopoverPos(null);
-        setPopoverValidationError(false);
+        closePopover(true);
       }
     }
     function recalcPos() {
@@ -229,7 +246,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       window.removeEventListener('scroll', recalcPos, true);
       window.removeEventListener('resize', recalcPos);
     };
-  }, [editingSlot, calcPopoverPos, schedule]);
+  }, [editingSlot, calcPopoverPos, schedule, closePopover]);
 
   const weekStart = getWeekStart(weekOffset);
   const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
@@ -313,7 +330,44 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
 
   useEffect(() => {
     const saved = localStorage.getItem(`schedule_${weekKey}`);
-    setSchedule(saved ? JSON.parse(saved) : {});
+    let loadedSchedule: Schedule = saved ? JSON.parse(saved) : {};
+
+    // ── Auto-populate fixed shifts on board load ──
+    let changed = false;
+    for (const emp of employees) {
+      if (emp.id === MIYA_ID) continue;
+      if (!emp.fixedShifts || emp.fixedShifts.length === 0) continue;
+      for (const fs of emp.fixedShifts) {
+        if (!fs.day || !fs.shift) continue;
+        const key = `${fs.day}_${fs.shift}`;
+        // Initialize slots for this cell if not yet in schedule
+        if (!loadedSchedule[key] || loadedSchedule[key].length === 0) {
+          loadedSchedule[key] = initializeSlots(fs.day, fs.shift);
+          changed = true;
+        }
+        const slots = loadedSchedule[key];
+        // Skip if employee already in this shift
+        if (slots.some(s => s.employeeId === emp.id)) continue;
+        const fixedSlot: Slot = {
+          employeeId: emp.id,
+          arrivalTime: fs.arrivalTime || (fs.shift === 'בוקר' ? '07:00' : '14:00'),
+          departureTime: fs.departureTime || (fs.shift === 'בוקר' ? '14:00' : '21:00'),
+          station: '',
+          isFixed: true,
+        };
+        const emptyIdx = slots.findIndex(s => !s.locked && s.employeeId === null);
+        if (emptyIdx !== -1) {
+          slots[emptyIdx] = fixedSlot;
+        } else {
+          slots.push(fixedSlot);
+        }
+        changed = true;
+      }
+    }
+    if (changed) {
+      localStorage.setItem(`schedule_${weekKey}`, JSON.stringify(loadedSchedule));
+    }
+    setSchedule(loadedSchedule);
 
     const savedVolt = localStorage.getItem(`voltFlags_${weekKey}`);
     setVoltFlags(savedVolt ? JSON.parse(savedVolt) : {});
@@ -384,10 +438,20 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
   function resetSchedule() {
     if (!confirm('האם לאפס את כל השיבוץ השבועי? פעולה זו לא ניתנת לביטול')) return;
     const resetted: Schedule = {};
-    for (const key of Object.keys(schedule)) {
-      resetted[key] = (schedule[key] || []).map(slot =>
-        slot.locked ? slot : { ...slot, employeeId: null, station: '' }
-      );
+    for (const { day, shifts } of WEEK_STRUCTURE) {
+      for (const shift of shifts) {
+        const key = `${day}_${shift}`;
+        const existing = schedule[key] || [];
+        const fixedSlots = existing.filter(s => s.isFixed);
+        const fresh = initializeSlots(day, shift);
+        // Miya locked slot (first in fresh for בוקר)
+        const miyaSlot = fresh.filter(s => s.locked);
+        // Empty default slots from fresh
+        const defaultEmpty = fresh.filter(s => !s.locked);
+        // Only create enough empty slots to fill the gap
+        const neededEmpty = Math.max(0, defaultEmpty.length - fixedSlots.length);
+        resetted[key] = [...miyaSlot, ...fixedSlots, ...defaultEmpty.slice(0, neededEmpty)];
+      }
     }
     saveSchedule(resetted);
     setManualShortages([]);
@@ -405,7 +469,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     if (shift === 'בוקר') {
       const miya = MIYA_SCHEDULE[day];
       if (miya) {
-        slots.push({ employeeId: MIYA_ID, arrivalTime: miya.arrival, departureTime: miya.departure, station: 'קופה 1', locked: true });
+        slots.push({ employeeId: MIYA_ID, arrivalTime: miya.arrival, departureTime: miya.departure, station: 'אחר', locked: true });
       }
     }
     for (const def of SLOT_DEFAULTS[day]?.[shift] || []) {
@@ -473,11 +537,40 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       }
     }
 
-    // Count only locked (Miya) slots — everyone else starts at 0
+    // ── Phase 0: assign fixed shifts ──
+    const empsWithFixed = employees.filter(e => e.id !== MIYA_ID && e.fixedShifts && e.fixedShifts.length > 0);
+    console.log(`[Phase 0] ${empsWithFixed.length} employees with fixedShifts:`, empsWithFixed.map(e => ({ id: e.id, name: e.name, fixedShifts: e.fixedShifts })));
+    for (const emp of employees) {
+      if (emp.id === MIYA_ID) continue;
+      if (!emp.fixedShifts || emp.fixedShifts.length === 0) continue;
+      for (const fs of emp.fixedShifts) {
+        if (!fs.day || !fs.shift) continue;
+        const key = `${fs.day}_${fs.shift}`;
+        const slots = workingSlots[key];
+        if (!slots) continue;
+        // Check if this employee already has a slot in this shift (avoid duplicates)
+        if (slots.some(s => s.employeeId === emp.id)) continue;
+        const fixedSlot: Slot = {
+          employeeId: emp.id,
+          arrivalTime: fs.arrivalTime || (fs.shift === 'בוקר' ? '07:00' : '14:00'),
+          departureTime: fs.departureTime || (fs.shift === 'בוקר' ? '14:00' : '21:00'),
+          station: '',
+          isFixed: true,
+        };
+        const emptyIdx = slots.findIndex(s => !s.locked && s.employeeId === null);
+        if (emptyIdx !== -1) {
+          slots[emptyIdx] = fixedSlot;
+        } else {
+          slots.push(fixedSlot);
+        }
+      }
+    }
+
+    // Count locked (Miya) + fixed slots — everyone else starts at 0
     const assignedCount: Record<number, number> = {};
     for (const slots of Object.values(workingSlots)) {
       for (const slot of slots) {
-        if (slot.employeeId !== null && slot.locked)
+        if (slot.employeeId !== null && (slot.locked || slot.isFixed))
           assignedCount[slot.employeeId] = (assignedCount[slot.employeeId] || 0) + 1;
       }
     }
@@ -586,7 +679,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
           if (slots.some(s => s.employeeId === emp.id)) continue;
           for (let i = 0; i < slots.length; i++) {
             const slot = slots[i];
-            if (slot.locked) continue;
+            if (slot.locked || slot.isFixed) continue;
             const currEmpId = slot.employeeId;
             if (currEmpId === null) continue;
             const currEmp = employees.find(e => e.id === currEmpId);
@@ -1088,6 +1181,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     const isLockedSlot = slot.locked === true;
     const isMiyaFixed = isLockedSlot && slot.employeeId !== null;
     const isTraineeSlot = slot.station === 'התלמדות';
+    const isFixedSlot = slot.isFixed === true;
     const isEmpty = slot.employeeId === null;
     const empName = isMiyaFixed ? 'מיה' : employees.find(e => e.id === slot.employeeId)?.name || null;
     const isEditing = editingSlot?.day === day && editingSlot?.shift === shift && editingSlot?.slotIdx === slotIdx;
@@ -1096,27 +1190,16 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
 
     const stationLabel = getStationBadge(slot.station);
 
-    // Duplicate check: is this employee already in another slot of the same shift?
-    // Compare by numeric ID; skip locked (Miya) slots in comparison
     const shiftSlots = schedule[`${day}_${shift}`] || [];
-    const currentEmpId = slot.employeeId !== null ? Number(slot.employeeId) : null;
-    const isDuplicate = !isLockedSlot && currentEmpId !== null && shiftSlots.some((s, i) =>
-      i !== slotIdx && !s.locked && s.employeeId !== null && Number(s.employeeId) === currentEmpId
-    );
-    const duplicateName = isDuplicate ? (employees.find(e => e.id === slot.employeeId)?.name || '') : '';
-
-    // Duplicate station check (skip 'התלמדות' which can be shared, skip locked Miya slots)
-    const stationTaken = !isLockedSlot && !!slot.station && slot.station !== 'התלמדות' && shiftSlots.some((s, i) =>
-      i !== slotIdx && !s.locked && s.station === slot.station && s.employeeId !== null
-    );
-    const stationOwner = stationTaken ? (employees.find(e => e.id === shiftSlots.find((s, i) => i !== slotIdx && !s.locked && s.station === slot.station && s.employeeId !== null)?.employeeId)?.name || '') : '';
 
     // Card background & border
-    const cardBg = isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : 'white';
+    const cardBg = isMiyaFixed ? '#f0fdf4' : isTraineeSlot ? '#fff7ed' : isFixedSlot ? '#E6F1FB' : 'white';
     const cardBorder = isMiyaFixed
       ? '1px solid #a7d5b8'
       : isTraineeSlot
       ? '1px solid #fed7aa'
+      : isFixedSlot
+      ? '1px solid #B3D4F0'
       : isEmpty
       ? '1px dashed #cbd5e1'
       : isHovered
@@ -1127,11 +1210,9 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
     const popoverSelectStyle: React.CSSProperties = { ...popoverInputStyle };
     const popoverLabelStyle: React.CSSProperties = { fontSize: 11, color: '#64748b', display: 'block', marginBottom: 2 };
 
-    // Validation: locked (Miya) slots are always valid
-    const isIncomplete = !isLockedSlot && (slot.employeeId === null || !slot.arrivalTime || !slot.departureTime || !slot.station);
     function handleCardClick(e: React.MouseEvent<HTMLDivElement>) {
       if (isEditing) {
-        setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false);
+        closePopover(true);
         return;
       }
       const rect = e.currentTarget.getBoundingClientRect();
@@ -1144,6 +1225,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
       setPopoverPos({ top, left });
       setEditingSlot({ day, shift, slotIdx, isNew: isEmpty });
+      setTempSlotData({ employeeId: slot.employeeId, arrivalTime: slot.arrivalTime, departureTime: slot.departureTime, station: slot.station });
       setPopoverValidationError(false);
     }
 
@@ -1187,9 +1269,12 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 }}>
                 <span style={{ fontSize: 11, color: '#64748b' }}>
-                  {slot.arrivalTime && slot.arrivalTime !== '0' ? slot.arrivalTime : '—'} ← {slot.departureTime && slot.departureTime !== '0' ? slot.departureTime : '—'}
+                  {slot.arrivalTime && slot.arrivalTime !== '0' ? slot.arrivalTime : '—'} → {slot.departureTime && slot.departureTime !== '0' ? slot.departureTime : '—'}
                 </span>
                 <span style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                  {isFixedSlot && (
+                    <span style={{ fontSize: 9, background: '#0C447C', color: 'white', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>קבוע</span>
+                  )}
                   {isTraineeSlot && (
                     <span style={{ fontSize: 9, background: '#c17f3b', color: 'white', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>מתלמד</span>
                   )}
@@ -1210,7 +1295,7 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
             {/* Backdrop (mobile: dim overlay, desktop: transparent click catcher) */}
             <div
               style={{ position: 'fixed', inset: 0, zIndex: 9998, background: isMobile ? 'rgba(0,0,0,0.3)' : 'transparent' }}
-              onClick={() => { setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false); }}
+              onClick={() => closePopover(true)}
             />
             <div
               ref={popoverRef}
@@ -1230,137 +1315,206 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
               }}
               onClick={e => e.stopPropagation()}
             >
-              {/* X close button — closes without saving, no confirm */}
+              {/* X close button — closes without saving */}
               <button
-                onClick={() => { setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false); }}
+                onClick={() => closePopover(true)}
                 style={{ float: 'left', width: 22, height: 22, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', padding: 0, marginBottom: 4 }}
               >✕</button>
 
-              {/* Employee */}
-              <label style={popoverLabelStyle}>עובדת:</label>
               {isLockedSlot ? (
-                <div style={{ fontWeight: 700, fontSize: 13, color: isMiyaFixed ? '#1a4a2e' : '#94a3b8', marginBottom: 8 }}>
-                  {isMiyaFixed ? 'מיה (קבועה)' : 'ריק (סלוט מיה)'}
-                </div>
-              ) : (
                 <>
-                  <select
-                    value={slot.employeeId ?? ''}
-                    onChange={e => {
-                      const newId = e.target.value !== '' ? Number(e.target.value) : null;
-                      updateSlotField(day, shift, slotIdx, { employeeId: newId });
-                      setPopoverValidationError(false);
-                    }}
-                    style={{ ...popoverSelectStyle, marginBottom: 4, ...(isDuplicate || (popoverValidationError && slot.employeeId === null) ? { borderColor: '#ef4444' } : {}) }}
-                  >
-                    <option value="">— ריק —</option>
-                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                  </select>
-                  {isDuplicate && (
-                    <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, fontWeight: 600 }}>
-                      ⚠️ {duplicateName} כבר משובצת במשמרת זו
+                  {/* Locked (Miya) slot — uses tempSlotData */}
+                  <label style={popoverLabelStyle}>עובדת:</label>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: isMiyaFixed ? '#1a4a2e' : '#94a3b8', marginBottom: 8 }}>
+                    {isMiyaFixed ? 'מיה (קבועה)' : 'ריק (סלוט מיה)'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={popoverLabelStyle}>התחלה:</label>
+                      <input type="time" value={tempSlotData.arrivalTime}
+                        onChange={e => setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value }))}
+                        style={popoverInputStyle} />
                     </div>
-                  )}
-                  {popoverValidationError && !isDuplicate && slot.employeeId === null && (
-                    <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4 }}>שדה חובה</div>
-                  )}
+                    <div style={{ flex: 1 }}>
+                      <label style={popoverLabelStyle}>סיום:</label>
+                      <input type="time" value={tempSlotData.departureTime}
+                        onChange={e => setTempSlotData(prev => ({ ...prev, departureTime: e.target.value }))}
+                        style={popoverInputStyle} />
+                    </div>
+                  </div>
+                  <label style={popoverLabelStyle}>עמדה:</label>
+                  <select value={tempSlotData.station}
+                    onChange={e => setTempSlotData(prev => ({ ...prev, station: e.target.value }))}
+                    style={{ ...popoverSelectStyle, marginBottom: 4 }}>
+                    <option value="">— בחר —</option>
+                    {stations.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                    {isMiyaFixed && (
+                      <button
+                        onClick={() => { updateSlotField(day, shift, slotIdx, { employeeId: null, station: '' }); closePopover(false); }}
+                        style={{ width: '100%', padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#fff7ed', color: '#c17f3b', border: '1px solid #fed7aa', borderRadius: 5, cursor: 'pointer' }}
+                      >נקה משמרת</button>
+                    )}
+                    {!isMiyaFixed && (
+                      <button
+                        onClick={() => { updateSlotField(day, shift, slotIdx, { employeeId: MIYA_ID, station: 'אחר' }); closePopover(false); }}
+                        style={{ width: '100%', padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#f0fdf4', color: '#16a34a', border: '1px solid #a7d5b8', borderRadius: 5, cursor: 'pointer' }}
+                      >שבץ מיה חזרה</button>
+                    )}
+                    <button
+                      onClick={() => closePopover(false)}
+                      style={{ width: '100%', padding: '6px 10px', fontSize: 12, fontWeight: 600, background: 'white', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 5, cursor: 'pointer' }}
+                    >ביטול</button>
+                    <button
+                      onClick={() => {
+                        updateSlotField(day, shift, slotIdx, {
+                          arrivalTime: tempSlotData.arrivalTime,
+                          departureTime: tempSlotData.departureTime,
+                          station: tempSlotData.station,
+                        });
+                        closePopover(false);
+                        setSlotSaveToast(true);
+                        setTimeout(() => setSlotSaveToast(false), 2000);
+                      }}
+                      style={{ width: '100%', padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
+                    >שמור שינויים</button>
+                  </div>
                 </>
-              )}
+              ) : (() => {
+                /* Non-locked slot — uses tempSlotData */
+                const tempEmpId = tempSlotData.employeeId;
+                const tempIsDuplicate = tempEmpId !== null && shiftSlots.some((s, i) =>
+                  i !== slotIdx && !s.locked && s.employeeId !== null && Number(s.employeeId) === Number(tempEmpId)
+                );
+                const tempDuplicateName = tempIsDuplicate ? (employees.find(e => e.id === tempEmpId)?.name || '') : '';
+                const tempStationTaken = !!tempSlotData.station && tempSlotData.station !== 'התלמדות' && shiftSlots.some((s, i) =>
+                  i !== slotIdx && !s.locked && s.station === tempSlotData.station && s.employeeId !== null
+                );
+                const tempIsIncomplete = tempEmpId === null || !tempSlotData.arrivalTime || !tempSlotData.departureTime || !tempSlotData.station;
+                return (
+                  <>
+                    {/* Employee */}
+                    <label style={popoverLabelStyle}>עובדת:</label>
+                    <select
+                      value={tempEmpId ?? ''}
+                      onChange={e => {
+                        const newId = e.target.value !== '' ? Number(e.target.value) : null;
+                        setTempSlotData(prev => ({ ...prev, employeeId: newId }));
+                        setPopoverValidationError(false);
+                      }}
+                      style={{ ...popoverSelectStyle, marginBottom: 4, ...(tempIsDuplicate || (popoverValidationError && tempEmpId === null) ? { borderColor: '#ef4444' } : {}) }}
+                    >
+                      <option value="">— ריק —</option>
+                      {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                    {tempIsDuplicate && (
+                      <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, fontWeight: 600 }}>
+                        ⚠️ {tempDuplicateName} כבר משובצת במשמרת זו
+                      </div>
+                    )}
+                    {popoverValidationError && !tempIsDuplicate && tempEmpId === null && (
+                      <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4 }}>שדה חובה</div>
+                    )}
 
-              {/* Times */}
-              <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={popoverLabelStyle}>התחלה:</label>
-                  <input
-                    type="time"
-                    value={slot.arrivalTime}
-                    onChange={e => { updateSlotField(day, shift, slotIdx, { arrivalTime: e.target.value }); setPopoverValidationError(false); }}
-                    disabled={shift === 'בוקר' && !isMiyaFixed}
-                    style={{ ...popoverInputStyle, ...(shift === 'בוקר' && !isMiyaFixed ? { background: '#f5f5f5', color: '#94a3b8' } : {}), ...(popoverValidationError && !slot.arrivalTime && !(shift === 'בוקר' && !isMiyaFixed) ? { borderColor: '#ef4444' } : {}) }}
-                  />
-                  {popoverValidationError && !slot.arrivalTime && !(shift === 'בוקר' && !isMiyaFixed) && (
-                    <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2 }}>שדה חובה</div>
-                  )}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={popoverLabelStyle}>סיום:</label>
-                  <input
-                    type="time"
-                    value={slot.departureTime}
-                    onChange={e => { updateSlotField(day, shift, slotIdx, { departureTime: e.target.value }); setPopoverValidationError(false); }}
-                    style={{ ...popoverInputStyle, ...(popoverValidationError && !slot.departureTime ? { borderColor: '#ef4444' } : {}) }}
-                  />
-                  {popoverValidationError && !slot.departureTime && (
-                    <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2 }}>שדה חובה</div>
-                  )}
-                </div>
-              </div>
+                    {/* Times */}
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={popoverLabelStyle}>התחלה:</label>
+                        <input
+                          type="time"
+                          value={tempSlotData.arrivalTime}
+                          onChange={e => { setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value })); setPopoverValidationError(false); }}
+                          disabled={shift === 'בוקר' && !isMiyaFixed}
+                          style={{ ...popoverInputStyle, ...(shift === 'בוקר' && !isMiyaFixed ? { background: '#f5f5f5', color: '#94a3b8' } : {}), ...(popoverValidationError && !tempSlotData.arrivalTime && !(shift === 'בוקר' && !isMiyaFixed) ? { borderColor: '#ef4444' } : {}) }}
+                        />
+                        {popoverValidationError && !tempSlotData.arrivalTime && !(shift === 'בוקר' && !isMiyaFixed) && (
+                          <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2 }}>שדה חובה</div>
+                        )}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={popoverLabelStyle}>סיום:</label>
+                        <input
+                          type="time"
+                          value={tempSlotData.departureTime}
+                          onChange={e => { setTempSlotData(prev => ({ ...prev, departureTime: e.target.value })); setPopoverValidationError(false); }}
+                          style={{ ...popoverInputStyle, ...(popoverValidationError && !tempSlotData.departureTime ? { borderColor: '#ef4444' } : {}) }}
+                        />
+                        {popoverValidationError && !tempSlotData.departureTime && (
+                          <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2 }}>שדה חובה</div>
+                        )}
+                      </div>
+                    </div>
 
-              {/* Station */}
-              <label style={popoverLabelStyle}>עמדה:</label>
-              <select
-                value={slot.station}
-                onChange={e => { updateSlotField(day, shift, slotIdx, { station: e.target.value }); setPopoverValidationError(false); }}
-                style={{ ...popoverSelectStyle, marginBottom: 4, ...((popoverValidationError && !slot.station) || stationTaken ? { borderColor: '#ef4444' } : {}) }}
-              >
-                <option value="">— בחר —</option>
-                {stations.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              {popoverValidationError && !slot.station && !isLockedSlot && (
-                <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4 }}>שדה חובה</div>
-              )}
-              {stationTaken && (
-                <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, fontWeight: 600 }}>
-                  ⚠️ עמדה זו כבר תפוסה — בחר עמדה אחרת
-                </div>
-              )}
+                    {/* Station */}
+                    <label style={popoverLabelStyle}>עמדה:</label>
+                    <select
+                      value={tempSlotData.station}
+                      onChange={e => { setTempSlotData(prev => ({ ...prev, station: e.target.value })); setPopoverValidationError(false); }}
+                      style={{ ...popoverSelectStyle, marginBottom: 4, ...((popoverValidationError && !tempSlotData.station) || tempStationTaken ? { borderColor: '#ef4444' } : {}) }}
+                    >
+                      <option value="">— בחר —</option>
+                      {stations.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    {popoverValidationError && !tempSlotData.station && (
+                      <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4 }}>שדה חובה</div>
+                    )}
+                    {tempStationTaken && (
+                      <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, fontWeight: 600 }}>
+                        ⚠️ עמדה זו כבר תפוסה — בחר עמדה אחרת
+                      </div>
+                    )}
 
-              {/* Actions */}
-              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                {!isLockedSlot && (
-                  <button
-                    onClick={() => {
-                      if (isIncomplete || isDuplicate || stationTaken) {
-                        setPopoverValidationError(true);
-                        return;
-                      }
-                      const addedName = employees.find(e => e.id === slot.employeeId)?.name || '';
-                      setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false);
-                      if (editingSlot?.isNew) {
-                        setSlotAddToast(addedName);
-                        setTimeout(() => setSlotAddToast(null), 2000);
-                      }
-                    }}
-                    style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
-                  >
-                    {editingSlot?.isNew ? 'הוסף' : 'עדכן'}
-                  </button>
-                )}
-                {isLockedSlot && (
-                  <button
-                    onClick={() => { setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false); }}
-                    style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
-                  >
-                    סגור
-                  </button>
-                )}
-                {isLockedSlot && isMiyaFixed && (
-                  <button
-                    onClick={() => { updateSlotField(day, shift, slotIdx, { employeeId: null, station: '' }); setEditingSlot(null); setPopoverPos(null); }}
-                    style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#fff7ed', color: '#c17f3b', border: '1px solid #fed7aa', borderRadius: 5, cursor: 'pointer' }}
-                  >
-                    נקה משמרת
-                  </button>
-                )}
-                {isLockedSlot && !isMiyaFixed && (
-                  <button
-                    onClick={() => { updateSlotField(day, shift, slotIdx, { employeeId: MIYA_ID, station: 'קופה 1' }); setEditingSlot(null); setPopoverPos(null); }}
-                    style={{ padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#f0fdf4', color: '#16a34a', border: '1px solid #a7d5b8', borderRadius: 5, cursor: 'pointer' }}
-                  >
-                    שבץ מיה חזרה
-                  </button>
-                )}
-              </div>
+                    {/* Actions */}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <button
+                        onClick={() => {
+                          if (tempIsIncomplete || tempIsDuplicate || tempStationTaken) {
+                            setPopoverValidationError(true);
+                            return;
+                          }
+                          updateSlotField(day, shift, slotIdx, {
+                            employeeId: tempSlotData.employeeId,
+                            arrivalTime: tempSlotData.arrivalTime,
+                            departureTime: tempSlotData.departureTime,
+                            station: tempSlotData.station,
+                          });
+                          const addedName = employees.find(e => e.id === tempSlotData.employeeId)?.name || '';
+                          setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false);
+                          if (editingSlot?.isNew) {
+                            setSlotAddToast(addedName);
+                            setTimeout(() => setSlotAddToast(null), 2000);
+                          }
+                        }}
+                        style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
+                      >
+                        {editingSlot?.isNew ? 'הוסף' : 'עדכן'}
+                      </button>
+                    </div>
+                    {/* Save as fixed shift button */}
+                    {!isEmpty && !editingSlot?.isNew && onUpdateEmployees && (
+                      <button
+                        onClick={() => {
+                          const emp = employees.find(e => e.id === slot.employeeId);
+                          if (!emp) return;
+                          const newFixed: FixedShift = { day, shift, arrivalTime: slot.arrivalTime, departureTime: slot.departureTime };
+                          const updated = employees.map(e =>
+                            e.id === emp.id ? { ...e, fixedShifts: [...(e.fixedShifts || []), newFixed] } : e
+                          );
+                          onUpdateEmployees(updated);
+                          updateSlotField(day, shift, slotIdx, { isFixed: true });
+                          setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false);
+                          setFixedShiftToast(emp.name);
+                          setTimeout(() => setFixedShiftToast(null), 2500);
+                        }}
+                        style={{ width: '100%', marginTop: 6, padding: '5px 10px', fontSize: 11, fontWeight: 600, background: 'transparent', color: '#2563eb', border: '1px solid #2563eb', borderRadius: 5, cursor: 'pointer' }}
+                      >
+                        קבע כמשמרת קבועה
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </>,
           document.body,
@@ -1602,24 +1756,13 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                     const hasVolt = d.day === 'שישי' || !!voltFlags[cellKey];
                     const stations = getStations(d.day, hasVolt);
 
-                    // Dynamic cell coloring — computed from slots (already derived from schedule state)
-                    const requiredCount = (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
-                    const filledRegular = slots.filter(s => !s.locked && s.employeeId !== null && s.station !== 'התלמדות').length;
-                    const hasAnyAssignment = slots.some(s => !s.locked && s.employeeId !== null);
-                    let shiftBg: string;
-                    let borderRight: string | undefined;
-                    if (!hasAnyAssignment) {
-                      // Default — no assignments yet
-                      shiftBg = shift === 'בוקר' ? '#e8f4ea' : '#fef3e8';
-                    } else if (filledRegular >= requiredCount) {
-                      // Green — fully staffed
-                      shiftBg = '#f0fdf4';
-                      borderRight = '4px solid #16a34a';
-                    } else {
-                      // Red — under-staffed
-                      shiftBg = '#fef2f2';
-                      borderRight = '4px solid #ef4444';
-                    }
+                    // Dynamic cell coloring
+                    const defaultSlots = (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
+                    const requiredCount = defaultSlots + (shift === 'בוקר' && MIYA_SCHEDULE[d.day] ? 1 : 0);
+                    const filledCount = slots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
+                    const shiftBg = filledCount >= requiredCount ? '#f0fdf4' : '#fef2f2';
+                    const borderRight = filledCount >= requiredCount ? '4px solid #16a34a' : '4px solid #ef4444';
+                    console.log(`[Cell] ${d.day} ${shift}: filled=${filledCount}, required=${requiredCount}, color=${filledCount >= requiredCount ? 'green' : 'red'}`);
 
                     return (
                       <td
@@ -1648,6 +1791,9 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
                         <button
                           onClick={(e) => {
                             addSlot(d.day, shift);
+                            const defaultArrival = shift === 'בוקר' ? '07:00' : '14:00';
+                            const defaultDeparture = shift === 'בוקר' ? '14:00' : '21:00';
+                            setTempSlotData({ employeeId: null, arrivalTime: defaultArrival, departureTime: defaultDeparture, station: '' });
                             const rect = e.currentTarget.getBoundingClientRect();
                             const popW = isMobile ? 260 : 220;
                             let top = rect.bottom + 4;
@@ -1899,6 +2045,19 @@ export function WeeklyBoard({ employees, autoScheduleRequest, onAutoScheduleHand
       {slotAddToast && (
         <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: '#16a34a', color: 'white', padding: '12px 28px', borderRadius: 8, zIndex: 9999, fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
           ✓ {slotAddToast} נוספה למשמרת
+        </div>
+      )}
+
+      {/* Fixed shift toast */}
+      {fixedShiftToast && (
+        <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: '#16a34a', color: 'white', padding: '12px 28px', borderRadius: 8, zIndex: 9999, fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
+          ✓ המשמרת נשמרה כקבועה עבור {fixedShiftToast}
+        </div>
+      )}
+
+      {slotSaveToast && (
+        <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: '#16a34a', color: 'white', padding: '12px 28px', borderRadius: 8, zIndex: 9999, fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
+          ✓ השינויים נשמרו בהצלחה
         </div>
       )}
 

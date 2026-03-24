@@ -101,6 +101,7 @@ function App() {
         {currentTab === 'board' && (
           <WeeklyBoard
             employees={savedEmployees}
+            onUpdateEmployees={setSavedEmployees}
             autoScheduleRequest={autoScheduleRequest}
             onAutoScheduleHandled={() => setAutoScheduleRequest(null)}
             onNavigateToPreferences={() => setCurrentTab('preferences')}
