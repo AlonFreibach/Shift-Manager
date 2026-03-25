@@ -54,11 +54,10 @@ export function calculateStabilityScore(employee: Employee): number {
 }
 
 function isEmployeeAvailableForShift(emp: Employee, day: string, shift: string, weekStart: Date): boolean {
-  if (day === 'שישי' && !emp.friday) return false;
+  if (day === 'שישי' && emp.fridayAvailability === 'never') return false;
   if (emp.shiftType !== 'הכל') {
     if (emp.shiftType === 'בוקר' && shift !== 'בוקר') return false;
     if (emp.shiftType === 'ערב' && shift !== 'ערב') return false;
-    if (emp.shiftType === 'אמצע' && shift !== 'אמצע') return false;
   }
   // Check date window
   if (emp.availableFromDate) {

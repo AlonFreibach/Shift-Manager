@@ -27,6 +27,35 @@ interface Slot {
 type Schedule = Record<string, Slot[]>;
 type VoltFlags = Record<string, boolean>;
 
+interface CustomShiftDef {
+  name: string;
+  day: string;
+  startTime: string;
+  endTime: string;
+  requiredCount: number;
+  originalMorningDepartures: Record<number, string>;
+  originalEveningArrivals: Record<number, string>;
+}
+
+interface SpecialShiftEntry {
+  id: string;
+  name: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  requiredCount: number;
+}
+
+type PlanAheadStep = 'dateRange' | 'question' | 'specialShifts' | 'running' | 'summary';
+
+interface PlanAheadSummary {
+  weeksScheduled: number;
+  totalShifts: number;
+  specialShiftsCount: number;
+  unfilledSlots: number;
+  weekDetails: { weekKey: string; weekLabel: string; filled: number; total: number; specialCount: number }[];
+}
+
 const WEEK_STRUCTURE = [
   { day: 'ראשון', shifts: ['בוקר', 'ערב'] },
   { day: 'שני',   shifts: ['בוקר', 'ערב'] },
@@ -116,9 +145,22 @@ function formatDate(d: Date): string {
   return `${d.getDate()}.${d.getMonth() + 1}`;
 }
 
-function isEmployeeAvailable(emp: Employee, day: string, shift: string): boolean {
-  if (day === 'שישי' && !emp.friday) return false;
-  if (emp.shiftType !== 'הכל') {
+function isBiweeklyFridayEligible(empId: number, fridayDate: string): boolean {
+  const last = localStorage.getItem(`lastFridayWorked_${empId}`);
+  if (!last) return true;
+  const lastDate = new Date(last + 'T00:00:00');
+  const thisDate = new Date(fridayDate + 'T00:00:00');
+  const diffDays = Math.round((thisDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+  return diffDays > 7;
+}
+
+function isEmployeeAvailable(emp: Employee, day: string, shift: string, fridayDate?: string): boolean {
+  if (day === 'שישי') {
+    if (emp.fridayAvailability === 'never') return false;
+    if (emp.fridayAvailability === 'biweekly' && fridayDate && !isBiweeklyFridayEligible(emp.id, fridayDate)) return false;
+  }
+  const isCustomShift = shift !== 'בוקר' && shift !== 'ערב';
+  if (emp.shiftType !== 'הכל' && !isCustomShift) {
     if (emp.shiftType === 'בוקר' && shift !== 'בוקר') return false;
     if (emp.shiftType === 'ערב' && shift !== 'ערב') return false;
   }
@@ -171,8 +213,11 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   const [planAheadTo, setPlanAheadTo] = useState<Date>(() => {
     const d = getWeekStart(4); d.setDate(d.getDate() + 5); return d;
   });
-  const [planAheadToast, setPlanAheadToast] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
   const [planAheadNoPrefsWarning, setPlanAheadNoPrefsWarning] = useState(false);
+  const [planAheadStep, setPlanAheadStep] = useState<PlanAheadStep>('dateRange');
+  const [specialShifts, setSpecialShifts] = useState<SpecialShiftEntry[]>([]);
+  const [specialShiftForm, setSpecialShiftForm] = useState({ name: '', date: '', startTime: '', endTime: '', requiredCount: 2 });
+  const [planAheadSummary, setPlanAheadSummary] = useState<PlanAheadSummary | null>(null);
   const [noPrefsToast, setNoPrefsToast] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [mobileDayIndex, setMobileDayIndex] = useState(0);
@@ -187,6 +232,28 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   const popoverRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [tempSlotData, setTempSlotData] = useState<{ employeeId: number | null; arrivalTime: string; departureTime: string; station: string }>({ employeeId: null, arrivalTime: '', departureTime: '', station: '' });
+
+  interface SyncIssue {
+    station: string;
+    morningEmpName: string;
+    eveningEmpName: string;
+    morningDeparture: string;
+    eveningArrival: string;
+    type: 'gap' | 'overlap';
+    diffMinutes: number;
+    morningShiftSlotIdx: number;
+    eveningShiftSlotIdx: number;
+  }
+  interface SyncWarning {
+    day: string;
+    issues: SyncIssue[];
+  }
+  const [syncWarningModal, setSyncWarningModal] = useState<SyncWarning | null>(null);
+
+  const [customShifts, setCustomShifts] = useState<Record<string, CustomShiftDef[]>>({});
+  const [showCustomShiftModal, setShowCustomShiftModal] = useState(false);
+  const [customShiftModalDay, setCustomShiftModalDay] = useState('ראשון');
+  const [customShiftForm, setCustomShiftForm] = useState({ name: '', startTime: '', endTime: '', requiredCount: 2 });
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -255,6 +322,214 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
+  const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+
+  function dateToWeekKeyAndDay(dateStr: string): { weekKey: string; dayName: string } {
+    const d = new Date(dateStr + 'T00:00:00');
+    const dayIndex = d.getDay();
+    const dayName = DAY_NAMES[dayIndex] || '';
+    const sunday = new Date(d);
+    sunday.setDate(d.getDate() - dayIndex);
+    sunday.setHours(0, 0, 0, 0);
+    return { weekKey: formatWeekKey(sunday), dayName };
+  }
+
+  function getDefaultSpecialShiftName(dateStr: string): string {
+    const d = new Date(dateStr + 'T00:00:00');
+    return `משמרת מיוחדת ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  function isDateInPlanAheadRange(dateStr: string): boolean {
+    const d = new Date(dateStr + 'T00:00:00');
+    if (d.getDay() === 6) return false;
+    return d >= planAheadFrom && d <= planAheadTo;
+  }
+
+  function closePlanAheadFlow() {
+    setShowPlanAheadModal(false);
+    setPlanAheadStep('dateRange');
+    setSpecialShifts([]);
+    setSpecialShiftForm({ name: '', date: '', startTime: '', endTime: '', requiredCount: 2 });
+    setPlanAheadSummary(null);
+    setPlanAheadNoPrefsWarning(false);
+  }
+
+  async function runPlanAheadAutoSchedule() {
+    setPlanAheadStep('running');
+    await new Promise(r => setTimeout(r, 50));
+
+    const sundays = getWeekSundaysInRange(planAheadFrom, planAheadTo);
+    const weekDetails: PlanAheadSummary['weekDetails'] = [];
+    let totalShifts = 0;
+    let specialShiftsCount = 0;
+    let unfilledSlots = 0;
+
+    // Group special shifts by weekKey
+    const specialByWeek: Record<string, SpecialShiftEntry[]> = {};
+    for (const ss of specialShifts) {
+      const { weekKey: wk } = dateToWeekKeyAndDay(ss.date);
+      if (!specialByWeek[wk]) specialByWeek[wk] = [];
+      specialByWeek[wk].push(ss);
+    }
+
+    for (const sunday of sundays) {
+      const wk = formatWeekKey(sunday);
+
+      // Load or create schedule
+      const savedSched = localStorage.getItem(`schedule_${wk}`);
+      let weekSchedule: Schedule = {};
+      if (savedSched) {
+        weekSchedule = JSON.parse(savedSched);
+      } else {
+        for (const { day, shifts } of WEEK_STRUCTURE) {
+          for (const shift of shifts) {
+            weekSchedule[`${day}_${shift}`] = initializeSlots(day, shift);
+          }
+        }
+      }
+
+      // Load voltFlags and customShifts
+      const savedVolt = localStorage.getItem(`voltFlags_${wk}`);
+      const weekVoltFlags: VoltFlags = savedVolt ? JSON.parse(savedVolt) : {};
+      const savedCS = localStorage.getItem(`customShifts_${wk}`);
+      const weekCustomShifts: Record<string, CustomShiftDef[]> = savedCS ? JSON.parse(savedCS) : {};
+
+      // Inject special shifts as customShifts
+      const weekSpecials = specialByWeek[wk] || [];
+      let weekSpecialCount = 0;
+      for (const ss of weekSpecials) {
+        const { dayName } = dateToWeekKeyAndDay(ss.date);
+        if (!dayName) continue;
+        const origMorningDep: Record<number, string> = {};
+        const origEveningArr: Record<number, string> = {};
+        for (const s of weekSchedule[`${dayName}_בוקר`] || []) {
+          if (s.employeeId !== null) origMorningDep[s.employeeId] = s.departureTime;
+        }
+        for (const s of weekSchedule[`${dayName}_ערב`] || []) {
+          if (s.employeeId !== null) origEveningArr[s.employeeId] = s.arrivalTime;
+        }
+        const csDef: CustomShiftDef = {
+          name: ss.name,
+          day: dayName,
+          startTime: ss.startTime,
+          endTime: ss.endTime,
+          requiredCount: ss.requiredCount,
+          originalMorningDepartures: origMorningDep,
+          originalEveningArrivals: origEveningArr,
+        };
+        if (!weekCustomShifts[dayName]) weekCustomShifts[dayName] = [];
+        weekCustomShifts[dayName].push(csDef);
+        const csKey = `${dayName}_${ss.name}`;
+        weekSchedule[csKey] = Array.from({ length: ss.requiredCount }, () => ({
+          employeeId: null, arrivalTime: ss.startTime, departureTime: ss.endTime, station: '',
+        }));
+        weekSpecialCount++;
+      }
+      if (weekSpecials.length > 0) {
+        localStorage.setItem(`customShifts_${wk}`, JSON.stringify(weekCustomShifts));
+      }
+
+      // Load preferences (with backward compat)
+      const weekPrefs: Record<number, EmployeePrefs> = {};
+      for (const emp of employees) {
+        const raw = localStorage.getItem(`preferences_${emp.id}_${wk}`);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as Record<string, unknown[]>;
+            const isOld = Object.values(parsed).some(v => Array.isArray(v) && v.length > 0 && typeof v[0] === 'string');
+            if (isOld) {
+              const converted: EmployeePrefs = {};
+              for (const [day, shifts] of Object.entries(parsed)) {
+                converted[day] = (shifts as string[]).map(s => ({ shift: s }));
+              }
+              weekPrefs[emp.id] = converted;
+            } else {
+              weekPrefs[emp.id] = parsed as EmployeePrefs;
+            }
+          } catch { weekPrefs[emp.id] = {}; }
+        } else {
+          weekPrefs[emp.id] = {};
+        }
+      }
+
+      // Run auto-schedule for this week
+      const result = runAutoScheduleForWeek(wk, weekSchedule, weekCustomShifts, weekPrefs, weekVoltFlags);
+      const finalSchedule = { ...result.schedule };
+
+      // Auto-resolve ties (pick first candidate — no interactive modal for multi-week)
+      for (const tie of result.ties) {
+        const key = `${tie.day}_${tie.shift}`;
+        const slots = finalSchedule[key];
+        if (!slots) continue;
+        const best = tie.candidates[0];
+        const prefEntry = (weekPrefs[best.id]?.[tie.day] || []).find(p => p.shift === tie.shift);
+        const departure = prefEntry?.customDeparture || slots[tie.slotIdx]?.departureTime || '';
+        finalSchedule[key] = slots.map((s, i) =>
+          i === tie.slotIdx ? { ...s, employeeId: best.id, departureTime: departure } : s
+        );
+      }
+
+      // Re-assign stations
+      const effectiveStructure = WEEK_STRUCTURE.map(ws => ({
+        ...ws,
+        shifts: [...ws.shifts.slice(0, 1), ...(weekCustomShifts[ws.day] || []).map(cs => cs.name), ...ws.shifts.slice(1)]
+      }));
+      for (const { day, shifts } of effectiveStructure) {
+        for (const shift of shifts) {
+          const key = `${day}_${shift}`;
+          const slots = finalSchedule[key];
+          if (!slots) continue;
+          const availableStations = [
+            ...getBaseStations(day),
+            ...(day !== 'שישי' && weekVoltFlags[key] ? ['וולט'] : []),
+          ];
+          let stIdx = 0;
+          finalSchedule[key] = slots.map(slot => {
+            if (slot.locked || slot.employeeId === null) return slot;
+            return { ...slot, station: stIdx < availableStations.length ? availableStations[stIdx++] : '' };
+          });
+        }
+      }
+
+      // Save schedule + fairness events
+      localStorage.setItem(`schedule_${wk}`, JSON.stringify(finalSchedule));
+      addFairnessEvents(finalSchedule, wk);
+
+      // Track biweekly Friday assignments
+      const fridayDate = (() => {
+        const d = new Date(wk + 'T00:00:00');
+        d.setDate(d.getDate() + 5);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      })();
+      for (const slot of finalSchedule['שישי_בוקר'] || []) {
+        if (slot.employeeId !== null) {
+          const emp = employees.find(e => e.id === slot.employeeId);
+          if (emp?.fridayAvailability === 'biweekly') {
+            localStorage.setItem(`lastFridayWorked_${emp.id}`, fridayDate);
+          }
+        }
+      }
+
+      // Collect stats for summary
+      let filled = 0, total = 0;
+      for (const { day, shifts } of effectiveStructure) {
+        for (const shift of shifts) {
+          for (const s of finalSchedule[`${day}_${shift}`] || []) {
+            if (!s.locked) { total++; if (s.employeeId !== null) filled++; }
+          }
+        }
+      }
+      const weekLabel = `${formatDate(sunday)}–${formatDate(new Date(sunday.getTime() + 5 * 86400000))}`;
+      weekDetails.push({ weekKey: wk, weekLabel, filled, total, specialCount: weekSpecialCount });
+      totalShifts += total;
+      specialShiftsCount += weekSpecialCount;
+      unfilledSlots += (total - filled);
+    }
+
+    setPlanAheadSummary({ weeksScheduled: sundays.length, totalShifts, specialShiftsCount, unfilledSlots, weekDetails });
+    setPlanAheadStep('summary');
+  }
+
   function getWeekSundaysInRange(from: Date, to: Date): Date[] {
     const sundays: Date[] = [];
     const sunday = new Date(from);
@@ -283,33 +558,6 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       }
     }
     return false;
-  }
-
-  function createPlanAheadWeeks(force?: boolean) {
-    if (!force && !checkPlanAheadPreferences()) {
-      setPlanAheadNoPrefsWarning(true);
-      return;
-    }
-    const sundays = getWeekSundaysInRange(planAheadFrom, planAheadTo);
-    let created = 0;
-    for (const sunday of sundays) {
-      const key = formatWeekKey(sunday);
-      if (localStorage.getItem(`schedule_${key}`)) continue; // skip existing
-      const emptySchedule: Schedule = {};
-      for (const { day, shifts } of WEEK_STRUCTURE) {
-        for (const shift of shifts) {
-          emptySchedule[`${day}_${shift}`] = initializeSlots(day, shift);
-        }
-      }
-      localStorage.setItem(`schedule_${key}`, JSON.stringify(emptySchedule));
-      created++;
-    }
-    setPlanAheadNoPrefsWarning(false);
-    setShowPlanAheadModal(false);
-    if (created > 0) {
-      setPlanAheadToast({ show: true, count: created });
-      setTimeout(() => setPlanAheadToast({ show: false, count: 0 }), 3000);
-    }
   }
 
   function getWeekBadge(offset: number): { label: string; color: string; bg: string } | null {
@@ -371,6 +619,9 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
     const savedVolt = localStorage.getItem(`voltFlags_${weekKey}`);
     setVoltFlags(savedVolt ? JSON.parse(savedVolt) : {});
+
+    const savedCustomShifts = localStorage.getItem(`customShifts_${weekKey}`);
+    setCustomShifts(savedCustomShifts ? JSON.parse(savedCustomShifts) : {});
 
     const prefForWeek: Record<number, EmployeePrefs> = {};
     employees.forEach(emp => {
@@ -452,6 +703,13 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
         const neededEmpty = Math.max(0, defaultEmpty.length - fixedSlots.length);
         resetted[key] = [...miyaSlot, ...fixedSlots, ...defaultEmpty.slice(0, neededEmpty)];
       }
+      // Reset custom shift slots for this day (keep structure, clear assignments)
+      for (const cs of (customShifts[day] || [])) {
+        const key = `${day}_${cs.name}`;
+        resetted[key] = Array.from({ length: cs.requiredCount }, () => ({
+          employeeId: null, arrivalTime: cs.startTime, departureTime: cs.endTime, station: ''
+        }));
+      }
     }
     saveSchedule(resetted);
     setManualShortages([]);
@@ -462,6 +720,151 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   function saveVoltFlags(newFlags: VoltFlags) {
     setVoltFlags(newFlags);
     localStorage.setItem(`voltFlags_${weekKey}`, JSON.stringify(newFlags));
+  }
+
+  function saveCustomShifts(newCustomShifts: Record<string, CustomShiftDef[]>) {
+    setCustomShifts(newCustomShifts);
+    localStorage.setItem(`customShifts_${weekKey}`, JSON.stringify(newCustomShifts));
+  }
+
+  function createCustomShift() {
+    const { name, startTime, endTime, requiredCount } = customShiftForm;
+    const day = customShiftModalDay;
+    if (!name || !startTime || !endTime) return;
+    if (name === 'בוקר' || name === 'ערב') return;
+    if ((customShifts[day] || []).some(cs => cs.name === name)) return;
+    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) return;
+
+    const newSchedule = { ...schedule };
+
+    // Snapshot and adjust morning departures
+    const morningKey = `${day}_בוקר`;
+    const morningSlots = [...(newSchedule[morningKey] || getOrInitializeSlots(day, 'בוקר'))];
+    const originalMorningDepartures: Record<number, string> = {};
+    morningSlots.forEach((s, idx) => {
+      if (timeToMinutes(s.departureTime) > timeToMinutes(startTime)) {
+        originalMorningDepartures[idx] = s.departureTime;
+        morningSlots[idx] = { ...s, departureTime: startTime };
+      }
+    });
+    newSchedule[morningKey] = morningSlots;
+
+    // Snapshot and adjust evening arrivals
+    const eveningKey = `${day}_ערב`;
+    const eveningSlots = [...(newSchedule[eveningKey] || getOrInitializeSlots(day, 'ערב'))];
+    const originalEveningArrivals: Record<number, string> = {};
+    const dayStruct = WEEK_STRUCTURE.find(w => w.day === day);
+    if (dayStruct?.shifts.includes('ערב')) {
+      eveningSlots.forEach((s, idx) => {
+        if (timeToMinutes(s.arrivalTime) < timeToMinutes(endTime)) {
+          originalEveningArrivals[idx] = s.arrivalTime;
+          eveningSlots[idx] = { ...s, arrivalTime: endTime };
+        }
+      });
+      newSchedule[eveningKey] = eveningSlots;
+    }
+
+    // Create custom shift slots
+    const customKey = `${day}_${name}`;
+    const customSlots: Slot[] = [];
+    for (let i = 0; i < requiredCount; i++) {
+      customSlots.push({ employeeId: null, arrivalTime: startTime, departureTime: endTime, station: '' });
+    }
+    newSchedule[customKey] = customSlots;
+
+    // Save
+    saveSchedule(newSchedule);
+
+    const newDef: CustomShiftDef = { name, day, startTime, endTime, requiredCount, originalMorningDepartures, originalEveningArrivals };
+    const updated = { ...customShifts, [day]: [...(customShifts[day] || []), newDef] };
+    saveCustomShifts(updated);
+    setShowCustomShiftModal(false);
+  }
+
+  function deleteCustomShift(day: string, shiftName: string) {
+    if (!confirm(`למחוק את משמרת ${shiftName}?`)) return;
+
+    const dayDefs = customShifts[day] || [];
+    const def = dayDefs.find(cs => cs.name === shiftName);
+    if (!def) return;
+
+    const newSchedule = { ...schedule };
+
+    // Remove custom shift schedule key
+    delete newSchedule[`${day}_${shiftName}`];
+
+    // Restore original morning departures
+    const morningKey = `${day}_בוקר`;
+    if (newSchedule[morningKey]) {
+      const morningSlots = [...newSchedule[morningKey]];
+      for (const [idxStr, originalTime] of Object.entries(def.originalMorningDepartures)) {
+        const idx = Number(idxStr);
+        if (morningSlots[idx]) {
+          morningSlots[idx] = { ...morningSlots[idx], departureTime: originalTime };
+        }
+      }
+      newSchedule[morningKey] = morningSlots;
+    }
+
+    // Restore original evening arrivals
+    const eveningKey = `${day}_ערב`;
+    if (newSchedule[eveningKey]) {
+      const eveningSlots = [...newSchedule[eveningKey]];
+      for (const [idxStr, originalTime] of Object.entries(def.originalEveningArrivals)) {
+        const idx = Number(idxStr);
+        if (eveningSlots[idx]) {
+          eveningSlots[idx] = { ...eveningSlots[idx], arrivalTime: originalTime };
+        }
+      }
+      newSchedule[eveningKey] = eveningSlots;
+    }
+
+    saveSchedule(newSchedule);
+
+    const updatedDefs = dayDefs.filter(cs => cs.name !== shiftName);
+    const updatedCustomShifts = { ...customShifts };
+    if (updatedDefs.length === 0) {
+      delete updatedCustomShifts[day];
+    } else {
+      updatedCustomShifts[day] = updatedDefs;
+    }
+    saveCustomShifts(updatedCustomShifts);
+  }
+
+  function getAllShiftRows(): { name: string; isCustom: boolean }[] {
+    const rows: { name: string; isCustom: boolean }[] = [{ name: 'בוקר', isCustom: false }];
+    const allCustomNames = new Set<string>();
+    for (const defs of Object.values(customShifts)) {
+      for (const cs of defs) allCustomNames.add(cs.name);
+    }
+    // Sort custom shifts by earliest startTime across all days
+    const customNamesSorted = [...allCustomNames].sort((a, b) => {
+      const getEarliestStart = (name: string) => {
+        let earliest = '99:99';
+        for (const defs of Object.values(customShifts)) {
+          for (const cs of defs) {
+            if (cs.name === name && cs.startTime < earliest) earliest = cs.startTime;
+          }
+        }
+        return earliest;
+      };
+      return getEarliestStart(a).localeCompare(getEarliestStart(b));
+    });
+    for (const name of customNamesSorted) {
+      rows.push({ name, isCustom: true });
+    }
+    rows.push({ name: 'ערב', isCustom: false });
+    return rows;
+  }
+
+  function getShiftsForDay(day: string): { name: string; isCustom: boolean }[] {
+    const dayCustom = (customShifts[day] || []).sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const dayStandard = WEEK_STRUCTURE.find(w => w.day === day)?.shifts || [];
+    const result: { name: string; isCustom: boolean }[] = [];
+    if (dayStandard.includes('בוקר')) result.push({ name: 'בוקר', isCustom: false });
+    for (const cs of dayCustom) result.push({ name: cs.name, isCustom: true });
+    if (dayStandard.includes('ערב')) result.push({ name: 'ערב', isCustom: false });
+    return result;
   }
 
   function initializeSlots(day: string, shift: string): Slot[] {
@@ -482,6 +885,8 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     const key = `${day}_${shift}`;
     const existing = schedule[key];
     if (existing && existing.length > 0) return existing;
+    // Custom shifts don't use initializeSlots — they have their own slot structure
+    if (shift !== 'בוקר' && shift !== 'ערב') return [];
     return initializeSlots(day, shift);
   }
 
@@ -495,8 +900,16 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   function addSlot(day: string, shift: string) {
     const key = `${day}_${shift}`;
     const slots = getOrInitializeSlots(day, shift);
-    const defaultArrival = shift === 'בוקר' ? '07:00' : '14:00';
-    const defaultDeparture = shift === 'בוקר' ? '14:00' : '21:00';
+    let defaultArrival: string;
+    let defaultDeparture: string;
+    const cs = (customShifts[day] || []).find(c => c.name === shift);
+    if (cs) {
+      defaultArrival = cs.startTime;
+      defaultDeparture = cs.endTime;
+    } else {
+      defaultArrival = shift === 'בוקר' ? '07:00' : '14:00';
+      defaultDeparture = shift === 'בוקר' ? '14:00' : '21:00';
+    }
     saveSchedule({ ...schedule, [key]: [...slots, { employeeId: null, arrivalTime: defaultArrival, departureTime: defaultDeparture, station: '' }] });
   }
 
@@ -511,28 +924,110 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     saveVoltFlags({ ...voltFlags, [cellKey]: !voltFlags[cellKey] });
   }
 
-  function autoSchedule(overridePrefs?: Record<number, EmployeePrefs>) {
-    const prefs = overridePrefs ?? preferences;
+  function timeToMinutes(t: string): number {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  }
 
-    // Check if any employee has preferences for this week
-    const hasAnyPrefs = employees.some(e => {
-      if (e.id === MIYA_ID) return false;
-      const empPrefs = prefs[e.id];
-      return empPrefs && Object.values(empPrefs).flat().length > 0;
+  function minutesToTime(mins: number): string {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  function checkShiftSync(day: string, savedSchedule?: Schedule) {
+    const sched = savedSchedule ?? schedule;
+    const morningSlots = sched[`${day}_בוקר`] || [];
+    const eveningSlots = sched[`${day}_ערב`] || [];
+    if (morningSlots.length === 0 || eveningSlots.length === 0) return;
+
+    // Build station map for morning and evening
+    const morningByStation: Record<string, { slot: Slot; idx: number }> = {};
+    morningSlots.forEach((s, idx) => {
+      if (s.employeeId !== null && s.station && s.station !== 'אחר' && s.station !== 'התלמדות')
+        morningByStation[s.station] = { slot: s, idx };
     });
-    if (!hasAnyPrefs) {
-      setNoPrefsToast(true);
-      setTimeout(() => setNoPrefsToast(false), 5000);
-      return;
+    const eveningByStation: Record<string, { slot: Slot; idx: number }> = {};
+    eveningSlots.forEach((s, idx) => {
+      if (s.employeeId !== null && s.station && s.station !== 'אחר' && s.station !== 'התלמדות')
+        eveningByStation[s.station] = { slot: s, idx };
+    });
+
+    const issues: SyncIssue[] = [];
+    for (const station of Object.keys(morningByStation)) {
+      if (!eveningByStation[station]) continue;
+      const mSlot = morningByStation[station];
+      const eSlot = eveningByStation[station];
+      const morningDep = mSlot.slot.departureTime;
+      const eveningArr = eSlot.slot.arrivalTime;
+      if (!morningDep || !eveningArr || morningDep === eveningArr) continue;
+      const morningMins = timeToMinutes(morningDep);
+      const eveningMins = timeToMinutes(eveningArr);
+      const diff = Math.abs(eveningMins - morningMins);
+      const mEmpName = employees.find(e => e.id === mSlot.slot.employeeId)?.name || '?';
+      const eEmpName = employees.find(e => e.id === eSlot.slot.employeeId)?.name || '?';
+      issues.push({
+        station,
+        morningEmpName: mEmpName,
+        eveningEmpName: eEmpName,
+        morningDeparture: morningDep,
+        eveningArrival: eveningArr,
+        type: eveningMins > morningMins ? 'gap' : 'overlap',
+        diffMinutes: diff,
+        morningShiftSlotIdx: mSlot.idx,
+        eveningShiftSlotIdx: eSlot.idx,
+      });
     }
+    if (issues.length > 0) {
+      setSyncWarningModal({ day, issues });
+    }
+  }
+
+  function runAutoScheduleForWeek(
+    targetWeekKey: string,
+    targetSchedule: Schedule,
+    targetCustomShifts: Record<string, CustomShiftDef[]>,
+    targetPrefs: Record<number, EmployeePrefs>,
+    targetVoltFlags: VoltFlags,
+  ): { schedule: Schedule; shortages: ShortageItem[]; ties: TieItem[]; emptySlots: { day: string; shift: string }[]; traineeResults: TraineeResult[] } {
+    // Shadow component state with parameters for reusability across weeks
+    const weekKey = targetWeekKey;
+    const schedule = targetSchedule;
+    const customShifts = targetCustomShifts;
+    const prefs = targetPrefs;
+    const voltFlags = targetVoltFlags;
+
+    // Compute Friday date from weekKey (Sunday + 5 days)
+    const fridayDate = (() => {
+      const d = new Date(weekKey + 'T00:00:00');
+      d.setDate(d.getDate() + 5);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    })();
+
+    // Build effective structure including custom shifts
+    const effectiveStructure = WEEK_STRUCTURE.map(ws => ({
+      ...ws,
+      shifts: [...ws.shifts.slice(0, 1), ...(customShifts[ws.day] || []).map(cs => cs.name), ...ws.shifts.slice(1)]
+    }));
 
     // Always use canonical initializeSlots — never depend on saved schedule state.
     // This ensures every shift has the correct default number of open slots.
     const workingSlots: Record<string, Slot[]> = {};
-    for (const { day, shifts } of WEEK_STRUCTURE) {
+    for (const { day, shifts } of effectiveStructure) {
       for (const shift of shifts) {
         const key = `${day}_${shift}`;
-        workingSlots[key] = initializeSlots(day, shift);
+        const cs = (customShifts[day] || []).find(c => c.name === shift);
+        if (cs) {
+          // Custom shift: use existing schedule slots or create empty ones
+          const existing = schedule[key];
+          workingSlots[key] = existing ? existing.map(s => s.locked || (s.isFixed) ? { ...s } : { ...s, employeeId: null, station: '' }) : [];
+          // Ensure at least requiredCount slots
+          while (workingSlots[key].length < cs.requiredCount) {
+            workingSlots[key].push({ employeeId: null, arrivalTime: cs.startTime, departureTime: cs.endTime, station: '' });
+          }
+        } else {
+          workingSlots[key] = initializeSlots(day, shift);
+        }
         console.log(`[AutoSchedule] ${day} ${shift}: ${workingSlots[key].filter(s => !s.locked).length} open slots`);
       }
     }
@@ -601,9 +1096,9 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       // Count how many distinct shift slots this employee can actually be assigned to
       // (must match both preference AND availability — same checks as findNextSlot)
       let count = 0;
-      for (const { day, shifts } of WEEK_STRUCTURE) {
+      for (const { day, shifts } of effectiveStructure) {
         for (const shift of shifts) {
-          if (!isEmployeeAvailable(emp, day, shift)) continue;
+          if (!isEmployeeAvailable(emp, day, shift, fridayDate)) continue;
           if ((prefs[emp.id]?.[day] || []).some(p => p.shift === shift)) count++;
         }
       }
@@ -612,9 +1107,9 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
     // Find next available requested open slot for an employee
     const findNextSlot = (emp: Employee) => {
-      for (const { day, shifts } of WEEK_STRUCTURE) {
+      for (const { day, shifts } of effectiveStructure) {
         for (const shift of shifts) {
-          if (!isEmployeeAvailable(emp, day, shift)) continue;
+          if (!isEmployeeAvailable(emp, day, shift, fridayDate)) continue;
           if (!(prefs[emp.id]?.[day] || []).some(p => p.shift === shift)) continue;
           const key = `${day}_${shift}`;
           const slots = workingSlots[key];
@@ -670,9 +1165,9 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       if (neededMap[emp.id] <= 0) continue;
       let remaining = neededMap[emp.id];
       const displaceSlots: { key: string; day: string; shift: string; slotIdx: number; currentEmpId: number }[] = [];
-      for (const { day, shifts } of WEEK_STRUCTURE) {
+      for (const { day, shifts } of effectiveStructure) {
         for (const shift of shifts) {
-          if (!isEmployeeAvailable(emp, day, shift)) continue;
+          if (!isEmployeeAvailable(emp, day, shift, fridayDate)) continue;
           if (!(prefs[emp.id]?.[day] || []).some(p => p.shift === shift)) continue;
           const key = `${day}_${shift}`;
           const slots = workingSlots[key];
@@ -711,7 +1206,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     const ties: TieItem[] = [];
     const emptySlots: { day: string; shift: string }[] = [];
     const TIE_THRESHOLD = 0.001;
-    for (const { day, shifts } of WEEK_STRUCTURE) {
+    for (const { day, shifts } of effectiveStructure) {
       for (const shift of shifts) {
         const key = `${day}_${shift}`;
         const slots = workingSlots[key];
@@ -721,7 +1216,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
             slots.map(s => s.employeeId).filter((id): id is number => id !== null)
           );
           const candidates = regularEmployees.filter(e =>
-            isEmployeeAvailable(e, day, shift) &&
+            isEmployeeAvailable(e, day, shift, fridayDate) &&
             !alreadyInShift.has(e.id) &&
             (prefs[e.id]?.[day] || []).some(p => p.shift === shift)
           );
@@ -754,7 +1249,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     }
 
     // ── Station assignment for all filled non-locked slots ──
-    for (const { day, shifts } of WEEK_STRUCTURE) {
+    for (const { day, shifts } of effectiveStructure) {
       for (const shift of shifts) {
         const key = `${day}_${shift}`;
         const slots = workingSlots[key];
@@ -783,9 +1278,9 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       // Collect all valid shifts with their veteran seniority score
       const candidateShifts: { day: string; shift: string; seniorityDate: string }[] = [];
 
-      for (const { day, shifts } of WEEK_STRUCTURE) {
+      for (const { day, shifts } of effectiveStructure) {
         for (const shift of shifts) {
-          if (!isEmployeeAvailable(trainee, day, shift)) continue;
+          if (!isEmployeeAvailable(trainee, day, shift, fridayDate)) continue;
           if (!(traineePrefs[day] || []).some(p => p.shift === shift)) continue;
 
           const key = `${day}_${shift}`;
@@ -842,8 +1337,30 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       }
     }
 
-    // Always show the result modal for review
-    setAutoResultModal({ isOpen: true, shortages, ties, emptySlots, pendingSchedule: { ...workingSlots }, traineeResults });
+    return { schedule: { ...workingSlots }, shortages, ties, emptySlots, traineeResults };
+  }
+
+  function autoSchedule(overridePrefs?: Record<number, EmployeePrefs>) {
+    const prefs = overridePrefs ?? preferences;
+    const hasAnyPrefs = employees.some(e => {
+      if (e.id === MIYA_ID) return false;
+      const empPrefs = prefs[e.id];
+      return empPrefs && Object.values(empPrefs).flat().length > 0;
+    });
+    if (!hasAnyPrefs) {
+      setNoPrefsToast(true);
+      setTimeout(() => setNoPrefsToast(false), 5000);
+      return;
+    }
+    const result = runAutoScheduleForWeek(weekKey, schedule, customShifts, prefs, voltFlags);
+    setAutoResultModal({
+      isOpen: true,
+      shortages: result.shortages,
+      ties: result.ties,
+      emptySlots: result.emptySlots,
+      pendingSchedule: result.schedule,
+      traineeResults: result.traineeResults,
+    });
   }
 
   function resolveTie(tie: TieItem, chosen: Employee) {
@@ -872,7 +1389,11 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
     // Count current assignments in pendingSchedule (non-locked)
     const counts: Record<number, number> = {};
-    for (const { day, shifts } of WEEK_STRUCTURE) {
+    const proposalStructure = WEEK_STRUCTURE.map(ws => ({
+      ...ws,
+      shifts: [...ws.shifts.slice(0, 1), ...(customShifts[ws.day] || []).map(cs => cs.name), ...ws.shifts.slice(1)]
+    }));
+    for (const { day, shifts } of proposalStructure) {
       for (const shift of shifts) {
         for (const slot of sched[`${day}_${shift}`] || []) {
           if (slot.employeeId !== null && !slot.locked)
@@ -881,11 +1402,12 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       }
     }
 
-    const canWork = (day: string, shift: string) => {
-      if (day === 'שישי' && !emp.friday) return false;
-      if (emp.shiftType !== 'הכל' && emp.shiftType !== shift) return false;
-      return true;
-    };
+    const fridayDate = (() => {
+      const d = new Date(weekKey + 'T00:00:00');
+      d.setDate(d.getDate() + 5);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    })();
+    const canWork = (day: string, shift: string) => isEmployeeAvailable(emp, day, shift, fridayDate);
 
     const hasRequested = (day: string, shift: string) =>
       (preferences[emp.id]?.[day] || []).some(p => p.shift === shift);
@@ -893,7 +1415,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     const openSlots: { day: string; shift: string; slotIdx: number }[] = [];
     const transferOptions: { fromEmp: Employee; day: string; shift: string; slotIdx: number }[] = [];
 
-    for (const { day, shifts } of WEEK_STRUCTURE) {
+    for (const { day, shifts } of proposalStructure) {
       for (const shift of shifts) {
         if (!canWork(day, shift)) continue;
         // Iron rule: only consider shifts the employee explicitly requested
@@ -976,7 +1498,11 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   function getBoardShortageProposals(shortage: ShortageItem) {
     const emp = shortage.emp;
     const counts: Record<number, number> = {};
-    for (const { day, shifts } of WEEK_STRUCTURE) {
+    const boardStructure = WEEK_STRUCTURE.map(ws => ({
+      ...ws,
+      shifts: [...ws.shifts.slice(0, 1), ...(customShifts[ws.day] || []).map(cs => cs.name), ...ws.shifts.slice(1)]
+    }));
+    for (const { day, shifts } of boardStructure) {
       for (const shift of shifts) {
         for (const slot of schedule[`${day}_${shift}`] || []) {
           if (slot.employeeId !== null && !slot.locked)
@@ -984,14 +1510,15 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
         }
       }
     }
-    const canWork = (day: string, shift: string) => {
-      if (day === 'שישי' && !emp.friday) return false;
-      if (emp.shiftType !== 'הכל' && emp.shiftType !== shift) return false;
-      return true;
-    };
+    const fridayDate2 = (() => {
+      const d = new Date(weekKey + 'T00:00:00');
+      d.setDate(d.getDate() + 5);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    })();
+    const canWork = (day: string, shift: string) => isEmployeeAvailable(emp, day, shift, fridayDate2);
     const openSlots: { day: string; shift: string; slotIdx: number }[] = [];
     const transferOptions: { fromEmp: Employee; day: string; shift: string; slotIdx: number }[] = [];
-    for (const { day, shifts } of WEEK_STRUCTURE) {
+    for (const { day, shifts } of boardStructure) {
       for (const shift of shifts) {
         if (!canWork(day, shift)) continue;
         const slots = schedule[`${day}_${shift}`] || [];
@@ -1074,7 +1601,11 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
   function saveAutoResult() {
     const finalSchedule = { ...autoResultModal.pendingSchedule };
-    for (const { day, shifts } of WEEK_STRUCTURE) {
+    const saveStructure = WEEK_STRUCTURE.map(ws => ({
+      ...ws,
+      shifts: [...ws.shifts.slice(0, 1), ...(customShifts[ws.day] || []).map(cs => cs.name), ...ws.shifts.slice(1)]
+    }));
+    for (const { day, shifts } of saveStructure) {
       for (const shift of shifts) {
         const key = `${day}_${shift}`;
         const slots = finalSchedule[key];
@@ -1092,6 +1623,25 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     }
     saveSchedule(finalSchedule);
     addFairnessEvents(finalSchedule, weekKey);
+
+    // Track biweekly Friday assignments in localStorage
+    const fridayDate = (() => {
+      const d = new Date(weekKey + 'T00:00:00');
+      d.setDate(d.getDate() + 5);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    })();
+    for (const shift of ['בוקר']) {
+      const key = `שישי_${shift}`;
+      for (const slot of finalSchedule[key] || []) {
+        if (slot.employeeId !== null) {
+          const emp = employees.find(e => e.id === slot.employeeId);
+          if (emp?.fridayAvailability === 'biweekly') {
+            localStorage.setItem(`lastFridayWorked_${emp.id}`, fridayDate);
+          }
+        }
+      }
+    }
+
     setAutoResultModal({ isOpen: false, shortages: [], ties: [], emptySlots: [], pendingSchedule: {}, traineeResults: [] });
   }
 
@@ -1101,11 +1651,12 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     let text = `שיבוץ שבוע ${formatDate(weekStart)}–${formatDate(weekEnd)}.${weekStart.getFullYear()}\n\n`;
     for (const d of weekDays) {
       text += `${d.day} ${d.dateStr}:\n`;
-      for (const shift of d.shifts) {
+      const dayShifts = getShiftsForDay(d.day);
+      for (const { name: shift, isCustom } of dayShifts) {
         const slots = getOrInitializeSlots(d.day, shift);
         const assigned = slots.filter(s => s.employeeId !== null);
         if (assigned.length > 0) {
-          text += `${shift}:\n`;
+          text += `${shift}${isCustom ? ' (מותאם)' : ''}:\n`;
           for (const slot of assigned) {
             const name = (slot.locked && slot.employeeId !== null)
               ? 'מיה'
@@ -1133,11 +1684,15 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       for (const day of days) rows += `<td style="padding:10px;border:1px solid #999;text-align:center">${day}</td>`;
       rows += '</tr>';
 
-      for (const shift of ['בוקר', 'ערב']) {
-        rows += `<tr><td style="padding:10px;border:1px solid #999;background:#f5f5f5;font-weight:bold;text-align:center">${shift}</td>`;
+      for (const { name: shift, isCustom } of getAllShiftRows()) {
+        const label = isCustom ? `${shift} (מותאם)` : shift;
+        const bgColor = isCustom ? '#FAEEDA' : '#f5f5f5';
+        rows += `<tr><td style="padding:10px;border:1px solid #999;background:${bgColor};font-weight:bold;text-align:center">${label}</td>`;
         for (const day of days) {
-          const dayObj = WEEK_STRUCTURE.find(w => w.day === day);
-          if (!dayObj?.shifts.includes(shift)) {
+          const dayHasShift = isCustom
+            ? (customShifts[day] || []).some(cs => cs.name === shift)
+            : (WEEK_STRUCTURE.find(w => w.day === day)?.shifts.includes(shift) ?? false);
+          if (!dayHasShift) {
             rows += '<td style="padding:10px;border:1px solid #999;text-align:center;color:#bbb">—</td>';
             continue;
           }
@@ -1368,14 +1923,15 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
                     >ביטול</button>
                     <button
                       onClick={() => {
-                        updateSlotField(day, shift, slotIdx, {
-                          arrivalTime: tempSlotData.arrivalTime,
-                          departureTime: tempSlotData.departureTime,
-                          station: tempSlotData.station,
-                        });
+                        const key = `${day}_${shift}`;
+                        const slots = getOrInitializeSlots(day, shift);
+                        const newSlots = slots.map((s, i) => i === slotIdx ? { ...s, arrivalTime: tempSlotData.arrivalTime, departureTime: tempSlotData.departureTime, station: tempSlotData.station } : s);
+                        const updatedSchedule = { ...schedule, [key]: newSlots };
+                        saveSchedule(updatedSchedule);
                         closePopover(false);
                         setSlotSaveToast(true);
                         setTimeout(() => setSlotSaveToast(false), 2000);
+                        checkShiftSync(day, updatedSchedule);
                       }}
                       style={{ width: '100%', padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
                     >שמור שינויים</button>
@@ -1385,7 +1941,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
                 /* Non-locked slot — uses tempSlotData */
                 const tempEmpId = tempSlotData.employeeId;
                 const tempIsDuplicate = tempEmpId !== null && shiftSlots.some((s, i) =>
-                  i !== slotIdx && !s.locked && s.employeeId !== null && Number(s.employeeId) === Number(tempEmpId)
+                  i !== slotIdx && s.employeeId !== null && Number(s.employeeId) === Number(tempEmpId)
                 );
                 const tempDuplicateName = tempIsDuplicate ? (employees.find(e => e.id === tempEmpId)?.name || '') : '';
                 const tempStationTaken = !!tempSlotData.station && tempSlotData.station !== 'התלמדות' && shiftSlots.some((s, i) =>
@@ -1473,18 +2029,18 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
                             setPopoverValidationError(true);
                             return;
                           }
-                          updateSlotField(day, shift, slotIdx, {
-                            employeeId: tempSlotData.employeeId,
-                            arrivalTime: tempSlotData.arrivalTime,
-                            departureTime: tempSlotData.departureTime,
-                            station: tempSlotData.station,
-                          });
+                          const key = `${day}_${shift}`;
+                          const slots = getOrInitializeSlots(day, shift);
+                          const newSlots = slots.map((s, i) => i === slotIdx ? { ...s, employeeId: tempSlotData.employeeId, arrivalTime: tempSlotData.arrivalTime, departureTime: tempSlotData.departureTime, station: tempSlotData.station } : s);
+                          const updatedSchedule = { ...schedule, [key]: newSlots };
+                          saveSchedule(updatedSchedule);
                           const addedName = employees.find(e => e.id === tempSlotData.employeeId)?.name || '';
                           setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false);
                           if (editingSlot?.isNew) {
                             setSlotAddToast(addedName);
                             setTimeout(() => setSlotAddToast(null), 2000);
                           }
+                          checkShiftSync(day, updatedSchedule);
                         }}
                         style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
                       >
@@ -1737,17 +2293,26 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
             </tr>
           </thead>
           <tbody>
-            {(['בוקר', 'ערב'] as const).map(shift => {
-              const shiftColor = shift === 'בוקר' ? '#4a7c59' : '#c17f3b';
+            {getAllShiftRows().map(({ name: shift, isCustom }) => {
+              const shiftColor = isCustom ? '#EF9F27' : (shift === 'בוקר' ? '#4a7c59' : '#c17f3b');
+              const labelBg = isCustom ? '#EF9F27' : '#1a4a2e';
               return (
                 <tr key={shift}>
-                  <td style={{ padding: '8px 6px', fontWeight: 700, background: '#1a4a2e', color: 'white', verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}`, fontSize: 12 }}>
-                    {shift}
+                  <td style={{ padding: '8px 6px', fontWeight: 700, background: labelBg, color: 'white', verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${isCustom ? '#EF9F27' : shiftColor}`, fontSize: 12, position: 'relative' }}>
+                    <div>{shift}</div>
+                    {isCustom && <span style={{ fontSize: 8, background: 'rgba(255,255,255,0.3)', padding: '1px 4px', borderRadius: 3, display: 'inline-block', marginTop: 2 }}>מותאם</span>}
                   </td>
                   {visibleDays.map(d => {
-                    if (!d.shifts.includes(shift)) {
+                    // Check if this day has this shift
+                    const dayHasShift = isCustom
+                      ? (customShifts[d.day] || []).some(cs => cs.name === shift)
+                      : d.shifts.includes(shift);
+
+                    if (!dayHasShift) {
                       return (
-                        <td key={d.day} style={{ padding: 6, textAlign: 'center', color: '#94a3b8', fontSize: 11, background: '#faf7f2', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}` }}>אין ערב בשישי</td>
+                        <td key={d.day} style={{ padding: 6, textAlign: 'center', color: '#94a3b8', fontSize: 11, background: isCustom ? '#FAEEDA' : '#faf7f2', borderBottom: '1px solid #e8e0d4', borderTop: `3px ${isCustom ? 'dashed' : 'solid'} ${shiftColor}` }}>
+                          {!isCustom && shift === 'ערב' && d.day === 'שישי' ? 'אין ערב בשישי' : ''}
+                        </td>
                       );
                     }
 
@@ -1757,20 +2322,20 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
                     const stations = getStations(d.day, hasVolt);
 
                     // Dynamic cell coloring
-                    const defaultSlots = (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
-                    const requiredCount = defaultSlots + (shift === 'בוקר' && MIYA_SCHEDULE[d.day] ? 1 : 0);
+                    const cs = isCustom ? (customShifts[d.day] || []).find(c => c.name === shift) : null;
+                    const defaultSlots = isCustom ? (cs?.requiredCount || 0) : (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
+                    const requiredCount = isCustom ? defaultSlots : defaultSlots + (shift === 'בוקר' && MIYA_SCHEDULE[d.day] ? 1 : 0);
                     const filledCount = slots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
-                    const shiftBg = filledCount >= requiredCount ? '#f0fdf4' : '#fef2f2';
-                    const borderRight = filledCount >= requiredCount ? '4px solid #16a34a' : '4px solid #ef4444';
-                    console.log(`[Cell] ${d.day} ${shift}: filled=${filledCount}, required=${requiredCount}, color=${filledCount >= requiredCount ? 'green' : 'red'}`);
+                    const shiftBg = isCustom ? (filledCount >= requiredCount ? '#FFF8ED' : '#FEF2F2') : (filledCount >= requiredCount ? '#f0fdf4' : '#fef2f2');
+                    const borderRight = filledCount >= requiredCount ? (isCustom ? '4px solid #EF9F27' : '4px solid #16a34a') : '4px solid #ef4444';
 
                     return (
                       <td
                         key={d.day}
-                        style={{ padding: 6, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px solid ${shiftColor}`, overflow: 'hidden', ...(borderRight ? { borderRight } : {}) }}
+                        style={{ padding: 6, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px ${isCustom ? 'dashed' : 'solid'} ${shiftColor}`, overflow: 'hidden', ...(borderRight ? { borderRight } : {}) }}
                       >
-                        {/* Volt toggle — not for שישי */}
-                        {d.day !== 'שישי' && (
+                        {/* Volt toggle — not for שישי, not for custom */}
+                        {!isCustom && d.day !== 'שישי' && (
                           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, marginBottom: 5, color: '#64748b', cursor: 'pointer', ...(isMobile ? { width: '100%', padding: '4px 0' } : {}) }}>
                             <input
                               type="checkbox"
@@ -1782,6 +2347,17 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
                           </label>
                         )}
 
+                        {/* Delete custom shift button (per-day) */}
+                        {isCustom && (
+                          <button
+                            onClick={() => deleteCustomShift(d.day, shift)}
+                            style={{ fontSize: 9, color: '#dc2626', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, cursor: 'pointer', padding: '1px 6px', marginBottom: 4, float: 'left' }}
+                            title={`מחק משמרת ${shift}`}
+                          >
+                            ✕
+                          </button>
+                        )}
+
                         {/* Slot rows */}
                         {slots.map((slot, idx) =>
                           renderSlotRow(d.day, shift, slot, idx, stations)
@@ -1791,8 +2367,9 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
                         <button
                           onClick={(e) => {
                             addSlot(d.day, shift);
-                            const defaultArrival = shift === 'בוקר' ? '07:00' : '14:00';
-                            const defaultDeparture = shift === 'בוקר' ? '14:00' : '21:00';
+                            const csForAdd = (customShifts[d.day] || []).find(c => c.name === shift);
+                            const defaultArrival = csForAdd ? csForAdd.startTime : (shift === 'בוקר' ? '07:00' : '14:00');
+                            const defaultDeparture = csForAdd ? csForAdd.endTime : (shift === 'בוקר' ? '14:00' : '21:00');
                             setTempSlotData({ employeeId: null, arrivalTime: defaultArrival, departureTime: defaultDeparture, station: '' });
                             const rect = e.currentTarget.getBoundingClientRect();
                             const popW = isMobile ? 260 : 220;
@@ -1805,8 +2382,8 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
                             setEditingSlot({ day: d.day, shift, slotIdx: slots.length, isNew: true });
                           }}
                           style={{
-                            fontSize: isMobile ? 12 : 10, color: '#4a7c59', background: 'transparent',
-                            border: '1px dashed #a7d5b8', borderRadius: 4,
+                            fontSize: isMobile ? 12 : 10, color: isCustom ? '#EF9F27' : '#4a7c59', background: 'transparent',
+                            border: `1px dashed ${isCustom ? '#EF9F27' : '#a7d5b8'}`, borderRadius: 4,
                             cursor: 'pointer', padding: isMobile ? '6px 8px' : '3px 6px', marginTop: 5, width: '100%',
                           }}
                         >
@@ -1818,6 +2395,26 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
                 </tr>
               );
             })}
+            {/* Add custom shift row */}
+            <tr>
+              <td style={{ padding: '6px', background: '#faf7f2', borderBottom: '1px solid #e8e0d4', fontSize: 11, fontWeight: 600, color: '#EF9F27' }}>
+                + משמרת
+              </td>
+              {visibleDays.map(d => (
+                <td key={d.day} style={{ padding: 6, background: '#faf7f2', borderBottom: '1px solid #e8e0d4', textAlign: 'center' }}>
+                  <button
+                    onClick={() => {
+                      setCustomShiftModalDay(d.day);
+                      setCustomShiftForm({ name: '', startTime: '', endTime: '', requiredCount: 2 });
+                      setShowCustomShiftModal(true);
+                    }}
+                    style={{ fontSize: 12, color: '#EF9F27', background: 'transparent', border: '0.5px dashed #EF9F27', borderRadius: 6, cursor: 'pointer', padding: 6, width: '100%' }}
+                  >
+                    + הוסף משמרת
+                  </button>
+                </td>
+              ))}
+            </tr>
           </tbody>
         </table>
       </div>
@@ -1848,7 +2445,11 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       {autoResultModal.isOpen && (() => {
         // Compute summary from pending schedule
         let filledCount = 0, totalCount = 0;
-        for (const { day, shifts } of WEEK_STRUCTURE) {
+        const summaryStructure = WEEK_STRUCTURE.map(ws => ({
+          ...ws,
+          shifts: [...ws.shifts.slice(0, 1), ...(customShifts[ws.day] || []).map(cs => cs.name), ...ws.shifts.slice(1)]
+        }));
+        for (const { day, shifts } of summaryStructure) {
           for (const shift of shifts) {
             const slots = autoResultModal.pendingSchedule[`${day}_${shift}`] || [];
             for (const slot of slots) {
@@ -2061,24 +2662,78 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
         </div>
       )}
 
-      {/* Plan ahead toast */}
-      {planAheadToast.show && (
-        <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: '#1a4a2e', color: 'white', padding: '12px 28px', borderRadius: 8, zIndex: 9999, fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
-          {`נוצרו ${planAheadToast.count} שבועות לתכנון`}
-        </div>
-      )}
+      {/* Shift sync warning modal */}
+      {syncWarningModal && (() => {
+        const { day, issues } = syncWarningModal;
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: 'white', borderRadius: 10, padding: 24, maxWidth: 500, width: '95%', direction: 'rtl' }}>
+              <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 700, color: '#b45309' }}>
+                ⚠️ בעיית רצף בעמדה
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
+                {issues.map((issue, idx) => (
+                  <div key={idx} style={{ fontSize: 14, color: '#374151', lineHeight: 1.7, background: '#FFF9F0', borderRadius: 8, padding: '10px 14px', border: '1px solid #FCEBC8' }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>{issue.station} ביום {day}:</div>
+                    <div>בוקר ({issue.morningEmpName}) מסתיים ב-<strong>{issue.morningDeparture}</strong></div>
+                    <div>ערב ({issue.eveningEmpName}) מתחיל ב-<strong>{issue.eveningArrival}</strong></div>
+                    <div style={{ fontWeight: 600, color: issue.type === 'gap' ? '#b45309' : '#dc2626', marginTop: 4 }}>
+                      {issue.type === 'gap'
+                        ? `קיים חוסר כיסוי של ${issue.diffMinutes} דקות.`
+                        : `קיימת חפיפה של ${issue.diffMinutes} דקות.`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setSyncWarningModal(null)}
+                  style={{ padding: '8px 16px', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', background: '#f5f0e8', color: '#475569', fontWeight: 600, fontSize: 13 }}
+                >
+                  הבנתי, המשך שמירה
+                </button>
+                <button
+                  onClick={() => {
+                    let updatedSched = { ...schedule };
+                    for (const issue of issues) {
+                      const avg = Math.round((timeToMinutes(issue.morningDeparture) + timeToMinutes(issue.eveningArrival)) / 2);
+                      const avgTime = minutesToTime(avg);
+                      // Fix morning departure
+                      const morningKey = `${day}_בוקר`;
+                      const morningSlots = [...(updatedSched[morningKey] || [])];
+                      morningSlots[issue.morningShiftSlotIdx] = { ...morningSlots[issue.morningShiftSlotIdx], departureTime: avgTime };
+                      updatedSched = { ...updatedSched, [morningKey]: morningSlots };
+                      // Fix evening arrival
+                      const eveningKey = `${day}_ערב`;
+                      const eveningSlots = [...(updatedSched[eveningKey] || [])];
+                      eveningSlots[issue.eveningShiftSlotIdx] = { ...eveningSlots[issue.eveningShiftSlotIdx], arrivalTime: avgTime };
+                      updatedSched = { ...updatedSched, [eveningKey]: eveningSlots };
+                    }
+                    saveSchedule(updatedSched);
+                    setSyncWarningModal(null);
+                  }}
+                  style={{ padding: '8px 16px', background: '#b45309', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
+                >
+                  תקן אוטומטית
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Plan ahead modal */}
       {showPlanAheadModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'white', borderRadius: 10, padding: 24, maxWidth: 480, width: '100%', position: 'relative', direction: 'rtl' }}>
             <button
-              onClick={() => setShowPlanAheadModal(false)}
+              onClick={closePlanAheadFlow}
               style={{ position: 'absolute', right: 12, top: 12, width: 28, height: 28, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}
             >
               ✕
             </button>
 
+            {planAheadStep === 'dateRange' && (<>
             <h3 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 700, color: '#1a4a2e' }}>תכנן קדימה</h3>
 
             {/* Quick select */}
@@ -2169,7 +2824,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
-                    onClick={() => createPlanAheadWeeks(true)}
+                    onClick={() => { setPlanAheadNoPrefsWarning(false); setPlanAheadStep('question'); }}
                     style={{ padding: '6px 14px', fontSize: 13, background: '#f5f0e8', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', fontWeight: 600, color: '#475569' }}
                   >
                     המשך בכל זאת
@@ -2193,21 +2848,305 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
             {/* Action buttons */}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
-                onClick={() => setShowPlanAheadModal(false)}
+                onClick={closePlanAheadFlow}
                 style={{ padding: '8px 16px', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', background: '#f5f0e8', color: '#475569', fontWeight: 600 }}
               >
                 ביטול
               </button>
               <button
-                onClick={() => createPlanAheadWeeks()}
+                onClick={() => {
+                  if (!checkPlanAheadPreferences()) { setPlanAheadNoPrefsWarning(true); return; }
+                  setPlanAheadStep('question');
+                }}
                 style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700 }}
               >
-                צור שבועות
+                המשך לשיבוץ
               </button>
             </div>
+            </>)}
+
+            {/* Question step */}
+            {planAheadStep === 'question' && (() => {
+              const sundays = getWeekSundaysInRange(planAheadFrom, planAheadTo);
+              return (
+                <div style={{ textAlign: 'center' }}>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#1a4a2e' }}>האם יש משמרות מיוחדות בטווח זה?</h3>
+                  <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>{`${sundays.length} שבועות | ${formatDate(planAheadFrom)}–${formatDate(planAheadTo)}`}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+                    <button
+                      onClick={() => setPlanAheadStep('specialShifts')}
+                      style={{ padding: '10px 24px', fontSize: 14, background: '#EF9F27', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 700, width: '100%', maxWidth: 300 }}
+                    >
+                      כן, אוסיף משמרות מיוחדות
+                    </button>
+                    <button
+                      onClick={() => runPlanAheadAutoSchedule()}
+                      style={{ padding: '10px 24px', fontSize: 14, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 700, width: '100%', maxWidth: 300 }}
+                    >
+                      לא, המשך לשיבוץ
+                    </button>
+                    <button
+                      onClick={() => setPlanAheadStep('dateRange')}
+                      style={{ padding: '8px 16px', fontSize: 13, background: 'transparent', color: '#64748b', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', fontWeight: 500 }}
+                    >
+                      חזור
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Special shifts step */}
+            {planAheadStep === 'specialShifts' && (
+              <div>
+                <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: '#EF9F27' }}>משמרות מיוחדות</h3>
+                <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px' }}>{`הוסיפי משמרות מיוחדות לטווח ${formatDate(planAheadFrom)}–${formatDate(planAheadTo)}`}</p>
+
+                {specialShifts.length > 0 && (
+                  <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+                    {specialShifts.map(ss => (
+                      <div key={ss.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FFF7ED', border: '1px solid #FCEBC8', borderRadius: 8, padding: '8px 12px', fontSize: 13 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF9F27', flexShrink: 0 }} />
+                        <span style={{ fontWeight: 600, flex: 1 }}>{ss.name}</span>
+                        <span style={{ color: '#64748b' }}>{ss.date.split('-').reverse().join('.')}</span>
+                        <span style={{ color: '#64748b' }}>{ss.startTime}–{ss.endTime}</span>
+                        <span style={{ color: '#64748b' }}>×{ss.requiredCount}</span>
+                        <button onClick={() => setSpecialShifts(prev => prev.filter(s => s.id !== ss.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#ef4444', padding: '2px 4px' }} title="מחק">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ borderTop: '1px solid #e8e0d4', margin: '0 0 16px' }} />
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input type="text" placeholder="שם המשמרת" value={specialShiftForm.name} onChange={e => setSpecialShiftForm(f => ({ ...f, name: e.target.value }))} style={{ flex: 1, padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4' }} />
+                    <input type="date" value={specialShiftForm.date} onChange={e => { const val = e.target.value; setSpecialShiftForm(f => ({ ...f, date: val, name: f.name || (val ? getDefaultSpecialShiftName(val) : '') })); }} style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: '#64748b' }}>מ-</span>
+                    <input type="time" value={specialShiftForm.startTime} onChange={e => setSpecialShiftForm(f => ({ ...f, startTime: e.target.value }))} style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4' }} />
+                    <span style={{ fontSize: 12, color: '#64748b' }}>עד</span>
+                    <input type="time" value={specialShiftForm.endTime} onChange={e => setSpecialShiftForm(f => ({ ...f, endTime: e.target.value }))} style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4' }} />
+                    <span style={{ fontSize: 12, color: '#64748b' }}>כמות:</span>
+                    <select value={specialShiftForm.requiredCount} onChange={e => setSpecialShiftForm(f => ({ ...f, requiredCount: Number(e.target.value) }))} style={{ padding: '6px 8px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4' }}>
+                      {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const { name, date, startTime, endTime, requiredCount } = specialShiftForm;
+                      if (!name || !date || !startTime || !endTime) return;
+                      if (!isDateInPlanAheadRange(date)) return;
+                      if (timeToMinutes(endTime) <= timeToMinutes(startTime)) return;
+                      setSpecialShifts(prev => [...prev, { id: Date.now().toString(), name, date, startTime, endTime, requiredCount }]);
+                      setSpecialShiftForm({ name: '', date: '', startTime: '', endTime: '', requiredCount: 2 });
+                    }}
+                    disabled={!specialShiftForm.name || !specialShiftForm.date || !specialShiftForm.startTime || !specialShiftForm.endTime || !isDateInPlanAheadRange(specialShiftForm.date)}
+                    style={{ padding: '8px 16px', fontSize: 13, background: '#EF9F27', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 700, opacity: (!specialShiftForm.name || !specialShiftForm.date || !specialShiftForm.startTime || !specialShiftForm.endTime) ? 0.5 : 1, alignSelf: 'flex-start' }}
+                  >
+                    + הוסף משמרת
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+                  <button onClick={() => { setSpecialShifts([]); setPlanAheadStep('question'); }} style={{ padding: '8px 16px', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', background: '#f5f0e8', color: '#475569', fontWeight: 600 }}>ביטול</button>
+                  <button onClick={() => runPlanAheadAutoSchedule()} disabled={specialShifts.length === 0} style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700, opacity: specialShifts.length === 0 ? 0.5 : 1 }}>שמור והמשך לשיבוץ</button>
+                </div>
+              </div>
+            )}
+
+            {/* Running step */}
+            {planAheadStep === 'running' && (
+              <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                <div style={{ fontSize: 32, marginBottom: 16 }}>⏳</div>
+                <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 700, color: '#1a4a2e' }}>משבץ...</h3>
+                <p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>
+                  {`${getWeekSundaysInRange(planAheadFrom, planAheadTo).length} שבועות`}
+                  {specialShifts.length > 0 && ` | ${specialShifts.length} משמרות מיוחדות`}
+                </p>
+              </div>
+            )}
+
+            {/* Summary step */}
+            {planAheadStep === 'summary' && planAheadSummary && (
+              <div>
+                <h3 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 700, color: '#1a4a2e' }}>סיכום שיבוץ</h3>
+                <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                  <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '8px 14px', fontSize: 13, textAlign: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: 18, color: '#1a4a2e' }}>{planAheadSummary.weeksScheduled}</div>
+                    <div style={{ color: '#64748b' }}>שבועות</div>
+                  </div>
+                  <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '8px 14px', fontSize: 13, textAlign: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: 18, color: '#1a4a2e' }}>{planAheadSummary.totalShifts}</div>
+                    <div style={{ color: '#64748b' }}>סלוטים</div>
+                  </div>
+                  {planAheadSummary.specialShiftsCount > 0 && (
+                    <div style={{ background: '#FFF7ED', borderRadius: 8, padding: '8px 14px', fontSize: 13, textAlign: 'center' }}>
+                      <div style={{ fontWeight: 700, fontSize: 18, color: '#EF9F27' }}>{planAheadSummary.specialShiftsCount}</div>
+                      <div style={{ color: '#64748b' }}>מיוחדות</div>
+                    </div>
+                  )}
+                  {planAheadSummary.unfilledSlots > 0 && (
+                    <div style={{ background: '#FEF2F2', borderRadius: 8, padding: '8px 14px', fontSize: 13, textAlign: 'center' }}>
+                      <div style={{ fontWeight: 700, fontSize: 18, color: '#ef4444' }}>{planAheadSummary.unfilledSlots}</div>
+                      <div style={{ color: '#64748b' }}>לא מאוישים</div>
+                    </div>
+                  )}
+                </div>
+                <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                  {planAheadSummary.weekDetails.map(wd => (
+                    <div key={wd.weekKey} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, fontSize: 13, background: wd.filled === wd.total ? '#f0fdf4' : '#FFFBEB', border: `1px solid ${wd.filled === wd.total ? '#bbf7d0' : '#FCEBC8'}` }}>
+                      <span style={{ fontWeight: 600, flex: 1 }}>{wd.weekLabel}</span>
+                      <span style={{ color: wd.filled === wd.total ? '#16a34a' : '#b45309' }}>{wd.filled}/{wd.total}</span>
+                      {wd.specialCount > 0 && <span style={{ color: '#EF9F27', fontWeight: 600 }}>+{wd.specialCount} מיוחדות</span>}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => {
+                      const firstSunday = getWeekSundaysInRange(planAheadFrom, planAheadTo)[0];
+                      if (firstSunday) {
+                        const now = new Date();
+                        const thisSunday = new Date(now);
+                        thisSunday.setDate(now.getDate() - now.getDay());
+                        thisSunday.setHours(0, 0, 0, 0);
+                        const diff = Math.round((firstSunday.getTime() - thisSunday.getTime()) / (7 * 86400000));
+                        setWeekOffset(diff);
+                      }
+                      closePlanAheadFlow();
+                    }}
+                    style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700 }}
+                  >
+                    עבור ללוח השיבוץ
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* Custom shift modal */}
+      {showCustomShiftModal && (() => {
+        const isValid = customShiftForm.name.trim() !== ''
+          && customShiftForm.startTime !== ''
+          && customShiftForm.endTime !== ''
+          && customShiftForm.name !== 'בוקר' && customShiftForm.name !== 'ערב'
+          && !(customShifts[customShiftModalDay] || []).some(cs => cs.name === customShiftForm.name)
+          && (customShiftForm.endTime === '' || customShiftForm.startTime === '' || timeToMinutes(customShiftForm.endTime) > timeToMinutes(customShiftForm.startTime));
+
+        const dayHasMorning = WEEK_STRUCTURE.find(w => w.day === customShiftModalDay)?.shifts.includes('בוקר');
+        const dayHasEvening = WEEK_STRUCTURE.find(w => w.day === customShiftModalDay)?.shifts.includes('ערב');
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: 'white', borderRadius: 10, padding: 24, maxWidth: 440, width: '95%', direction: 'rtl' }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700, color: '#EF9F27' }}>הוספת משמרת</h3>
+              <p style={{ margin: '0 0 16px', fontSize: 12, color: '#64748b' }}>המשמרת תתווסף בין הבוקר לערב בהתאם לשעות</p>
+
+              {/* Day select */}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>יום</label>
+                <select
+                  value={customShiftModalDay}
+                  onChange={e => setCustomShiftModalDay(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 14, borderRadius: 6, border: '1px solid #e8e0d4' }}
+                >
+                  {WEEK_STRUCTURE.map(w => <option key={w.day} value={w.day}>{w.day}</option>)}
+                </select>
+              </div>
+
+              {/* Shift name */}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>שם משמרת</label>
+                <input
+                  type="text"
+                  placeholder="לדוגמה: צהריים, חפיפה"
+                  value={customShiftForm.name}
+                  onChange={e => setCustomShiftForm(f => ({ ...f, name: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 14, borderRadius: 6, border: '1px solid #e8e0d4', boxSizing: 'border-box' }}
+                />
+                {(customShiftForm.name === 'בוקר' || customShiftForm.name === 'ערב') && (
+                  <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>לא ניתן להשתמש בשם "בוקר" או "ערב"</div>
+                )}
+                {(customShifts[customShiftModalDay] || []).some(cs => cs.name === customShiftForm.name) && (
+                  <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>שם משמרת כזה כבר קיים ביום {customShiftModalDay}</div>
+                )}
+              </div>
+
+              {/* Times */}
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>שעת התחלה</label>
+                  <input
+                    type="time"
+                    value={customShiftForm.startTime}
+                    onChange={e => setCustomShiftForm(f => ({ ...f, startTime: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 14, borderRadius: 6, border: '1px solid #e8e0d4', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>שעת סיום</label>
+                  <input
+                    type="time"
+                    value={customShiftForm.endTime}
+                    onChange={e => setCustomShiftForm(f => ({ ...f, endTime: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 14, borderRadius: 6, border: '1px solid #e8e0d4', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+              {customShiftForm.startTime && customShiftForm.endTime && timeToMinutes(customShiftForm.endTime) <= timeToMinutes(customShiftForm.startTime) && (
+                <div style={{ fontSize: 11, color: '#dc2626', marginBottom: 8 }}>שעת הסיום חייבת להיות אחרי שעת ההתחלה</div>
+              )}
+
+              {/* Required count */}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>מספר עובדות</label>
+                <select
+                  value={customShiftForm.requiredCount}
+                  onChange={e => setCustomShiftForm(f => ({ ...f, requiredCount: Number(e.target.value) }))}
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 14, borderRadius: 6, border: '1px solid #e8e0d4' }}
+                >
+                  {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+
+              {/* Info note */}
+              {customShiftForm.startTime && customShiftForm.endTime && timeToMinutes(customShiftForm.endTime) > timeToMinutes(customShiftForm.startTime) && (
+                <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+                  {dayHasMorning && dayHasEvening
+                    ? `⚠️ שעות הבוקר יתואמו אוטומטית לסיום ב-${customShiftForm.startTime} ושעות הערב יתחילו מ-${customShiftForm.endTime}`
+                    : dayHasMorning
+                    ? `⚠️ שעות הבוקר יתואמו אוטומטית לסיום ב-${customShiftForm.startTime}`
+                    : dayHasEvening
+                    ? `⚠️ שעות הערב יתחילו מ-${customShiftForm.endTime}`
+                    : 'ביום זה אין משמרת בוקר/ערב — השעות לא יתואמו אוטומטית'}
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowCustomShiftModal(false)}
+                  style={{ padding: '8px 16px', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', background: '#f5f0e8', color: '#475569', fontWeight: 600, fontSize: 13 }}
+                >
+                  סגור ללא שמירה
+                </button>
+                <button
+                  onClick={createCustomShift}
+                  disabled={!isValid}
+                  style={{ padding: '8px 16px', background: isValid ? '#EF9F27' : '#d1cdc6', color: 'white', border: 'none', borderRadius: 6, cursor: isValid ? 'pointer' : 'not-allowed', fontWeight: 700, fontSize: 13 }}
+                >
+                  שמור והוסף משמרת
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
