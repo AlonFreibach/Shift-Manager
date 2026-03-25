@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Employee } from '../data/employees';
 import type { PrefShift, EmployeePrefs } from '../types';
 import { updateFlexibility, removeFlexibility } from '../utils/fairnessAccumulator';
@@ -75,12 +75,18 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [statusCopyToast, setStatusCopyToast] = useState(false);
 
-  // AI free-text parser state
-  const [aiEmpId, setAiEmpId] = useState<number | null>(null);
-  const [aiText, setAiText] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [aiResult, setAiResult] = useState<{ day: string; shift: string; type: 'want' | 'cant' }[] | null>(null);
+  // API key management state
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [apiKeyEditing, setApiKeyEditing] = useState(false);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+  const [apiKeyToast, setApiKeyToast] = useState(false);
+
+  // Modal free-text extraction state
+  const [freeText, setFreeText] = useState('');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractError, setExtractError] = useState('');
+  const [extractSuccess, setExtractSuccess] = useState('');
+  const extractAbortRef = useRef<AbortController | null>(null);
 
   const weekDays = WEEK_STRUCTURE.map((d, i) => {
     const date = new Date(weekStart);
@@ -128,27 +134,37 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
     removeFlexibility(empId, weekKey);
   }
 
-  const VALID_DAYS = new Set(['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']);
-  const VALID_SHIFTS = new Set(['בוקר', 'ערב', 'הכל']);
-  const VALID_TYPES = new Set(['want', 'cant']);
+  function closeEditModal() {
+    extractAbortRef.current?.abort();
+    setEditModalEmpId(null);
+    setPrefsText('');
+    setParserError(null);
+    setFreeText('');
+    setIsExtracting(false);
+    setExtractError('');
+    setExtractSuccess('');
+  }
 
-  async function aiParsePreferences() {
-    if (aiEmpId === null || !aiText.trim()) return;
-    const emp = employees.find(e => e.id === aiEmpId);
+  async function handleExtractFreeText() {
+    if (!editModalEmpId || !freeText.trim()) return;
+    const emp = employees.find(e => e.id === editModalEmpId);
     if (!emp) return;
 
-    setAiLoading(true);
-    setAiError(null);
-    setAiResult(null);
+    const apiKey = (localStorage.getItem('anthropic_api_key') || '').trim();
+    if (!apiKey) {
+      setExtractError('לא נמצא מפתח API. הגדר בראש הלשונית.');
+      return;
+    }
+
+    setIsExtracting(true);
+    setExtractError('');
+    setExtractSuccess('');
+
+    const controller = new AbortController();
+    extractAbortRef.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const apiKey = localStorage.getItem('anthropic_api_key') || '';
-      if (!apiKey) {
-        setAiError('לא נמצא מפתח API. הזן מפתח בהגדרות (localStorage: anthropic_api_key)');
-        setAiLoading(false);
-        return;
-      }
-
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -157,83 +173,68 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
+        signal: controller.signal,
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 500,
-          system: 'אתה מנתח בקשות משמרות עבור חנות. חלץ מהטקסט הבא את כל הימים והמשמרות שהעובדת מבקשת לעבוד או לא יכולה לעבוד בהם.\nהחזר JSON בלבד, ללא הסברים, ללא backticks.\nפורמט: {"requests":[{"day":"ראשון","shift":"בוקר","type":"want"}]}\nערכים חוקיים: day = ראשון|שני|שלישי|רביעי|חמישי|שישי\nshift = בוקר|ערב|הכל | type = want|cant',
-          messages: [{ role: 'user', content: `עובדת: ${emp.name}\nטקסט: ${aiText}` }],
+          system: 'אתה מנתח בקשות משמרות עבור חנות. חלץ מהטקסט את כל הימים והמשמרות שהעובדת מבקשת לעבוד או לא יכולה. החזר JSON בלבד ללא הסברים וללא backticks. פורמט מדויק: {"requests":[{"day":"ראשון","shift":"בוקר","type":"want"}]}. ערכים חוקיים: day=ראשון|שני|שלישי|רביעי|חמישי|שישי, shift=בוקר|ערב|הכל, type=want|cant',
+          messages: [{ role: 'user', content: `עובדת: ${emp.name}\nטקסט: ${freeText}` }],
         }),
       });
 
-      if (!res.ok) {
-        const errBody = await res.text();
-        throw new Error(`API error ${res.status}: ${errBody}`);
-      }
-
       const data = await res.json();
-      const text = data.content?.[0]?.text || '';
-      const parsed = JSON.parse(text);
-
-      if (!parsed.requests || !Array.isArray(parsed.requests) || parsed.requests.length === 0) {
-        setAiError('לא זוהו העדפות ברורות בטקסט.');
-        setAiLoading(false);
-        return;
+      if (!res.ok) {
+        throw new Error(data.error?.message || `שגיאת API: ${res.status}`);
       }
 
-      // Validate each request
-      const valid = parsed.requests.filter((r: { day: string; shift: string; type: string }) =>
-        VALID_DAYS.has(r.day) && VALID_SHIFTS.has(r.shift) && VALID_TYPES.has(r.type)
+      const rawText = data.content?.[0]?.text || '';
+      const cleaned = rawText.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      if (!parsed.requests || !Array.isArray(parsed.requests)) {
+        throw new Error('פורמט תשובה לא תקין');
+      }
+
+      const validDays = ['ראשון','שני','שלישי','רביעי','חמישי','שישי'];
+      const validShifts = ['בוקר','ערב','הכל'];
+      const validTypes = ['want','cant'];
+
+      const validRequests = parsed.requests.filter((r: { day: string; shift: string; type: string }) =>
+        validDays.includes(r.day) && validShifts.includes(r.shift) && validTypes.includes(r.type)
       );
 
-      if (valid.length === 0) {
-        setAiError('לא זוהו העדפות ברורות בטקסט.');
-        setAiLoading(false);
+      if (validRequests.length === 0) {
+        setExtractError('לא זוהו העדפות ברורות בטקסט');
         return;
       }
 
-      setAiResult(valid);
+      const formattedText = validRequests.map((r: { day: string; shift: string; type: string }) => {
+        const typeText = r.type === 'want' ? 'רוצה' : 'לא יכולה';
+        return `${r.day} ${r.shift} — ${typeText}`;
+      }).join('\n');
+
+      setPrefsText(prev => prev ? prev + '\n' + formattedText : formattedText);
+      setExtractSuccess(`חולצו ${validRequests.length} העדפות — בדוק ועדכן אם צריך, ואז לחץ שמור`);
+      setFreeText('');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('JSON')) {
-        setAiError('לא הצלחתי לחלץ העדפות. נסה לנסח מחדש.');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setExtractError('הבקשה בוטלה או חרגה מזמן ההמתנה');
       } else {
-        setAiError(`שגיאה: ${msg}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('JSON')) {
+          setExtractError('לא הצלחתי לחלץ העדפות. נסה לנסח מחדש.');
+        } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('Failed')) {
+          setExtractError('בעיית חיבור — בדוק את המפתח ונסה שוב');
+        } else {
+          setExtractError(msg);
+        }
+        console.error('Parse error:', err);
       }
     } finally {
-      setAiLoading(false);
+      clearTimeout(timeout);
+      extractAbortRef.current = null;
+      setIsExtracting(false);
     }
-  }
-
-  function aiSaveResult() {
-    if (!aiResult || aiEmpId === null) return;
-    const existing = preferences[aiEmpId] || {};
-    const merged = { ...existing };
-
-    for (const req of aiResult) {
-      if (req.type === 'cant') continue; // skip "cant" — only add "want"
-      if (req.shift === 'הכל') {
-        // Expand "הכל" to both בוקר+ערב (or just בוקר for שישי)
-        const dayShifts = WEEK_STRUCTURE.find(w => w.day === req.day)?.shifts || [];
-        for (const shift of dayShifts) {
-          if (!merged[req.day]) merged[req.day] = [];
-          if (!merged[req.day].some(p => p.shift === shift)) {
-            merged[req.day].push({ shift });
-          }
-        }
-      } else {
-        if (!merged[req.day]) merged[req.day] = [];
-        if (!merged[req.day].some(p => p.shift === req.shift)) {
-          merged[req.day].push({ shift: req.shift });
-        }
-      }
-    }
-
-    setPreferencesForEmployee(aiEmpId, merged);
-    const empName = employees.find(e => e.id === aiEmpId)?.name || '';
-    setSaveToast(`העדפות ${empName} נשמרו`);
-    setTimeout(() => setSaveToast(null), 2500);
-    setAiResult(null);
-    setAiText('');
   }
 
   function formatPrefShifts(prefShifts: PrefShift[]): string {
@@ -453,6 +454,62 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
 
   return (
     <div dir="rtl" style={{ padding: '0 16px' }}>
+      {/* API key settings */}
+      <div style={{ background: 'white', borderRadius: 8, padding: '12px 16px', marginBottom: 12, border: '1px solid #e8e0d4', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, color: '#64748b', fontWeight: 600 }}>מפתח Anthropic API</span>
+        {(() => {
+          const saved = localStorage.getItem('anthropic_api_key');
+          if (saved && !apiKeyEditing) {
+            return (
+              <>
+                <input type="text" disabled value="sk-ant-••••••••" style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4', background: '#faf7f2', color: '#94a3b8', width: 160 }} />
+                <button onClick={() => { setApiKeyEditing(true); setApiKeyInput(''); setApiKeyError(null); }} style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: '1px solid #e8e0d4', background: '#f5f0e8', color: '#475569', cursor: 'pointer' }}>עדכן</button>
+              </>
+            );
+          }
+          return (
+            <>
+              <input
+                type="password"
+                placeholder="sk-ant-api-key-..."
+                value={apiKeyInput}
+                onChange={e => { setApiKeyInput(e.target.value); setApiKeyError(null); }}
+                style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: `1px solid ${apiKeyError ? '#fca5a5' : '#e8e0d4'}`, width: 220 }}
+              />
+              <button
+                onClick={() => {
+                  const val = apiKeyInput.trim();
+                  if (!val.startsWith('sk-ant-') || val.length <= 20) {
+                    setApiKeyError('מפתח לא תקין');
+                    return;
+                  }
+                  localStorage.setItem('anthropic_api_key', val);
+                  setApiKeyInput('');
+                  setApiKeyEditing(false);
+                  setApiKeyError(null);
+                  setApiKeyToast(true);
+                  setTimeout(() => setApiKeyToast(false), 2000);
+                }}
+                style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: 'none', background: '#1a4a2e', color: 'white', cursor: 'pointer' }}
+              >
+                שמור
+              </button>
+              {apiKeyEditing && (
+                <button onClick={() => { setApiKeyEditing(false); setApiKeyInput(''); setApiKeyError(null); }} style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: '1px solid #e8e0d4', background: '#f5f0e8', color: '#475569', cursor: 'pointer' }}>ביטול</button>
+              )}
+            </>
+          );
+        })()}
+        {apiKeyError && <span style={{ fontSize: 12, color: '#dc2626' }}>{apiKeyError}</span>}
+      </div>
+
+      {/* API key toast */}
+      {apiKeyToast && (
+        <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: '#16a34a', color: 'white', padding: '12px 28px', borderRadius: 8, zIndex: 9999, fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
+          מפתח נשמר בהצלחה
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>
@@ -564,6 +621,9 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
                           setEditModalEmpId(emp.id);
                           setPrefsText(hasPrefs ? serializePreferences(emp.id) : '');
                           setParserError(null);
+                          setFreeText('');
+                          setExtractError('');
+                          setExtractSuccess('');
                         }}
                         style={{ ...smallBtnBase, background: hasPrefs ? '#1a4a2e' : '#16a34a', color: 'white' }}
                       >
@@ -611,100 +671,23 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
         </div>
       )}
 
-      {/* AI free-text parser section */}
-      <div style={{ background: 'white', borderRadius: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', padding: 16, marginBottom: 16, border: '1px solid #e8e0d4' }}>
-        <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: '#1a4a2e' }}>חילוץ העדפות מטקסט</h3>
-
-        {/* Employee select */}
-        <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>עובדת:</label>
-          <select
-            value={aiEmpId ?? ''}
-            onChange={e => { setAiEmpId(e.target.value ? Number(e.target.value) : null); setAiResult(null); setAiError(null); }}
-            style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4' }}
-          >
-            <option value="">— בחרי עובדת —</option>
-            {employees.filter(e => e.id !== 1).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
-        </div>
-
-        {/* Textarea */}
-        <div style={{ marginBottom: 10 }}>
-          <textarea
-            value={aiText}
-            onChange={e => { setAiText(e.target.value); setAiResult(null); setAiError(null); }}
-            rows={4}
-            placeholder="הדבק כאן טקסט ווטסאפ מהעובדת..."
-            style={{ width: '100%', padding: 10, boxSizing: 'border-box', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6, fontFamily: 'inherit', resize: 'vertical' }}
-          />
-        </div>
-
-        {/* Extract button */}
-        <button
-          onClick={aiParsePreferences}
-          disabled={aiEmpId === null || !aiText.trim() || aiLoading}
-          style={{
-            padding: '8px 20px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none', cursor: aiEmpId !== null && aiText.trim() && !aiLoading ? 'pointer' : 'not-allowed',
-            background: aiEmpId !== null && aiText.trim() && !aiLoading ? '#1a4a2e' : '#d1cdc6', color: 'white',
-          }}
-        >
-          {aiLoading ? '⏳ מחלץ...' : 'חלץ העדפות'}
-        </button>
-
-        {/* Error */}
-        {aiError && (
-          <div style={{ marginTop: 10, color: '#dc2626', fontSize: 12, background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 12px' }}>
-            {aiError}
-          </div>
-        )}
-
-        {/* Result */}
-        {aiResult && aiResult.length > 0 && (
-          <div style={{ marginTop: 12, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '12px 14px' }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#166534', marginBottom: 8 }}>
-              נמצאו {aiResult.length} העדפות:
-            </div>
-            <div style={{ fontSize: 12, color: '#475569', marginBottom: 10, lineHeight: 1.8 }}>
-              {aiResult.map((r, i) => (
-                <span key={i} style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 10, marginLeft: 4, marginBottom: 4, fontSize: 11, fontWeight: 600, background: r.type === 'want' ? '#dcfce7' : '#fee2e2', color: r.type === 'want' ? '#16a34a' : '#dc2626' }}>
-                  {r.day} {r.shift} — {r.type === 'want' ? 'רוצה' : 'לא יכולה'}
-                </span>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={aiSaveResult}
-                style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, background: '#16a34a', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-              >
-                אשר ושמור
-              </button>
-              <button
-                onClick={() => { setAiResult(null); }}
-                style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}
-              >
-                בטל
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* Edit preferences modal */}
       {editModalEmpId !== null && (() => {
         const modalEmp = employees.find(e => e.id === editModalEmpId);
         if (!modalEmp) return null;
+        const hasApiKey = !!localStorage.getItem('anthropic_api_key');
         return (
           <div
-            onClick={() => { setEditModalEmpId(null); setPrefsText(''); setParserError(null); }}
+            onClick={closeEditModal}
             style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <div
               onClick={e => e.stopPropagation()}
-              style={{ background: 'white', borderRadius: 12, padding: 24, width: 480, maxWidth: '90vw', maxHeight: '80vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', position: 'relative' }}
+              style={{ background: 'white', borderRadius: 12, padding: 24, width: 520, maxWidth: '90vw', maxHeight: '85vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)', position: 'relative' }}
               dir="rtl"
             >
               <button
-                onClick={() => { setEditModalEmpId(null); setPrefsText(''); setParserError(null); }}
+                onClick={closeEditModal}
                 style={{ position: 'absolute', left: 12, top: 12, width: 28, height: 28, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}
               >
                 ✕
@@ -712,10 +695,12 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
               <h3 style={{ margin: '0 0 16px 0', fontSize: 17, fontWeight: 700, color: '#1a4a2e' }}>
                 עריכת העדפות — {modalEmp.name}
               </h3>
+
+              {/* Area A — manual input */}
               <textarea
                 value={prefsText}
                 onChange={e => setPrefsText(e.target.value)}
-                rows={10}
+                rows={8}
                 style={{ width: '100%', padding: 10, boxSizing: 'border-box', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6, fontFamily: 'inherit' }}
                 placeholder="הדבק כאן את ההעדפות כפי שקיבלת בווטסאפ"
                 autoFocus
@@ -725,16 +710,60 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
                   {parserError}
                 </div>
               )}
+
+              {/* Divider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
+                <div style={{ flex: 1, height: 1, background: '#e8e0d4' }} />
+                <span style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>— או —</span>
+                <div style={{ flex: 1, height: 1, background: '#e8e0d4' }} />
+              </div>
+
+              {/* Area B — free-text extraction */}
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>חלץ אוטומטית מטקסט ווטסאפ</div>
+              <textarea
+                id="free-text-input"
+                value={freeText}
+                onChange={e => { setFreeText(e.target.value); setExtractError(''); setExtractSuccess(''); }}
+                rows={3}
+                placeholder="הדבק כאן את מה שהעובדת שלחה בווטסאפ..."
+                style={{ width: '100%', padding: 10, boxSizing: 'border-box', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6, fontFamily: 'inherit', resize: 'vertical', marginBottom: 8 }}
+              />
+              <button
+                onClick={handleExtractFreeText}
+                disabled={!freeText.trim() || isExtracting || !hasApiKey}
+                title={!hasApiKey ? 'יש להגדיר מפתח API' : undefined}
+                style={{
+                  padding: '8px 20px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none',
+                  cursor: freeText.trim() && !isExtracting && hasApiKey ? 'pointer' : 'not-allowed',
+                  background: freeText.trim() && !isExtracting && hasApiKey ? '#1a4a2e' : '#d1cdc6', color: 'white',
+                }}
+              >
+                {isExtracting ? '⏳ מחלץ...' : 'חלץ אוטומטית'}
+              </button>
+
+              {extractError && (
+                <div style={{ marginTop: 8, color: '#dc2626', fontSize: 12, background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 12px' }}>
+                  {extractError}
+                </div>
+              )}
+              {extractSuccess && (
+                <div style={{ marginTop: 8, color: '#166534', fontSize: 12, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, padding: '8px 12px' }}>
+                  {extractSuccess}
+                </div>
+              )}
+
+              {/* Action buttons */}
               <div style={{ marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button
-                  onClick={() => { setEditModalEmpId(null); setPrefsText(''); setParserError(null); }}
+                  onClick={closeEditModal}
                   style={{ ...btnBase, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4' }}
                 >
                   ביטול
                 </button>
                 <button
                   onClick={handleModalSave}
-                  style={{ ...btnBase, background: '#1a4a2e', color: 'white' }}
+                  disabled={isExtracting}
+                  style={{ ...btnBase, background: isExtracting ? '#d1cdc6' : '#1a4a2e', color: 'white', cursor: isExtracting ? 'not-allowed' : 'pointer' }}
                 >
                   שמור
                 </button>
