@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { Employee } from '../data/employees';
 import type { PrefShift, EmployeePrefs } from '../types';
 import { updateFlexibility, removeFlexibility } from '../utils/fairnessAccumulator';
@@ -71,22 +71,9 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
   const [preferences, setPreferences] = useState<Record<number, EmployeePrefs>>({});
   const [editModalEmpId, setEditModalEmpId] = useState<number | null>(null);
   const [prefsText, setPrefsText] = useState('');
-  const [parserError, setParserError] = useState<string | null>(null);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [statusCopyToast, setStatusCopyToast] = useState(false);
-
-  // API key management state
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [apiKeyEditing, setApiKeyEditing] = useState(false);
-  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
-  const [apiKeyToast, setApiKeyToast] = useState(false);
-
-  // Modal free-text extraction state
-  const [freeText, setFreeText] = useState('');
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractError, setExtractError] = useState('');
-  const [extractSuccess, setExtractSuccess] = useState('');
-  const extractAbortRef = useRef<AbortController | null>(null);
+  const [validationErrors, setValidationErrors] = useState<{ line: number; content: string; type: string }[]>([]);
 
   const weekDays = WEEK_STRUCTURE.map((d, i) => {
     const date = new Date(weekStart);
@@ -135,106 +122,9 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
   }
 
   function closeEditModal() {
-    extractAbortRef.current?.abort();
     setEditModalEmpId(null);
     setPrefsText('');
-    setParserError(null);
-    setFreeText('');
-    setIsExtracting(false);
-    setExtractError('');
-    setExtractSuccess('');
-  }
-
-  async function handleExtractFreeText() {
-    if (!editModalEmpId || !freeText.trim()) return;
-    const emp = employees.find(e => e.id === editModalEmpId);
-    if (!emp) return;
-
-    const apiKey = (localStorage.getItem('anthropic_api_key') || '').trim();
-    if (!apiKey) {
-      setExtractError('לא נמצא מפתח API. הגדר בראש הלשונית.');
-      return;
-    }
-
-    setIsExtracting(true);
-    setExtractError('');
-    setExtractSuccess('');
-
-    const controller = new AbortController();
-    extractAbortRef.current = controller;
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
-    try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 500,
-          system: 'אתה מנתח בקשות משמרות עבור חנות. חלץ מהטקסט את כל הימים והמשמרות שהעובדת מבקשת לעבוד או לא יכולה. החזר JSON בלבד ללא הסברים וללא backticks. פורמט מדויק: {"requests":[{"day":"ראשון","shift":"בוקר","type":"want"}]}. ערכים חוקיים: day=ראשון|שני|שלישי|רביעי|חמישי|שישי, shift=בוקר|ערב|הכל, type=want|cant',
-          messages: [{ role: 'user', content: `עובדת: ${emp.name}\nטקסט: ${freeText}` }],
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error?.message || `שגיאת API: ${res.status}`);
-      }
-
-      const rawText = data.content?.[0]?.text || '';
-      const cleaned = rawText.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-
-      if (!parsed.requests || !Array.isArray(parsed.requests)) {
-        throw new Error('פורמט תשובה לא תקין');
-      }
-
-      const validDays = ['ראשון','שני','שלישי','רביעי','חמישי','שישי'];
-      const validShifts = ['בוקר','ערב','הכל'];
-      const validTypes = ['want','cant'];
-
-      const validRequests = parsed.requests.filter((r: { day: string; shift: string; type: string }) =>
-        validDays.includes(r.day) && validShifts.includes(r.shift) && validTypes.includes(r.type)
-      );
-
-      if (validRequests.length === 0) {
-        setExtractError('לא זוהו העדפות ברורות בטקסט');
-        return;
-      }
-
-      const formattedText = validRequests.map((r: { day: string; shift: string; type: string }) => {
-        const typeText = r.type === 'want' ? 'רוצה' : 'לא יכולה';
-        return `${r.day} ${r.shift} — ${typeText}`;
-      }).join('\n');
-
-      setPrefsText(prev => prev ? prev + '\n' + formattedText : formattedText);
-      setExtractSuccess(`חולצו ${validRequests.length} העדפות — בדוק ועדכן אם צריך, ואז לחץ שמור`);
-      setFreeText('');
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        setExtractError('הבקשה בוטלה או חרגה מזמן ההמתנה');
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('JSON')) {
-          setExtractError('לא הצלחתי לחלץ העדפות. נסה לנסח מחדש.');
-        } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('Failed')) {
-          setExtractError('בעיית חיבור — בדוק את המפתח ונסה שוב');
-        } else {
-          setExtractError(msg);
-        }
-        console.error('Parse error:', err);
-      }
-    } finally {
-      clearTimeout(timeout);
-      extractAbortRef.current = null;
-      setIsExtracting(false);
-    }
+    setValidationErrors([]);
   }
 
   function formatPrefShifts(prefShifts: PrefShift[]): string {
@@ -247,18 +137,20 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
   }
 
   function serializePreferences(empId: number): string {
-    const emp = employees.find(e => e.id === empId);
-    if (!emp) return '';
     const prefs = preferences[empId] || {};
-    const lines = [emp.name];
+    const lines: string[] = [];
     for (const d of weekDays) {
       const prefShifts = prefs[d.day];
       if (!prefShifts || prefShifts.length === 0) continue;
-      for (const ps of prefShifts) {
-        let line = `${d.dateStr} ${ps.shift}`;
-        if (ps.customArrival) line += ` מ-${ps.customArrival}`;
-        if (ps.customDeparture) line += ` עד ${ps.customDeparture}`;
-        lines.push(line);
+      const shifts = prefShifts.map(ps => ps.shift);
+      if (d.day === 'שישי') {
+        lines.push(`${d.dateStr} שישי`);
+      } else if (shifts.includes('בוקר') && shifts.includes('ערב')) {
+        lines.push(`${d.dateStr} בוקר/ערב`);
+      } else {
+        for (const ps of prefShifts) {
+          lines.push(`${d.dateStr} ${ps.shift}`);
+        }
       }
     }
     return lines.join('\n');
@@ -310,140 +202,113 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
     });
   }
 
-  function parsePreferencesText(text: string): { prefs: EmployeePrefs; badLines: { raw: string; reason: string }[] } {
-    text = text.replace(/[\u05B0-\u05C7]/g, '');
-
-    const DAY_NAME_MAP: Record<string, string> = {
-      'ראשון': 'ראשון', 'שני': 'שני', 'שלישי': 'שלישי',
-      'רביעי': 'רביעי', 'חמישי': 'חמישי', 'שישי': 'שישי',
-    };
-    const SHIFT_KEYWORDS = new Set(['בוקר', 'ערב', 'שישי']);
-    const datePattern = /^\d{1,2}\.\d{1,2}$/;
-    const timePattern = /^\d{1,2}:\d{2}$/;
-
-    const dateToDay = new Map<string, string>();
-    weekDays.forEach(d => dateToDay.set(d.dateStr, d.day));
-
-    const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    if (rawLines.length === 0) throw new Error('אין טקסט');
-
-    const firstToken = rawLines[0].split(/[\s,]/)[0];
-    const firstIsPref = datePattern.test(firstToken) || DAY_NAME_MAP[firstToken] !== undefined;
-    const prefLines = firstIsPref ? rawLines : rawLines.slice(1);
-
-    const items: string[] = [];
-    for (const line of prefLines) {
-      for (const part of line.split(',')) {
-        const t = part.trim();
-        if (t) items.push(t);
-      }
-    }
-
-    const prefs: EmployeePrefs = {};
-    const badLines: { raw: string; reason: string }[] = [];
-
-    for (const item of items) {
-      const tokens = item.split(/\s+/);
-      const firstTok = tokens[0];
-
-      let day: string | undefined;
-      if (datePattern.test(firstTok)) {
-        day = dateToDay.get(firstTok);
-        if (!day) continue;
-      } else if (DAY_NAME_MAP[firstTok]) {
-        day = DAY_NAME_MAP[firstTok];
-      } else {
-        badLines.push({ raw: item, reason: 'חסר תאריך או שם יום' });
-        continue;
-      }
-
-      if (tokens.length < 2 || !SHIFT_KEYWORDS.has(tokens[1])) {
-        badLines.push({ raw: item, reason: 'חסר משמרת' });
-        continue;
-      }
-
-      const rest = tokens.slice(1).join(' ');
-
-      if (rest.includes('/')) {
-        const shiftParts = rest.split('/').map(s => s.trim());
-        if (shiftParts.some(s => !SHIFT_KEYWORDS.has(s))) {
-          badLines.push({ raw: item, reason: 'פורמט לא מוכר' });
-          continue;
-        }
-        for (const s of shiftParts) {
-          const sh = s === 'שישי' && day === 'שישי' ? 'בוקר' : s;
-          if (!WEEK_STRUCTURE.some(w => w.day === day && w.shifts.includes(sh))) continue;
-          prefs[day] = prefs[day] || [];
-          if (!prefs[day].some(p => p.shift === sh)) prefs[day].push({ shift: sh });
-        }
-        continue;
-      }
-
-      const shiftWord = tokens[1];
-      let customDeparture: string | undefined;
-      let customArrival: string | undefined;
-      let badModifier = false;
-      let i = 2;
-      while (i < tokens.length) {
-        if (tokens[i] === 'עד' && i + 1 < tokens.length && timePattern.test(tokens[i + 1])) {
-          customDeparture = tokens[i + 1]; i += 2;
-        } else if (tokens[i].startsWith('מ-') && timePattern.test(tokens[i].slice(2))) {
-          customArrival = tokens[i].slice(2); i += 1;
-        } else if (tokens[i] === 'מ' && i + 1 < tokens.length && timePattern.test(tokens[i + 1])) {
-          customArrival = tokens[i + 1]; i += 2;
-        } else {
-          badModifier = true; break;
-        }
-      }
-      if (badModifier) { badLines.push({ raw: item, reason: 'פורמט לא מוכר' }); continue; }
-
-      const actualShift = shiftWord === 'שישי' && day === 'שישי' ? 'בוקר' : shiftWord;
-      if (!WEEK_STRUCTURE.some(w => w.day === day && w.shifts.includes(actualShift))) continue;
-
-      prefs[day] = prefs[day] || [];
-      const existing = prefs[day].findIndex(p => p.shift === actualShift);
-      const entry: PrefShift = { shift: actualShift };
-      if (customDeparture) entry.customDeparture = customDeparture;
-      if (customArrival) entry.customArrival = customArrival;
-      if (existing >= 0) prefs[day][existing] = entry;
-      else prefs[day].push(entry);
-    }
-
-    return { prefs, badLines };
-  }
-
   function handleModalSave() {
     if (!editModalEmpId) return;
     const emp = employees.find(e => e.id === editModalEmpId);
-    if (!emp) { setParserError('עובדת לא נמצאה'); return; }
-    try {
-      const { prefs, badLines } = parsePreferencesText(prefsText);
-      if (badLines.length > 0) {
-        setParserError(
-          '⚠️ לא הצלחתי להבין את השורות הבאות:\n' +
-          badLines.map(b => `• "${b.raw}" — ${b.reason}`).join('\n') +
-          '\n\nהפורמט הנכון:\nDD.M בוקר/ערב/שישי\nDD.M בוקר עד HH:MM\nDD.M ערב מ-HH:MM\nלדוגמה:\n22.3 בוקר\n23.3 ערב\n25.3 בוקר/ערב\n27.3 שישי\n22.3 בוקר עד 13:00'
-        );
-        return;
+    if (!emp) return;
+
+    const text = prefsText.trim();
+
+    // Empty text → confirm delete
+    if (!text) {
+      if (window.confirm(`האם למחוק את כל ההעדפות של ${emp.name} לשבוע זה?`)) {
+        deletePreferencesForEmployee(emp.id);
+        closeEditModal();
+        setSaveToast(`העדפות ${emp.name} נמחקו`);
+        setTimeout(() => setSaveToast(null), 3000);
       }
-      const count = Object.values(prefs).flat().length;
-      if (count === 0) {
-        setParserError(
-          '❌ לא הצלחתי להבין את ההעדפות. נסי לכתוב בפורמט:\n' +
-          '\'ראשון בוקר, שני ערב, שישי לא\'\n' +
-          '(יום + משמרת, מופרדים בפסיקים)'
-        );
-        return;
-      }
-      setPreferencesForEmployee(emp.id, prefs);
-      setEditModalEmpId(null);
-      setPrefsText('');
-      setParserError(null);
-      setSaveToast(`העדפות ${emp.name} נשמרו — ${count} משמרות`);
-      setTimeout(() => setSaveToast(null), 3000);
-    } catch (err: any) {
-      setParserError(err?.message || 'שגיאה בפרסר');
+      return;
     }
+
+    // Validation
+    const weekDates = weekDays.map(d => d.dateStr);
+    const VALID_SHIFT_TYPES = ['בוקר', 'ערב', 'בוקר/ערב', 'שישי'];
+    const lines = text.split('\n');
+    const errors: { line: number; content: string; type: string }[] = [];
+
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const lineNum = index + 1;
+
+      const spaceIndex = trimmed.indexOf(' ');
+      if (spaceIndex === -1) {
+        errors.push({ line: lineNum, content: trimmed, type: 'missing_shift' });
+        return;
+      }
+
+      const datePart = trimmed.substring(0, spaceIndex).trim();
+      const shiftPart = trimmed.substring(spaceIndex + 1).trim();
+
+      const dateMatch = datePart.match(/^(\d{1,2})\.(\d{1,2})$/);
+      if (!dateMatch) {
+        errors.push({ line: lineNum, content: trimmed, type: 'invalid_date' });
+        return;
+      }
+      const day = parseInt(dateMatch[1]);
+      const month = parseInt(dateMatch[2]);
+      if (day < 1 || day > 31 || month < 1 || month > 12) {
+        errors.push({ line: lineNum, content: trimmed, type: 'invalid_date' });
+        return;
+      }
+
+      const normalizedDate = `${day}.${month}`;
+      if (!weekDates.includes(normalizedDate)) {
+        errors.push({ line: lineNum, content: trimmed, type: 'out_of_range' });
+        return;
+      }
+
+      if (!VALID_SHIFT_TYPES.includes(shiftPart)) {
+        errors.push({ line: lineNum, content: trimmed, type: 'invalid_shift' });
+        return;
+      }
+    });
+
+    if (errors.length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+    setValidationErrors([]);
+
+    // Parse validated lines into EmployeePrefs
+    const dateToDay = new Map<string, string>();
+    weekDays.forEach(d => dateToDay.set(d.dateStr, d.day));
+
+    const prefs: EmployeePrefs = {};
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const spaceIndex = trimmed.indexOf(' ');
+      const datePart = trimmed.substring(0, spaceIndex).trim();
+      const shiftPart = trimmed.substring(spaceIndex + 1).trim();
+      const dateMatch = datePart.match(/^(\d{1,2})\.(\d{1,2})$/);
+      if (!dateMatch) continue;
+      const normalizedDate = `${parseInt(dateMatch[1])}.${parseInt(dateMatch[2])}`;
+      const dayName = dateToDay.get(normalizedDate);
+      if (!dayName) continue;
+
+      let shifts: string[];
+      if (shiftPart === 'בוקר/ערב') {
+        shifts = ['בוקר', 'ערב'];
+      } else if (shiftPart === 'שישי') {
+        shifts = ['בוקר'];
+      } else {
+        shifts = [shiftPart];
+      }
+
+      prefs[dayName] = prefs[dayName] || [];
+      for (const sh of shifts) {
+        if (!prefs[dayName].some(p => p.shift === sh)) {
+          prefs[dayName].push({ shift: sh });
+        }
+      }
+    }
+
+    const count = Object.values(prefs).flat().length;
+    setPreferencesForEmployee(emp.id, prefs);
+    closeEditModal();
+    setSaveToast(`העדפות ${emp.name} נשמרו — ${count} משמרות`);
+    setTimeout(() => setSaveToast(null), 3000);
   }
 
   const weekEnd = new Date(weekStart);
@@ -454,62 +319,6 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
 
   return (
     <div dir="rtl" style={{ padding: '0 16px' }}>
-      {/* API key settings */}
-      <div style={{ background: 'white', borderRadius: 8, padding: '12px 16px', marginBottom: 12, border: '1px solid #e8e0d4', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, color: '#64748b', fontWeight: 600 }}>מפתח Anthropic API</span>
-        {(() => {
-          const saved = localStorage.getItem('anthropic_api_key');
-          if (saved && !apiKeyEditing) {
-            return (
-              <>
-                <input type="text" disabled value="sk-ant-••••••••" style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4', background: '#faf7f2', color: '#94a3b8', width: 160 }} />
-                <button onClick={() => { setApiKeyEditing(true); setApiKeyInput(''); setApiKeyError(null); }} style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: '1px solid #e8e0d4', background: '#f5f0e8', color: '#475569', cursor: 'pointer' }}>עדכן</button>
-              </>
-            );
-          }
-          return (
-            <>
-              <input
-                type="password"
-                placeholder="sk-ant-api-key-..."
-                value={apiKeyInput}
-                onChange={e => { setApiKeyInput(e.target.value); setApiKeyError(null); }}
-                style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: `1px solid ${apiKeyError ? '#fca5a5' : '#e8e0d4'}`, width: 220 }}
-              />
-              <button
-                onClick={() => {
-                  const val = apiKeyInput.trim();
-                  if (!val.startsWith('sk-ant-') || val.length <= 20) {
-                    setApiKeyError('מפתח לא תקין');
-                    return;
-                  }
-                  localStorage.setItem('anthropic_api_key', val);
-                  setApiKeyInput('');
-                  setApiKeyEditing(false);
-                  setApiKeyError(null);
-                  setApiKeyToast(true);
-                  setTimeout(() => setApiKeyToast(false), 2000);
-                }}
-                style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: 'none', background: '#1a4a2e', color: 'white', cursor: 'pointer' }}
-              >
-                שמור
-              </button>
-              {apiKeyEditing && (
-                <button onClick={() => { setApiKeyEditing(false); setApiKeyInput(''); setApiKeyError(null); }} style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: '1px solid #e8e0d4', background: '#f5f0e8', color: '#475569', cursor: 'pointer' }}>ביטול</button>
-              )}
-            </>
-          );
-        })()}
-        {apiKeyError && <span style={{ fontSize: 12, color: '#dc2626' }}>{apiKeyError}</span>}
-      </div>
-
-      {/* API key toast */}
-      {apiKeyToast && (
-        <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: '#16a34a', color: 'white', padding: '12px 28px', borderRadius: 8, zIndex: 9999, fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
-          מפתח נשמר בהצלחה
-        </div>
-      )}
-
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>
@@ -620,10 +429,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
                         onClick={() => {
                           setEditModalEmpId(emp.id);
                           setPrefsText(hasPrefs ? serializePreferences(emp.id) : '');
-                          setParserError(null);
-                          setFreeText('');
-                          setExtractError('');
-                          setExtractSuccess('');
+                          setValidationErrors([]);
                         }}
                         style={{ ...smallBtnBase, background: hasPrefs ? '#1a4a2e' : '#16a34a', color: 'white' }}
                       >
@@ -695,60 +501,52 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
                 עריכת העדפות — {modalEmp.name}
               </h3>
 
-              {/* Area A — manual input */}
-              <textarea
-                value={prefsText}
-                onChange={e => setPrefsText(e.target.value)}
-                rows={8}
-                style={{ width: '100%', padding: 10, boxSizing: 'border-box', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6, fontFamily: 'inherit' }}
-                placeholder="הדבק כאן את ההעדפות כפי שקיבלת בווטסאפ"
-                autoFocus
-              />
-              {parserError && (
-                <div style={{ color: '#dc2626', marginTop: 8, fontSize: 12, whiteSpace: 'pre-wrap', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 12px' }}>
-                  {parserError}
+              {/* Instructions box */}
+              <div style={{ background: '#EAF3DE', border: '1px solid #C0DD97', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#3B6D11', marginBottom: 10, direction: 'rtl' }}>
+                <div style={{ fontWeight: 500 }}>פורמט הזנה:</div>
+                <div>תאריך + סוג משמרת, שורה אחת לכל בקשה</div>
+                <div style={{ height: 6 }} />
+                <div style={{ fontWeight: 700 }}>דוגמאות:</div>
+                <div style={{ background: 'white', borderRadius: 4, padding: '6px 10px', fontFamily: 'monospace', marginTop: 4, whiteSpace: 'pre', lineHeight: 1.6 }}>
+{`${weekDays[0].dateStr} בוקר
+${weekDays[1].dateStr} ערב
+${weekDays[2].dateStr} בוקר/ערב
+${weekDays[5].dateStr} שישי`}
                 </div>
-              )}
-
-              {/* Divider */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
-                <div style={{ flex: 1, height: 1, background: '#e8e0d4' }} />
-                <span style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>— או —</span>
-                <div style={{ flex: 1, height: 1, background: '#e8e0d4' }} />
               </div>
 
-              {/* Area B — free-text extraction */}
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>חלץ אוטומטית מטקסט ווטסאפ</div>
+              {/* Textarea */}
               <textarea
-                id="free-text-input"
-                value={freeText}
-                onChange={e => { setFreeText(e.target.value); setExtractError(''); setExtractSuccess(''); }}
-                rows={3}
-                placeholder="הדבק כאן את מה שהעובדת שלחה בווטסאפ..."
-                style={{ width: '100%', padding: 10, boxSizing: 'border-box', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6, fontFamily: 'inherit', resize: 'vertical', marginBottom: 8 }}
-              />
-              <button
-                onClick={handleExtractFreeText}
-                disabled={!freeText.trim() || isExtracting}
+                value={prefsText}
+                onChange={e => { setPrefsText(e.target.value); setValidationErrors([]); }}
+                rows={8}
                 style={{
-                  padding: '8px 20px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none',
-                  cursor: freeText.trim() && !isExtracting ? 'pointer' : 'not-allowed',
-                  background: freeText.trim() && !isExtracting ? '#1a4a2e' : '#d1cdc6', color: 'white',
+                  width: '100%', padding: 10, boxSizing: 'border-box', fontSize: 13,
+                  border: `1px solid ${validationErrors.length > 0 ? '#E24B4A' : '#e8e0d4'}`,
+                  borderRadius: 6, fontFamily: 'inherit',
                 }}
-              >
-                {isExtracting ? '⏳ מחלץ...' : 'חלץ אוטומטית'}
-              </button>
+                placeholder={`${weekDays[0].dateStr} בוקר\n${weekDays[1].dateStr} ערב\n${weekDays[2].dateStr} בוקר/ערב\n${weekDays[5].dateStr} שישי`}
+                autoFocus
+              />
 
-              {extractError && (
-                <div style={{ marginTop: 8, color: '#dc2626', fontSize: 12, background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 12px' }}>
-                  {extractError}
-                </div>
-              )}
-              {extractSuccess && (
-                <div style={{ marginTop: 8, color: '#166534', fontSize: 12, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, padding: '8px 12px' }}>
-                  {extractSuccess}
-                </div>
-              )}
+              {/* Validation errors */}
+              {validationErrors.map((err, i) => {
+                let msg = '';
+                if (err.type === 'invalid_date') {
+                  msg = `שגיאה בשורה ${err.line}: תאריך לא תקין — '${err.content}'\nהשתמש בפורמט D.M (לדוגמה: ${weekDays[0].dateStr})`;
+                } else if (err.type === 'out_of_range') {
+                  msg = `שגיאה בשורה ${err.line}: התאריך לא בשבוע הנוכחי — '${err.content}'\nהשבוע הנוכחי: ${formatDate(weekStart)}–${formatDate(weekEnd)}`;
+                } else if (err.type === 'invalid_shift') {
+                  msg = `שגיאה בשורה ${err.line}: סוג משמרת לא מזוהה — '${err.content}'\nערכים מותרים: בוקר / ערב / בוקר/ערב / שישי`;
+                } else if (err.type === 'missing_shift') {
+                  msg = `שגיאה בשורה ${err.line}: חסר סוג משמרת — '${err.content}'\nפורמט נכון: תאריך + רווח + סוג משמרת (לדוגמה: ${weekDays[0].dateStr} בוקר)`;
+                }
+                return (
+                  <div key={i} style={{ background: '#FCEBEB', border: '1px solid #F7C1C1', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: '#A32D2D', marginTop: 6, direction: 'rtl', whiteSpace: 'pre-wrap' }}>
+                    {msg}
+                  </div>
+                );
+              })}
 
               {/* Action buttons */}
               <div style={{ marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -760,8 +558,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
                 </button>
                 <button
                   onClick={handleModalSave}
-                  disabled={isExtracting}
-                  style={{ ...btnBase, background: isExtracting ? '#d1cdc6' : '#1a4a2e', color: 'white', cursor: isExtracting ? 'not-allowed' : 'pointer' }}
+                  style={{ ...btnBase, background: '#1a4a2e', color: 'white' }}
                 >
                   שמור
                 </button>
