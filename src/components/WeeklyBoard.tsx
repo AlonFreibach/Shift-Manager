@@ -4,6 +4,7 @@ import { calculateFairnessScore, calculateFlexibilityScore } from '../utils/fair
 import { addFairnessEvents } from '../utils/fairnessAccumulator';
 import type { Employee, FixedShift } from '../data/employees';
 import type { EmployeePrefs } from '../types';
+import { ISRAELI_HOLIDAYS } from '../data/holidays';
 
 interface WeeklyBoardProps {
   employees: Employee[];
@@ -218,6 +219,8 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   const [specialShifts, setSpecialShifts] = useState<SpecialShiftEntry[]>([]);
   const [specialShiftForm, setSpecialShiftForm] = useState({ name: '', date: '', startTime: '', endTime: '', requiredCount: 2 });
   const [planAheadSummary, setPlanAheadSummary] = useState<PlanAheadSummary | null>(null);
+  const [editingHolidayId, setEditingHolidayId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState<SpecialShiftEntry | null>(null);
   const [noPrefsToast, setNoPrefsToast] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [mobileDayIndex, setMobileDayIndex] = useState(0);
@@ -254,6 +257,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   const [showCustomShiftModal, setShowCustomShiftModal] = useState(false);
   const [customShiftModalDay, setCustomShiftModalDay] = useState('ראשון');
   const [customShiftForm, setCustomShiftForm] = useState({ name: '', startTime: '', endTime: '', requiredCount: 2 });
+  const [holidayDismissed, setHolidayDismissed] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -352,6 +356,8 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     setSpecialShiftForm({ name: '', date: '', startTime: '', endTime: '', requiredCount: 2 });
     setPlanAheadSummary(null);
     setPlanAheadNoPrefsWarning(false);
+    setEditingHolidayId(null);
+    setEditingDraft(null);
   }
 
   async function runPlanAheadAutoSchedule() {
@@ -653,6 +659,8 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       // Use setTimeout to ensure React has committed the state updates
       setTimeout(() => autoSchedule(prefForWeek), 0);
     }
+
+    setHolidayDismissed(false);
   }, [weekKey, employees]);
 
   // Handle autoSchedule request from PreferencesTab
@@ -2073,9 +2081,18 @@ ${pages}
               ) : (() => {
                 /* Non-locked slot — uses tempSlotData */
                 const tempEmpId = tempSlotData.employeeId;
-                const tempIsDuplicate = tempEmpId !== null && shiftSlots.some((s, i) =>
-                  i !== slotIdx && s.employeeId !== null && Number(s.employeeId) === Number(tempEmpId)
-                );
+                const tempIsDuplicate = tempEmpId !== null && (() => {
+                  // Check same shift
+                  if (shiftSlots.some((s, i) => i !== slotIdx && s.employeeId !== null && Number(s.employeeId) === Number(tempEmpId))) return true;
+                  // Check other shifts on the same day
+                  const dayShifts = WEEK_STRUCTURE.find(w => w.day === day)?.shifts || [];
+                  for (const otherShift of dayShifts) {
+                    if (otherShift === shift) continue;
+                    const otherSlots = schedule[`${day}_${otherShift}`] || [];
+                    if (otherSlots.some(s => s.employeeId !== null && Number(s.employeeId) === Number(tempEmpId))) return true;
+                  }
+                  return false;
+                })();
                 const tempDuplicateName = tempIsDuplicate ? (employees.find(e => e.id === tempEmpId)?.name || '') : '';
                 const tempStationTaken = !!tempSlotData.station && tempSlotData.station !== 'התלמדות' && shiftSlots.some((s, i) =>
                   i !== slotIdx && !s.locked && s.station === tempSlotData.station && s.employeeId !== null
@@ -2099,7 +2116,7 @@ ${pages}
                     </select>
                     {tempIsDuplicate && (
                       <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, fontWeight: 600 }}>
-                        ⚠️ {tempDuplicateName} כבר משובצת במשמרת זו
+                        ⚠️ {tempDuplicateName} כבר משובצת ביום זה
                       </div>
                     )}
                     {popoverValidationError && !tempIsDuplicate && tempEmpId === null && (
@@ -2328,6 +2345,68 @@ ${pages}
         </div>
       </div>
 
+      {/* Holiday banner */}
+      {(() => {
+        if (holidayDismissed) return null;
+        // Only show for current or future weeks
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const weekEndDate = new Date(weekStart); weekEndDate.setDate(weekStart.getDate() + 5);
+        if (weekEndDate < today) return null;
+
+        const holidays = ISRAELI_HOLIDAYS.filter(h => {
+          const hDate = new Date(h.date + 'T00:00:00');
+          return hDate >= weekStart && hDate <= weekEndDate;
+        });
+        if (holidays.length === 0) return null;
+
+        // Filter out holidays that already have a custom shift with matching name
+        const remaining = holidays.filter(h => {
+          const hDate = new Date(h.date + 'T00:00:00');
+          const dayIdx = hDate.getDay(); // 0=Sun..5=Fri
+          if (dayIdx < 0 || dayIdx > 5) return false;
+          const dayName = DAY_NAMES[dayIdx];
+          const dayCustomShifts = customShifts[dayName] || [];
+          return !dayCustomShifts.some(cs => cs.name === h.name);
+        });
+        if (remaining.length === 0) return null;
+
+        const text = remaining.map(h => {
+          const hd = new Date(h.date + 'T00:00:00');
+          return `${h.name} (${hd.getDate()}.${hd.getMonth() + 1})`;
+        }).join(', ');
+
+        return (
+          <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 8, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', direction: 'rtl', flexWrap: 'wrap', gap: 8 }}>
+            <span style={{ fontSize: 13, color: '#92400e', fontWeight: 600 }}>
+              🕎 שבוע זה יש: {text}
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                onClick={() => {
+                  // Pre-fill custom shift modal with first holiday
+                  const h = remaining[0];
+                  const hDate = new Date(h.date + 'T00:00:00');
+                  const dayIdx = hDate.getDay();
+                  const dayName = dayIdx >= 0 && dayIdx <= 5 ? DAY_NAMES[dayIdx] : 'ראשון';
+                  setCustomShiftModalDay(dayName);
+                  setCustomShiftForm({ name: h.name, startTime: '', endTime: '', requiredCount: 2 });
+                  setShowCustomShiftModal(true);
+                }}
+                style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: 'none', background: '#1a4a2e', color: 'white', cursor: 'pointer' }}
+              >
+                הוסף משמרת מיוחדת
+              </button>
+              <button
+                onClick={() => setHolidayDismissed(true)}
+                style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: '1px solid #e8e0d4', background: '#f5f0e8', color: '#475569', cursor: 'pointer' }}
+              >
+                התעלם
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Preferences status indicator */}
       {(() => {
         const nonMiya = employees.filter(e => e.id !== MIYA_ID);
@@ -2465,7 +2544,7 @@ ${pages}
                     return (
                       <td
                         key={d.day}
-                        style={{ padding: 6, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px ${isCustom ? 'dashed' : 'solid'} ${shiftColor}`, overflow: 'hidden', ...(borderRight ? { borderRight } : {}) }}
+                        style={{ padding: 6, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px ${isCustom ? 'dashed' : 'solid'} ${shiftColor}`, overflow: 'hidden', position: 'relative', ...(borderRight ? { borderRight } : {}) }}
                       >
                         {/* Volt toggle — not for שישי, not for custom */}
                         {!isCustom && d.day !== 'שישי' && (
@@ -2483,8 +2562,9 @@ ${pages}
                         {/* Delete custom shift button (per-day) */}
                         {isCustom && (
                           <button
-                            onClick={() => deleteCustomShift(d.day, shift)}
-                            style={{ fontSize: 9, color: '#dc2626', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, cursor: 'pointer', padding: '1px 6px', marginBottom: 4, float: 'left' }}
+                            onClick={(e) => { e.stopPropagation(); deleteCustomShift(d.day, shift); }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            style={{ position: 'absolute', top: 4, left: 4, zIndex: 2, fontSize: 14, color: '#A32D2D', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '50%', cursor: 'pointer', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1 }}
                             title={`מחק משמרת ${shift}`}
                           >
                             ✕
@@ -2949,6 +3029,83 @@ ${pages}
               );
             })()}
 
+            {/* Holiday detection */}
+            {(() => {
+              const rangeHolidays = ISRAELI_HOLIDAYS.filter(h => {
+                const hDate = new Date(h.date + 'T00:00:00');
+                return hDate >= planAheadFrom && hDate <= planAheadTo;
+              });
+              if (rangeHolidays.length === 0) return null;
+
+              // Filter out holidays that already have a custom shift with matching name
+              const uncovered = rangeHolidays.filter(h => {
+                const hDate = new Date(h.date + 'T00:00:00');
+                const sunday = new Date(hDate);
+                sunday.setDate(hDate.getDate() - hDate.getDay());
+                sunday.setHours(0, 0, 0, 0);
+                const wk = formatWeekKey(sunday);
+                const dayName = DAY_NAMES[hDate.getDay()];
+                try {
+                  const saved = localStorage.getItem(`customShifts_${wk}`);
+                  if (!saved) return true;
+                  const parsed = JSON.parse(saved);
+                  return !(parsed[dayName] || []).some((cs: CustomShiftDef) => cs.name === h.name);
+                } catch { return true; }
+              });
+              if (uncovered.length === 0) return null;
+
+              return (
+                <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 8, padding: '10px 14px', margin: '12px 0', direction: 'rtl' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e', marginBottom: 6 }}>🕎 נמצאו חגים בטווח זה:</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
+                    {uncovered.map(h => {
+                      const hd = new Date(h.date + 'T00:00:00');
+                      const dayName = DAY_NAMES[hd.getDay()];
+                      return (
+                        <div key={h.date + h.name} style={{ fontSize: 13, color: '#92400e' }}>
+                          • {h.name} — {hd.getDate()}.{String(hd.getMonth() + 1).padStart(2, '0')}.{hd.getFullYear()} ({dayName})
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#92400e', marginBottom: 10 }}>האם תרצי להוסיף משמרות מיוחדות לימי החג?</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => {
+                        // Pre-fill specialShifts with holidays
+                        const entries: SpecialShiftEntry[] = uncovered.map(h => {
+                          const hd = new Date(h.date + 'T00:00:00');
+                          const isFriday = hd.getDay() === 5;
+                          return {
+                            id: Date.now().toString() + '_' + h.date,
+                            name: h.name,
+                            date: h.date,
+                            startTime: isFriday ? '07:00' : '09:00',
+                            endTime: isFriday ? '14:00' : '15:00',
+                            requiredCount: 2,
+                          };
+                        });
+                        setSpecialShifts(entries);
+                        setPlanAheadStep('specialShifts');
+                      }}
+                      style={{ padding: '6px 14px', fontSize: 13, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      כן, אוסיף משמרות מיוחדות
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!checkPlanAheadPreferences()) { setPlanAheadNoPrefsWarning(true); return; }
+                        setPlanAheadStep('question');
+                      }}
+                      style={{ padding: '6px 14px', fontSize: 13, background: '#f5f0e8', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', fontWeight: 600, color: '#475569' }}
+                    >
+                      לא, המשך לשיבוץ
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* No preferences warning */}
             {planAheadNoPrefsWarning && (
               <div style={{ background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
@@ -3036,17 +3193,78 @@ ${pages}
                 <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px' }}>{`הוסיפי משמרות מיוחדות לטווח ${formatDate(planAheadFrom)}–${formatDate(planAheadTo)}`}</p>
 
                 {specialShifts.length > 0 && (
-                  <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
-                    {specialShifts.map(ss => (
-                      <div key={ss.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FFF7ED', border: '1px solid #FCEBC8', borderRadius: 8, padding: '8px 12px', fontSize: 13 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF9F27', flexShrink: 0 }} />
-                        <span style={{ fontWeight: 600, flex: 1 }}>{ss.name}</span>
-                        <span style={{ color: '#64748b' }}>{ss.date.split('-').reverse().join('.')}</span>
-                        <span style={{ color: '#64748b' }}>{ss.startTime}–{ss.endTime}</span>
-                        <span style={{ color: '#64748b' }}>×{ss.requiredCount}</span>
-                        <button onClick={() => setSpecialShifts(prev => prev.filter(s => s.id !== ss.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#ef4444', padding: '2px 4px' }} title="מחק">✕</button>
-                      </div>
-                    ))}
+                  <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+                    {specialShifts.map(ss => {
+                      const isEditing = editingHolidayId === ss.id;
+                      if (isEditing && editingDraft) {
+                        const draftValid = editingDraft.name.trim() !== '' && editingDraft.date !== '' && editingDraft.startTime !== '' && editingDraft.endTime !== '' && isDateInPlanAheadRange(editingDraft.date) && timeToMinutes(editingDraft.endTime) > timeToMinutes(editingDraft.startTime);
+                        return (
+                          <div key={ss.id} style={{ background: '#FFF7ED', border: '2px solid #EF9F27', borderRadius: 8, padding: '10px 12px', fontSize: 13 }}>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                              <input type="text" value={editingDraft.name} onChange={e => setEditingDraft(d => d ? { ...d, name: e.target.value } : d)} style={{ flex: 1, padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #e8e0d4' }} />
+                              <input type="date" value={editingDraft.date} onChange={e => setEditingDraft(d => d ? { ...d, date: e.target.value } : d)} style={{ padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #e8e0d4' }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ fontSize: 11, color: '#64748b' }}>מ-</span>
+                              <input type="time" value={editingDraft.startTime} onChange={e => setEditingDraft(d => d ? { ...d, startTime: e.target.value } : d)} style={{ padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #e8e0d4' }} />
+                              <span style={{ fontSize: 11, color: '#64748b' }}>עד</span>
+                              <input type="time" value={editingDraft.endTime} onChange={e => setEditingDraft(d => d ? { ...d, endTime: e.target.value } : d)} style={{ padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #e8e0d4' }} />
+                              <span style={{ fontSize: 11, color: '#64748b' }}>כמות:</span>
+                              <select value={editingDraft.requiredCount} onChange={e => setEditingDraft(d => d ? { ...d, requiredCount: Number(e.target.value) } : d)} style={{ padding: '4px 6px', fontSize: 12, borderRadius: 4, border: '1px solid #e8e0d4' }}>
+                                {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                              </select>
+                              <button
+                                onClick={() => {
+                                  if (!draftValid) return;
+                                  setSpecialShifts(prev => prev.map(s => s.id === ss.id ? { ...editingDraft } : s));
+                                  setEditingHolidayId(null); setEditingDraft(null);
+                                }}
+                                disabled={!draftValid}
+                                style={{ padding: '2px 10px', fontSize: 11, fontWeight: 600, borderRadius: 4, border: 'none', background: draftValid ? '#16a34a' : '#d1cdc6', color: 'white', cursor: draftValid ? 'pointer' : 'not-allowed' }}
+                              >עדכן</button>
+                              <button
+                                onClick={() => { setEditingHolidayId(null); setEditingDraft(null); }}
+                                style={{ padding: '2px 10px', fontSize: 11, fontWeight: 600, borderRadius: 4, border: '1px solid #e8e0d4', background: '#f5f0e8', color: '#475569', cursor: 'pointer' }}
+                              >בטל</button>
+                            </div>
+                            {!draftValid && editingDraft.startTime && editingDraft.endTime && timeToMinutes(editingDraft.endTime) <= timeToMinutes(editingDraft.startTime) && (
+                              <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>שעת סיום חייבת להיות אחרי שעת התחלה</div>
+                            )}
+                            {!draftValid && editingDraft.date && !isDateInPlanAheadRange(editingDraft.date) && (
+                              <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>התאריך לא בטווח הנבחר</div>
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={ss.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FFF7ED', border: '1px solid #FCEBC8', borderRadius: 8, padding: '8px 12px', fontSize: 13 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF9F27', flexShrink: 0 }} />
+                          <span style={{ fontWeight: 600, flex: 1 }}>{ss.name}</span>
+                          <span style={{ color: '#64748b' }}>{ss.date.split('-').reverse().join('.')}</span>
+                          <span style={{ color: '#64748b' }}>{ss.startTime}–{ss.endTime}</span>
+                          <span style={{ color: '#64748b' }}>×{ss.requiredCount}</span>
+                          <button
+                            onClick={() => {
+                              // Auto-save current edit if valid, then open new
+                              if (editingHolidayId && editingDraft) {
+                                const valid = editingDraft.name.trim() !== '' && editingDraft.date !== '' && editingDraft.startTime !== '' && editingDraft.endTime !== '' && isDateInPlanAheadRange(editingDraft.date) && timeToMinutes(editingDraft.endTime) > timeToMinutes(editingDraft.startTime);
+                                if (valid) setSpecialShifts(prev => prev.map(s => s.id === editingHolidayId ? { ...editingDraft } : s));
+                              }
+                              setEditingHolidayId(ss.id); setEditingDraft({ ...ss });
+                            }}
+                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '0.5px solid #e8e0d4', background: 'transparent', cursor: 'pointer', color: '#475569' }}
+                          >ערוך</button>
+                          <button
+                            onClick={() => {
+                              if (editingHolidayId === ss.id) { setEditingHolidayId(null); setEditingDraft(null); }
+                              setSpecialShifts(prev => prev.filter(s => s.id !== ss.id));
+                            }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#ef4444', padding: '2px 4px' }}
+                            title="מחק"
+                          >✕</button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -3085,7 +3303,12 @@ ${pages}
 
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
                   <button onClick={() => { setSpecialShifts([]); setPlanAheadStep('question'); }} style={{ padding: '8px 16px', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', background: '#f5f0e8', color: '#475569', fontWeight: 600 }}>ביטול</button>
-                  <button onClick={() => runPlanAheadAutoSchedule()} disabled={specialShifts.length === 0} style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700, opacity: specialShifts.length === 0 ? 0.5 : 1 }}>שמור והמשך לשיבוץ</button>
+                  <button
+                    onClick={() => runPlanAheadAutoSchedule()}
+                    disabled={specialShifts.length === 0 || editingHolidayId !== null}
+                    title={editingHolidayId !== null ? 'סיים את העריכה לפני שמירה' : undefined}
+                    style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: (specialShifts.length === 0 || editingHolidayId !== null) ? 'not-allowed' : 'pointer', fontWeight: 700, opacity: (specialShifts.length === 0 || editingHolidayId !== null) ? 0.5 : 1 }}
+                  >שמור והמשך לשיבוץ</button>
                 </div>
               </div>
             )}
