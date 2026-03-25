@@ -675,7 +675,6 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
       {editModalEmpId !== null && (() => {
         const modalEmp = employees.find(e => e.id === editModalEmpId);
         if (!modalEmp) return null;
-        const hasApiKey = !!localStorage.getItem('anthropic_api_key');
         return (
           <div
             onClick={closeEditModal}
@@ -730,12 +729,11 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
               />
               <button
                 onClick={handleExtractFreeText}
-                disabled={!freeText.trim() || isExtracting || !hasApiKey}
-                title={!hasApiKey ? 'יש להגדיר מפתח API' : undefined}
+                disabled={!freeText.trim() || isExtracting}
                 style={{
                   padding: '8px 20px', fontSize: 13, fontWeight: 600, borderRadius: 6, border: 'none',
-                  cursor: freeText.trim() && !isExtracting && hasApiKey ? 'pointer' : 'not-allowed',
-                  background: freeText.trim() && !isExtracting && hasApiKey ? '#1a4a2e' : '#d1cdc6', color: 'white',
+                  cursor: freeText.trim() && !isExtracting ? 'pointer' : 'not-allowed',
+                  background: freeText.trim() && !isExtracting ? '#1a4a2e' : '#d1cdc6', color: 'white',
                 }}
               >
                 {isExtracting ? '⏳ מחלץ...' : 'חלץ אוטומטית'}
