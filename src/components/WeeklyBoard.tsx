@@ -34,8 +34,6 @@ interface CustomShiftDef {
   startTime: string;
   endTime: string;
   requiredCount: number;
-  originalMorningDepartures: Record<number, string>;
-  originalEveningArrivals: Record<number, string>;
 }
 
 interface SpecialShiftEntry {
@@ -401,28 +399,18 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       const savedCS = localStorage.getItem(`customShifts_${wk}`);
       const weekCustomShifts: Record<string, CustomShiftDef[]> = savedCS ? JSON.parse(savedCS) : {};
 
-      // Inject special shifts as customShifts
+      // Inject special shifts as customShifts (additive — no morning/evening time changes)
       const weekSpecials = specialByWeek[wk] || [];
       let weekSpecialCount = 0;
       for (const ss of weekSpecials) {
         const { dayName } = dateToWeekKeyAndDay(ss.date);
         if (!dayName) continue;
-        const origMorningDep: Record<number, string> = {};
-        const origEveningArr: Record<number, string> = {};
-        for (const s of weekSchedule[`${dayName}_בוקר`] || []) {
-          if (s.employeeId !== null) origMorningDep[s.employeeId] = s.departureTime;
-        }
-        for (const s of weekSchedule[`${dayName}_ערב`] || []) {
-          if (s.employeeId !== null) origEveningArr[s.employeeId] = s.arrivalTime;
-        }
         const csDef: CustomShiftDef = {
           name: ss.name,
           day: dayName,
           startTime: ss.startTime,
           endTime: ss.endTime,
           requiredCount: ss.requiredCount,
-          originalMorningDepartures: origMorningDep,
-          originalEveningArrivals: origEveningArr,
         };
         if (!weekCustomShifts[dayName]) weekCustomShifts[dayName] = [];
         weekCustomShifts[dayName].push(csDef);
@@ -746,34 +734,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
     const newSchedule = { ...schedule };
 
-    // Snapshot and adjust morning departures
-    const morningKey = `${day}_בוקר`;
-    const morningSlots = [...(newSchedule[morningKey] || getOrInitializeSlots(day, 'בוקר'))];
-    const originalMorningDepartures: Record<number, string> = {};
-    morningSlots.forEach((s, idx) => {
-      if (timeToMinutes(s.departureTime) > timeToMinutes(startTime)) {
-        originalMorningDepartures[idx] = s.departureTime;
-        morningSlots[idx] = { ...s, departureTime: startTime };
-      }
-    });
-    newSchedule[morningKey] = morningSlots;
-
-    // Snapshot and adjust evening arrivals
-    const eveningKey = `${day}_ערב`;
-    const eveningSlots = [...(newSchedule[eveningKey] || getOrInitializeSlots(day, 'ערב'))];
-    const originalEveningArrivals: Record<number, string> = {};
-    const dayStruct = WEEK_STRUCTURE.find(w => w.day === day);
-    if (dayStruct?.shifts.includes('ערב')) {
-      eveningSlots.forEach((s, idx) => {
-        if (timeToMinutes(s.arrivalTime) < timeToMinutes(endTime)) {
-          originalEveningArrivals[idx] = s.arrivalTime;
-          eveningSlots[idx] = { ...s, arrivalTime: endTime };
-        }
-      });
-      newSchedule[eveningKey] = eveningSlots;
-    }
-
-    // Create custom shift slots
+    // Create custom shift slots (additive — does NOT modify morning/evening times)
     const customKey = `${day}_${name}`;
     const customSlots: Slot[] = [];
     for (let i = 0; i < requiredCount; i++) {
@@ -784,7 +745,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     // Save
     saveSchedule(newSchedule);
 
-    const newDef: CustomShiftDef = { name, day, startTime, endTime, requiredCount, originalMorningDepartures, originalEveningArrivals };
+    const newDef: CustomShiftDef = { name, day, startTime, endTime, requiredCount };
     const updated = { ...customShifts, [day]: [...(customShifts[day] || []), newDef] };
     saveCustomShifts(updated);
     setShowCustomShiftModal(false);
@@ -801,32 +762,6 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
     // Remove custom shift schedule key
     delete newSchedule[`${day}_${shiftName}`];
-
-    // Restore original morning departures
-    const morningKey = `${day}_בוקר`;
-    if (newSchedule[morningKey]) {
-      const morningSlots = [...newSchedule[morningKey]];
-      for (const [idxStr, originalTime] of Object.entries(def.originalMorningDepartures)) {
-        const idx = Number(idxStr);
-        if (morningSlots[idx]) {
-          morningSlots[idx] = { ...morningSlots[idx], departureTime: originalTime };
-        }
-      }
-      newSchedule[morningKey] = morningSlots;
-    }
-
-    // Restore original evening arrivals
-    const eveningKey = `${day}_ערב`;
-    if (newSchedule[eveningKey]) {
-      const eveningSlots = [...newSchedule[eveningKey]];
-      for (const [idxStr, originalTime] of Object.entries(def.originalEveningArrivals)) {
-        const idx = Number(idxStr);
-        if (eveningSlots[idx]) {
-          eveningSlots[idx] = { ...eveningSlots[idx], arrivalTime: originalTime };
-        }
-      }
-      newSchedule[eveningKey] = eveningSlots;
-    }
 
     saveSchedule(newSchedule);
 
@@ -3469,9 +3404,6 @@ ${pages}
           && !(customShifts[customShiftModalDay] || []).some(cs => cs.name === customShiftForm.name)
           && (customShiftForm.endTime === '' || customShiftForm.startTime === '' || timeToMinutes(customShiftForm.endTime) > timeToMinutes(customShiftForm.startTime));
 
-        const dayHasMorning = WEEK_STRUCTURE.find(w => w.day === customShiftModalDay)?.shifts.includes('בוקר');
-        const dayHasEvening = WEEK_STRUCTURE.find(w => w.day === customShiftModalDay)?.shifts.includes('ערב');
-
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ background: 'white', borderRadius: 10, padding: 24, maxWidth: 440, width: '95%', direction: 'rtl' }}>
@@ -3547,14 +3479,8 @@ ${pages}
 
               {/* Info note */}
               {customShiftForm.startTime && customShiftForm.endTime && timeToMinutes(customShiftForm.endTime) > timeToMinutes(customShiftForm.startTime) && (
-                <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
-                  {dayHasMorning && dayHasEvening
-                    ? `⚠️ שעות הבוקר יתואמו אוטומטית לסיום ב-${customShiftForm.startTime} ושעות הערב יתחילו מ-${customShiftForm.endTime}`
-                    : dayHasMorning
-                    ? `⚠️ שעות הבוקר יתואמו אוטומטית לסיום ב-${customShiftForm.startTime}`
-                    : dayHasEvening
-                    ? `⚠️ שעות הערב יתחילו מ-${customShiftForm.endTime}`
-                    : 'ביום זה אין משמרת בוקר/ערב — השעות לא יתואמו אוטומטית'}
+                <div style={{ background: '#EBF3D8', border: '1px solid #C8DBA0', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#2D5016', lineHeight: 1.6 }}>
+                  ✨ משמרת מיוחדת — תוצג בנוסף למשמרות הבוקר/ערב הקיימות (לא משפיעה על שעותיהן)
                 </div>
               )}
 
