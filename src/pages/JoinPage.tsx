@@ -27,6 +27,8 @@ export function JoinPage() {
         return
       }
 
+      // Always replace any existing session (Supabase auth or previous guest)
+      await supabase.auth.signOut()
       const emp = data.employees as SupabaseEmployee
       localStorage.setItem('guest_employee', JSON.stringify(emp))
       navigate('/', { replace: true })

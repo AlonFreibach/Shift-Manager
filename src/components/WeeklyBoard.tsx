@@ -5,6 +5,7 @@ import { addFairnessEvents } from '../utils/fairnessAccumulator';
 import type { Employee, FixedShift } from '../data/employees';
 import type { EmployeePrefs } from '../types';
 import { ISRAELI_HOLIDAYS } from '../data/holidays';
+import { supabase } from '../lib/supabaseClient';
 
 interface WeeklyBoardProps {
   employees: Employee[];
@@ -640,16 +641,55 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
         prefForWeek[emp.id] = {};
       }
     });
-    setPreferences(prefForWeek);
 
-    // If an auto-schedule was requested from PreferencesTab, run it now with fresh prefs
-    if (pendingAutoScheduleRef.current) {
-      pendingAutoScheduleRef.current = false;
-      // Use setTimeout to ensure React has committed the state updates
-      setTimeout(() => autoSchedule(prefForWeek), 0);
-    }
+    // Also fetch from Supabase (PreferencesView saves preferences there, not to localStorage)
+    let cancelled = false;
+    const SUPA_SHIFT_MAP: Record<string, string> = { morning: 'בוקר', evening: 'ערב' };
+    supabase
+      .from('preferences')
+      .select('employee_id, day_of_week, shift_type, available, employees(name)')
+      .eq('week_start', weekKey)
+      .then(({ data: supaPrefs }) => {
+        if (cancelled) return;
+        if (supaPrefs && supaPrefs.length > 0) {
+          // For employees that have Supabase data, replace localStorage prefs with Supabase prefs
+          const overriddenIds = new Set<number>();
+          supaPrefs.forEach((p: any) => {
+            const localEmp = employees.find(e => e.name === (p.employees as any)?.name);
+            if (localEmp) overriddenIds.add(localEmp.id);
+          });
+          overriddenIds.forEach(id => { prefForWeek[id] = {}; });
 
-    setHolidayDismissed(false);
+          supaPrefs.forEach((p: any) => {
+            if (!p.available) return;
+            const localEmp = employees.find(e => e.name === (p.employees as any)?.name);
+            if (!localEmp) return;
+            const dayName = DAY_NAMES[p.day_of_week as number];
+            const shiftHeb = SUPA_SHIFT_MAP[p.shift_type];
+            if (!dayName || !shiftHeb) return;
+            if (!prefForWeek[localEmp.id][dayName]) prefForWeek[localEmp.id][dayName] = [];
+            prefForWeek[localEmp.id][dayName].push({ shift: shiftHeb });
+          });
+        }
+        setPreferences({ ...prefForWeek });
+        if (pendingAutoScheduleRef.current) {
+          pendingAutoScheduleRef.current = false;
+          setTimeout(() => autoSchedule({ ...prefForWeek }), 0);
+        }
+        setHolidayDismissed(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Supabase unavailable — fall back to localStorage prefs only
+        setPreferences(prefForWeek);
+        if (pendingAutoScheduleRef.current) {
+          pendingAutoScheduleRef.current = false;
+          setTimeout(() => autoSchedule(prefForWeek), 0);
+        }
+        setHolidayDismissed(false);
+      });
+
+    return () => { cancelled = true; };
   }, [weekKey, employees]);
 
   // Handle autoSchedule request from PreferencesTab
