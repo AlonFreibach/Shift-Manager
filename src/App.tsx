@@ -36,11 +36,11 @@ function App() {
         top: 0,
         zIndex: 100,
       }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 16px', display: 'flex', alignItems: 'center', height: 56 }}>
-          <div style={{ fontWeight: 700, fontSize: 18, color: '#ffffff', marginLeft: 32, whiteSpace: 'nowrap' }}>
+        <div className="header-inner" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 16px', display: 'flex', alignItems: 'center', height: 56 }}>
+          <div className="header-brand" style={{ fontWeight: 700, fontSize: 18, color: '#ffffff', marginLeft: 32, whiteSpace: 'nowrap' }}>
             נוי השדה — שוהם
           </div>
-          <nav style={{ display: 'flex', gap: 2, height: '100%' }}>
+          <nav className="header-nav" style={{ display: 'flex', gap: 2, height: '100%' }}>
             {TABS.map(tab => (
               <button
                 key={tab.id}

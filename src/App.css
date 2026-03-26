@@ -63,3 +63,26 @@ button {
 ::-webkit-scrollbar-thumb:hover {
   background: #4a7c59;
 }
+
+/* Mobile navigation responsive */
+@media (max-width: 768px) {
+  .header-inner {
+    padding: 8px 4px !important;
+  }
+  .header-brand {
+    font-size: 14px !important;
+    margin-left: 8px !important;
+  }
+  .header-nav {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .header-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .header-nav button {
+    font-size: 12px !important;
+    padding: 6px 8px !important;
+  }
+}

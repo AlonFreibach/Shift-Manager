@@ -2334,7 +2334,7 @@ ${pages}
           ← שבוע קודם
         </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: 16, color: '#1a4a2e' }}>
+          <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 16, color: '#1a4a2e' }}>
             לוח שיבוץ שבועי — {formatDate(weekStart)}–{formatDate(new Date(weekStart.getTime() + 5 * 86400000))}.{weekStart.getFullYear()}
           </div>
           {(() => {
@@ -2473,7 +2473,7 @@ ${pages}
         );
       })()}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <button
           onClick={() => autoSchedule()}
           style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
@@ -2664,7 +2664,7 @@ ${pages}
       </div>
 
       {/* Bottom actions */}
-      <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <button
           onClick={() => {
             const text = generateWhatsAppText();
