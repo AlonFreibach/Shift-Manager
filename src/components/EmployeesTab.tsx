@@ -213,7 +213,7 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
       </div>
 
       {/* Employees Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
         {employees.map((employee) => {
           const isEditing = editingCardId === employee.id;
           const draft = isEditing ? draftEmployee : null;
@@ -227,10 +227,11 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
               style={{
                 background: 'white',
                 borderRadius: 12,
-                border: isEditing ? '2px solid #1a4a2e' : '0.5px solid #e0ddd8',
+                border: isEditing ? '2px solid #3B6D11' : '0.5px solid #e0ddd8',
                 padding: '1.25rem',
                 direction: 'rtl',
                 transition: 'box-shadow 0.15s',
+                ...(isEditing ? { position: 'relative' as const, zIndex: 1 } : {}),
               }}
             >
               {isEditing && draft ? (

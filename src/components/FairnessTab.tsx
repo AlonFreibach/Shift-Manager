@@ -7,6 +7,14 @@ interface FairnessTabProps {
   employees: Employee[];
 }
 
+function flexDisplayInfo(score: number | null): { text: string; color: string } {
+  if (score === null) return { text: '—', color: '#475569' };
+  if (score < 100) return { text: `⚠️ ${score}`, color: '#A32D2D' };
+  if (score < 150) return { text: `${score}`, color: '#475569' };
+  if (score < 200) return { text: `✦ ${score}`, color: '#3B6D11' };
+  return { text: `★ ${score}`, color: '#D4A017' };
+}
+
 export function FairnessTab({ employees }: FairnessTabProps) {
   const [, forceUpdate] = useState(0);
 
@@ -15,8 +23,11 @@ export function FairnessTab({ employees }: FairnessTabProps) {
     const fairness = calculateFairnessScore(enriched);
     const flexibility = calculateFlexibilityScore(enriched);
     const stability = calculateStabilityScore(enriched);
-    const composite = (stability * 0.5) + (flexibility * 0.4) + (fairness * 0.1);
-    return { emp, fairness, flexibility, stability, composite };
+    const flexVal = flexibility ?? 0;
+    const composite = (fairness * 0.5) + ((flexVal / 100) * 0.3) + (stability * 0.2);
+    const hasFairnessHistory = enriched.fairnessHistory.length > 0;
+    const hasAnyHistory = hasFairnessHistory || flexibility !== null;
+    return { emp, fairness, flexibility, stability, composite, hasFairnessHistory, hasAnyHistory };
   });
 
   // Sort by composite score descending
@@ -61,15 +72,18 @@ export function FairnessTab({ employees }: FairnessTabProps) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ emp, fairness, flexibility, stability, composite }, idx) => (
-              <tr key={emp.id} style={{ background: idx % 2 === 0 ? '#ffffff' : '#faf7f2' }}>
-                <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', fontWeight: 600, color: '#1a4a2e' }}>{emp.name}</td>
-                <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: '#475569' }}>{fairness.toFixed(1)}</td>
-                <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: '#475569' }}>{flexibility}</td>
-                <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: '#475569' }}>{stability}</td>
-                <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', fontWeight: 700, background: '#f0fdf4', color: '#1a4a2e' }}>{composite.toFixed(2)}</td>
-              </tr>
-            ))}
+            {rows.map(({ emp, fairness, flexibility, stability, composite, hasFairnessHistory, hasAnyHistory }, idx) => {
+              const flexInfo = flexDisplayInfo(flexibility);
+              return (
+                <tr key={emp.id} style={{ background: idx % 2 === 0 ? '#ffffff' : '#faf7f2' }}>
+                  <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', fontWeight: 600, color: '#1a4a2e' }}>{emp.name}</td>
+                  <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: '#475569' }}>{fairness === 0 && !hasFairnessHistory ? '—' : fairness.toFixed(1)}</td>
+                  <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: flexInfo.color, fontWeight: flexibility !== null && flexibility >= 150 ? 700 : 400 }}>{flexInfo.text}</td>
+                  <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: '#475569' }}>{stability}</td>
+                  <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', fontWeight: 700, background: '#f0fdf4', color: '#1a4a2e' }}>{!hasAnyHistory ? '—' : composite.toFixed(2)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

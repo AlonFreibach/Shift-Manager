@@ -1,10 +1,12 @@
 import type { Employee } from '../data/employees';
+import { loadFlexibilityHistory } from './fairnessAccumulator';
 
 export function calculateFairnessScore(employee: Employee): number {
   const now = new Date();
   let score = 0;
   for (const event of employee.fairnessHistory) {
-    const eventDate = new Date(event.date);
+    const dateStr = event.date.includes('_') ? event.date.split('_')[0] : event.date;
+    const eventDate = new Date(dateStr + 'T00:00:00');
     const ageWeeks = (now.getTime() - eventDate.getTime()) / (7 * 24 * 60 * 60 * 1000);
     let weight = 0.1;
     if (ageWeeks <= 4) weight = 1.0;
@@ -17,21 +19,29 @@ export function calculateFairnessScore(employee: Employee): number {
   return score;
 }
 
-export function calculateFlexibilityScore(employee: Employee): number {
-  const sortedHistory = employee.flexibilityHistory
-    .sort((a, b) => new Date(b.weekStart).getTime() - new Date(a.weekStart).getTime())
-    .slice(0, 8);
-  let totalWeighted = 0;
+/**
+ * Calculates flexibility score from per-employee localStorage data.
+ * Returns null if no history exists.
+ * Score = weighted average of weekScores (submitted/weeklyShifts × 100) with time decay.
+ * Decay: week 1 = 1.00, week 2 = 0.90, ..., week 8 = 0.30
+ */
+export function calculateFlexibilityScore(employee: Employee): number | null {
+  const history = loadFlexibilityHistory(employee.id);
+  if (history.length === 0) return null;
+
+  // Already sorted descending by weekKey from storage, take up to 8
+  const recent = history.slice(0, 8);
+
+  let weightedSum = 0;
   let totalWeight = 0;
-  for (let i = 0; i < sortedHistory.length; i++) {
-    const decay = 1.0 - i * 0.1;
-    const ratio = sortedHistory[i].submitted / sortedHistory[i].committed;
-    totalWeighted += ratio * decay;
-    totalWeight += decay;
+  for (let i = 0; i < recent.length; i++) {
+    const weight = 1.0 - i * 0.1;
+    weightedSum += recent[i].weekScore * weight;
+    totalWeight += weight;
   }
-  if (totalWeight === 0) return 0;
-  const average = totalWeighted / totalWeight;
-  return Math.round(average * 100);
+
+  if (totalWeight === 0) return null;
+  return Math.round(weightedSum / totalWeight);
 }
 
 export function calculateStabilityScore(employee: Employee): number {
@@ -82,8 +92,8 @@ export function rankEmployeesForShift(employees: Employee[], day: string, shift:
     const stabilityA = calculateStabilityScore(a);
     const stabilityB = calculateStabilityScore(b);
     if (stabilityA !== stabilityB) return stabilityB - stabilityA; // descending
-    const flexibilityA = calculateFlexibilityScore(a);
-    const flexibilityB = calculateFlexibilityScore(b);
+    const flexibilityA = calculateFlexibilityScore(a) ?? 0;
+    const flexibilityB = calculateFlexibilityScore(b) ?? 0;
     return flexibilityB - flexibilityA; // descending
   });
 }

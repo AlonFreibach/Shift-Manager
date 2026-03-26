@@ -9,6 +9,13 @@ export interface AccumulatedHistory {
 
 export type AccumulatedData = Record<number, AccumulatedHistory>;
 
+export interface FlexibilityEntry {
+  weekKey: string;
+  submitted: number;
+  weeklyShifts: number;
+  weekScore: number;
+}
+
 export function loadAccumulatedData(): AccumulatedData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -24,6 +31,14 @@ export function saveAccumulatedData(data: AccumulatedData): void {
 
 export function resetAccumulatedData(): void {
   localStorage.removeItem(STORAGE_KEY);
+  // Also clear all per-employee flexibility keys
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('flexibility_history_')) {
+      localStorage.removeItem(k);
+      i--; // adjust index after removal
+    }
+  }
 }
 
 /**
@@ -66,48 +81,63 @@ export function addFairnessEvents(
 }
 
 /**
- * Called when preferences are set/changed. Updates flexibility history for the employee.
- * submitted = number of shift preferences submitted
- * committed = employee's shiftsPerWeek
+ * Load flexibility history for an employee from per-employee localStorage key.
+ */
+export function loadFlexibilityHistory(empId: number): FlexibilityEntry[] {
+  try {
+    const raw = localStorage.getItem(`flexibility_history_${empId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Called when preferences are saved. Updates flexibility history for the employee.
+ * Stores up to 8 most recent entries in per-employee localStorage key.
  */
 export function updateFlexibility(
   empId: number,
   weekKey: string,
   submittedShifts: number,
-  committed: number,
+  weeklyShifts: number,
 ): void {
-  const data = loadAccumulatedData();
-  if (!data[empId]) {
-    data[empId] = { fairnessHistory: [], flexibilityHistory: [] };
-  }
-  // Replace existing entry for this week
-  data[empId].flexibilityHistory = data[empId].flexibilityHistory.filter(
-    e => e.weekStart !== weekKey
-  );
-  if (submittedShifts > 0) {
-    data[empId].flexibilityHistory.push({
-      weekStart: weekKey,
-      submitted: submittedShifts,
-      committed: Math.max(committed, 1),
-    });
-  }
-  saveAccumulatedData(data);
+  let history = loadFlexibilityHistory(empId);
+
+  // Remove existing entry for this week (replace, not duplicate)
+  history = history.filter(e => e.weekKey !== weekKey);
+
+  // Calculate weekScore
+  const weekScore = weeklyShifts > 0
+    ? (submittedShifts / weeklyShifts) * 100
+    : 0;
+
+  // Add new entry (even if submitted=0, to record that nothing was submitted)
+  history.push({
+    weekKey,
+    submitted: submittedShifts,
+    weeklyShifts,
+    weekScore,
+  });
+
+  // Sort by weekKey descending and keep only 8 most recent
+  history.sort((a, b) => b.weekKey.localeCompare(a.weekKey));
+  history = history.slice(0, 8);
+
+  localStorage.setItem(`flexibility_history_${empId}`, JSON.stringify(history));
 }
 
 /**
  * Called when preferences are deleted. Removes flexibility entry for that employee+week.
  */
 export function removeFlexibility(empId: number, weekKey: string): void {
-  const data = loadAccumulatedData();
-  if (!data[empId]) return;
-  data[empId].flexibilityHistory = data[empId].flexibilityHistory.filter(
-    e => e.weekStart !== weekKey
-  );
-  saveAccumulatedData(data);
+  let history = loadFlexibilityHistory(empId);
+  history = history.filter(e => e.weekKey !== weekKey);
+  localStorage.setItem(`flexibility_history_${empId}`, JSON.stringify(history));
 }
 
 /**
- * Build a virtual Employee with accumulated history merged in, for score calculation.
+ * Build a virtual Employee with accumulated fairness history merged in.
  */
 export function withAccumulatedHistory(employee: Employee): Employee {
   const data = loadAccumulatedData();
@@ -116,6 +146,5 @@ export function withAccumulatedHistory(employee: Employee): Employee {
   return {
     ...employee,
     fairnessHistory: empData.fairnessHistory,
-    flexibilityHistory: empData.flexibilityHistory,
   };
 }

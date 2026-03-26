@@ -192,7 +192,7 @@ function calculateNewStabilityScore(emp: Employee): number {
 
 function calculateCompositeScore(emp: Employee): number {
   const stability = calculateNewStabilityScore(emp) / 4;
-  const flexibility = calculateFlexibilityScore(emp) / 100;
+  const flexibility = (calculateFlexibilityScore(emp) ?? 0) / 100;
   const fairness = calculateFairnessScore(emp);
   return 0.5 * stability + 0.4 * flexibility + 0.1 / (1 + fairness);
 }
@@ -201,7 +201,8 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   const [weekOffset, setWeekOffset] = useState(0);
   const [schedule, setSchedule] = useState<Schedule>({});
   const [voltFlags, setVoltFlags] = useState<VoltFlags>({});
-  const [copied, setCopied] = useState(false);
+  const [whatsappToast, setWhatsappToast] = useState(false);
+  const [whatsappFallback, setWhatsappFallback] = useState('');
 
   const [preferences, setPreferences] = useState<Record<number, EmployeePrefs>>({});
   const [autoResultModal, setAutoResultModal] = useState<AutoResultModal>({
@@ -1357,7 +1358,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     });
     if (!hasAnyPrefs) {
       setNoPrefsToast(true);
-      setTimeout(() => setNoPrefsToast(false), 5000);
+      setTimeout(() => setNoPrefsToast(false), 4000);
       return;
     }
     const result = runAutoScheduleForWeek(weekKey, schedule, customShifts, prefs, voltFlags);
@@ -1654,29 +1655,59 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   }
 
   function generateWhatsAppText(): string {
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-    let text = `שיבוץ שבוע ${formatDate(weekStart)}–${formatDate(weekEnd)}.${weekStart.getFullYear()}\n\n`;
+    const friday = new Date(weekStart);
+    friday.setDate(weekStart.getDate() + 5);
+    const lines: string[] = [];
+
+    lines.push(`🌿 נוי השדה — שוהם`);
+    lines.push(`📅 שבוע ${formatDate(weekStart)}–${formatDate(friday)}.${weekStart.getFullYear()}`);
+    lines.push(`─────────────────`);
+
     for (const d of weekDays) {
-      text += `${d.day} ${d.dateStr}:\n`;
       const dayShifts = getShiftsForDay(d.day);
       for (const { name: shift, isCustom } of dayShifts) {
+        const cellKey = `${d.day}_${shift}`;
         const slots = getOrInitializeSlots(d.day, shift);
-        const assigned = slots.filter(s => s.employeeId !== null);
-        if (assigned.length > 0) {
-          text += `${shift}${isCustom ? ' (מותאם)' : ''}:\n`;
-          for (const slot of assigned) {
-            const name = (slot.locked && slot.employeeId !== null)
-              ? 'מיה'
-              : employees.find(e => e.id === slot.employeeId)?.name || '?';
-            const station = slot.station ? ` (${slot.station})` : '';
-            text += `  ${slot.arrivalTime} ${name}${station} → ${slot.departureTime || '?'}\n`;
+
+        // Shift emoji
+        let emoji = '☀️';
+        if (d.day === 'שישי') emoji = '🗓️';
+        else if (shift === 'ערב') emoji = '🌙';
+        else if (isCustom) emoji = '⭐';
+
+        const label = isCustom ? shift : shift;
+        lines.push('');
+        lines.push(`${emoji} ${d.day} ${d.dateStr} — ${label}`);
+
+        // Volt indicator
+        if (d.day !== 'שישי' && voltFlags[cellKey]) {
+          lines.push(`🛵 וולט פעיל`);
+        }
+
+        // Slots
+        if (slots.length === 0) {
+          lines.push(`⚠️ אין סלוטים`);
+        } else {
+          for (const slot of slots) {
+            if (slot.employeeId !== null) {
+              const name = (slot.locked && slot.employeeId !== null)
+                ? 'מיה'
+                : employees.find(e => e.id === slot.employeeId)?.name || '?';
+              const station = slot.station ? ` (${slot.station})` : '';
+              lines.push(`- ${slot.arrivalTime} ${name}${station}`);
+            } else {
+              lines.push(`- ⚠️ חסר עובדת`);
+            }
           }
         }
       }
-      text += '\n';
     }
-    return text.trim();
+
+    lines.push('');
+    lines.push(`─────────────────`);
+    lines.push(`הועתק מנוי השדה 📋`);
+
+    return lines.join('\n');
   }
 
   function generatePDF() {
@@ -2636,10 +2667,17 @@ ${pages}
       <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
         <button
           onClick={() => {
-            navigator.clipboard.writeText(generateWhatsAppText()).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            });
+            const text = generateWhatsAppText();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(() => {
+                setWhatsappToast(true);
+                setTimeout(() => setWhatsappToast(false), 3000);
+              }).catch(() => {
+                setWhatsappFallback(text);
+              });
+            } else {
+              setWhatsappFallback(text);
+            }
           }}
           style={{ padding: '8px 16px', background: '#16a34a', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
         >
@@ -2651,7 +2689,6 @@ ${pages}
         >
           הורד PDF
         </button>
-        {copied && <span style={{ color: '#16a34a', fontSize: 13, fontWeight: 600 }}>הועתק!</span>}
       </div>
 
       {/* Auto-schedule result modal */}
@@ -2850,7 +2887,7 @@ ${pages}
 
       {/* No preferences toast (autoSchedule) */}
       {noPrefsToast && (
-        <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: '#dc2626', color: 'white', padding: '12px 28px', borderRadius: 8, zIndex: 9999, fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', maxWidth: 500, textAlign: 'center' }}>
+        <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#2D5016', color: '#F5EFD8', padding: '12px 20px', borderRadius: 8, fontSize: 14, maxWidth: 400, textAlign: 'center', direction: 'rtl', pointerEvents: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.2)', fontWeight: 600 }}>
           לא ניתן לשבץ — לא הוזנו העדפות לשבוע זה. עבור ללשונית העדפות והזן העדפות תחילה.
         </div>
       )}
@@ -2872,6 +2909,35 @@ ${pages}
       {slotSaveToast && (
         <div style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', background: '#16a34a', color: 'white', padding: '12px 28px', borderRadius: 8, zIndex: 9999, fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
           ✓ השינויים נשמרו בהצלחה
+        </div>
+      )}
+
+      {/* WhatsApp copy toast */}
+      {whatsappToast && (
+        <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#16a34a', color: 'white', padding: '12px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none' }}>
+          ✓ הועתק ללוח
+        </div>
+      )}
+
+      {/* WhatsApp clipboard fallback modal */}
+      {whatsappFallback && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', borderRadius: 10, padding: 24, maxWidth: 500, width: '95%', direction: 'rtl' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: '#1a4a2e' }}>העתקה ידנית</h3>
+            <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px' }}>סמני את כל הטקסט והעתיקי (Ctrl+C)</p>
+            <textarea
+              readOnly
+              value={whatsappFallback}
+              onFocus={(e) => e.target.select()}
+              style={{ width: '100%', height: 300, fontSize: 13, padding: 12, border: '1px solid #e8e0d4', borderRadius: 8, resize: 'none', fontFamily: 'inherit', direction: 'rtl' }}
+            />
+            <button
+              onClick={() => setWhatsappFallback('')}
+              style={{ marginTop: 12, padding: '8px 20px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+            >
+              סגור
+            </button>
+          </div>
         </div>
       )}
 
@@ -3029,13 +3095,12 @@ ${pages}
               );
             })()}
 
-            {/* Holiday detection */}
+            {/* Holiday detection + No preferences — merged block */}
             {(() => {
               const rangeHolidays = ISRAELI_HOLIDAYS.filter(h => {
                 const hDate = new Date(h.date + 'T00:00:00');
                 return hDate >= planAheadFrom && hDate <= planAheadTo;
               });
-              if (rangeHolidays.length === 0) return null;
 
               // Filter out holidays that already have a custom shift with matching name
               const uncovered = rangeHolidays.filter(h => {
@@ -3052,88 +3117,98 @@ ${pages}
                   return !(parsed[dayName] || []).some((cs: CustomShiftDef) => cs.name === h.name);
                 } catch { return true; }
               });
-              if (uncovered.length === 0) return null;
+
+              const hasHolidays = uncovered.length > 0;
+              const hasNoPrefs = planAheadNoPrefsWarning;
+
+              if (!hasHolidays && !hasNoPrefs) return null;
 
               return (
                 <div style={{ background: '#FAEEDA', border: '1px solid #EF9F27', borderRadius: 8, padding: '10px 14px', margin: '12px 0', direction: 'rtl' }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e', marginBottom: 6 }}>🕎 נמצאו חגים בטווח זה:</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
-                    {uncovered.map(h => {
-                      const hd = new Date(h.date + 'T00:00:00');
-                      const dayName = DAY_NAMES[hd.getDay()];
-                      return (
-                        <div key={h.date + h.name} style={{ fontSize: 13, color: '#92400e' }}>
-                          • {h.name} — {hd.getDate()}.{String(hd.getMonth() + 1).padStart(2, '0')}.{hd.getFullYear()} ({dayName})
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#92400e', marginBottom: 10 }}>האם תרצי להוסיף משמרות מיוחדות לימי החג?</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => {
-                        // Pre-fill specialShifts with holidays
-                        const entries: SpecialShiftEntry[] = uncovered.map(h => {
+                  {hasHolidays && (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e', marginBottom: 6 }}>🕎 נמצאו חגים בטווח זה:</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 10 }}>
+                        {uncovered.map(h => {
                           const hd = new Date(h.date + 'T00:00:00');
-                          const isFriday = hd.getDay() === 5;
-                          return {
-                            id: Date.now().toString() + '_' + h.date,
-                            name: h.name,
-                            date: h.date,
-                            startTime: isFriday ? '07:00' : '09:00',
-                            endTime: isFriday ? '14:00' : '15:00',
-                            requiredCount: 2,
-                          };
-                        });
-                        setSpecialShifts(entries);
-                        setPlanAheadStep('specialShifts');
-                      }}
-                      style={{ padding: '6px 14px', fontSize: 13, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
-                    >
-                      כן, אוסיף משמרות מיוחדות
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!checkPlanAheadPreferences()) { setPlanAheadNoPrefsWarning(true); return; }
-                        setPlanAheadStep('question');
-                      }}
-                      style={{ padding: '6px 14px', fontSize: 13, background: '#f5f0e8', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', fontWeight: 600, color: '#475569' }}
-                    >
-                      לא, המשך לשיבוץ
-                    </button>
-                  </div>
+                          const dayName = DAY_NAMES[hd.getDay()];
+                          return (
+                            <div key={h.date + h.name} style={{ fontSize: 13, color: '#92400e' }}>
+                              • {h.name} — {hd.getDate()}.{String(hd.getMonth() + 1).padStart(2, '0')}.{hd.getFullYear()} ({dayName})
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#92400e', marginBottom: 10 }}>האם תרצי להוסיף משמרות מיוחדות לימי החג?</div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => {
+                            const entries: SpecialShiftEntry[] = uncovered.map(h => {
+                              const hd = new Date(h.date + 'T00:00:00');
+                              const isFriday = hd.getDay() === 5;
+                              return {
+                                id: Date.now().toString() + '_' + h.date,
+                                name: h.name,
+                                date: h.date,
+                                startTime: isFriday ? '07:00' : '09:00',
+                                endTime: isFriday ? '14:00' : '15:00',
+                                requiredCount: 2,
+                              };
+                            });
+                            setSpecialShifts(entries);
+                            setPlanAheadStep('specialShifts');
+                          }}
+                          style={{ padding: '6px 14px', fontSize: 13, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          כן, אוסיף משמרות מיוחדות
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (!checkPlanAheadPreferences()) { setPlanAheadNoPrefsWarning(true); return; }
+                            setPlanAheadStep('question');
+                          }}
+                          style={{ padding: '6px 14px', fontSize: 13, background: '#f5f0e8', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', fontWeight: 600, color: '#475569' }}
+                        >
+                          לא, המשך לשיבוץ
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {hasHolidays && hasNoPrefs && (
+                    <div style={{ borderTop: '1px solid #EF9F27', margin: '12px 0', opacity: 0.4 }} />
+                  )}
+
+                  {hasNoPrefs && (
+                    <>
+                      <div style={{ fontWeight: 700, marginBottom: 8, color: '#92400e', fontSize: 13 }}>
+                        לא נמצאו העדפות עובדות לטווח הנבחר
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => { setPlanAheadNoPrefsWarning(false); setPlanAheadStep('question'); }}
+                          style={{ padding: '6px 14px', fontSize: 13, background: '#f5f0e8', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', fontWeight: 600, color: '#475569' }}
+                        >
+                          המשך בכל זאת
+                        </button>
+                        {onNavigateToPreferences && (
+                          <button
+                            onClick={() => {
+                              setShowPlanAheadModal(false);
+                              setPlanAheadNoPrefsWarning(false);
+                              onNavigateToPreferences();
+                            }}
+                            style={{ padding: '6px 14px', fontSize: 13, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+                          >
+                            עבור להעדפות
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })()}
-
-            {/* No preferences warning */}
-            {planAheadNoPrefsWarning && (
-              <div style={{ background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
-                <div style={{ fontWeight: 700, marginBottom: 8, color: '#92400e' }}>
-                  לא נמצאו העדפות עובדות לטווח הנבחר
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    onClick={() => { setPlanAheadNoPrefsWarning(false); setPlanAheadStep('question'); }}
-                    style={{ padding: '6px 14px', fontSize: 13, background: '#f5f0e8', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', fontWeight: 600, color: '#475569' }}
-                  >
-                    המשך בכל זאת
-                  </button>
-                  {onNavigateToPreferences && (
-                    <button
-                      onClick={() => {
-                        setShowPlanAheadModal(false);
-                        setPlanAheadNoPrefsWarning(false);
-                        onNavigateToPreferences();
-                      }}
-                      style={{ padding: '6px 14px', fontSize: 13, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
-                    >
-                      עבור להעדפות
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* Action buttons */}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
