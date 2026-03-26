@@ -645,11 +645,14 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     // Also fetch from Supabase (PreferencesView saves preferences there, not to localStorage)
     let cancelled = false;
     const SUPA_SHIFT_MAP: Record<string, string> = { morning: 'בוקר', evening: 'ערב' };
-    supabase
-      .from('preferences')
-      .select('employee_id, day_of_week, shift_type, available, employees(name)')
-      .eq('week_start', weekKey)
-      .then(({ data: supaPrefs }) => {
+
+    void (async () => {
+      try {
+        const { data: supaPrefs } = await supabase
+          .from('preferences')
+          .select('employee_id, day_of_week, shift_type, available, employees(name)')
+          .eq('week_start', weekKey);
+
         if (cancelled) return;
         if (supaPrefs && supaPrefs.length > 0) {
           // For employees that have Supabase data, replace localStorage prefs with Supabase prefs
@@ -671,23 +674,18 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
             prefForWeek[localEmp.id][dayName].push({ shift: shiftHeb });
           });
         }
-        setPreferences({ ...prefForWeek });
-        if (pendingAutoScheduleRef.current) {
-          pendingAutoScheduleRef.current = false;
-          setTimeout(() => autoSchedule({ ...prefForWeek }), 0);
-        }
-        setHolidayDismissed(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        // Supabase unavailable — fall back to localStorage prefs only
-        setPreferences(prefForWeek);
-        if (pendingAutoScheduleRef.current) {
-          pendingAutoScheduleRef.current = false;
-          setTimeout(() => autoSchedule(prefForWeek), 0);
-        }
-        setHolidayDismissed(false);
-      });
+      } catch {
+        // Supabase unavailable — use localStorage prefs only
+      }
+
+      if (cancelled) return;
+      setPreferences({ ...prefForWeek });
+      if (pendingAutoScheduleRef.current) {
+        pendingAutoScheduleRef.current = false;
+        setTimeout(() => autoSchedule({ ...prefForWeek }), 0);
+      }
+      setHolidayDismissed(false);
+    })();
 
     return () => { cancelled = true; };
   }, [weekKey, employees]);
