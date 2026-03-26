@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useAuth } from './hooks/useAuth'
+import { supabase } from './lib/supabaseClient'
 import { employees, type Employee } from './data/employees'
 import { WeeklyBoard } from './components/WeeklyBoard'
 import { EmployeesTab } from './components/EmployeesTab'
@@ -30,10 +31,29 @@ function App() {
     setCurrentTab('board')
   }
 
+  const forceSignOut = () => supabase.auth.signOut()
+
+  // Always-visible sign out button (top-right corner)
+  const floatingSignOutBtn = (
+    <button
+      onClick={forceSignOut}
+      style={{
+        position: 'fixed', top: 10, left: 10, zIndex: 9999,
+        padding: '5px 12px', fontSize: 11, fontWeight: 600,
+        background: 'rgba(0,0,0,0.5)', color: 'white',
+        border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6,
+        cursor: 'pointer', opacity: 0.7,
+      }}
+    >
+      התנתק
+    </button>
+  )
+
   // Loading spinner
   if (loading) {
     return (
       <div dir="rtl" className="min-h-screen flex items-center justify-center" style={{ background: '#faf7f2' }}>
+        {floatingSignOutBtn}
         <div className="flex flex-col items-center gap-3">
           <div
             className="w-10 h-10 border-4 rounded-full animate-spin"

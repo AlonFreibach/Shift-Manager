@@ -11,6 +11,17 @@ export function useAuth() {
   const [employeeData, setEmployeeData] = useState<SupabaseEmployee | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Early check: if session exists but no employee record, force sign out
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) return
+      supabase.from('employees').select('id,role').eq('email', data.session.user.email!).single()
+        .then(({ data: emp }) => {
+          if (!emp) supabase.auth.signOut()
+        })
+    })
+  }, [])
+
   const fetchRole = async (email: string) => {
     const { data, error } = await supabase
       .from('employees')
