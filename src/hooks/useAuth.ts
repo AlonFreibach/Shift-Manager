@@ -23,9 +23,8 @@ export function useAuth() {
       setEmployeeId(data.id)
       setEmployeeData(data as SupabaseEmployee)
     } else {
-      setRole(null)
-      setEmployeeId(null)
-      setEmployeeData(null)
+      // Unknown user — no matching employee record, auto sign out
+      await supabase.auth.signOut()
     }
   }
 
