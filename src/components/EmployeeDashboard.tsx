@@ -426,7 +426,6 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
                           badgeColor="#92400E"
                           selected={selections[key]}
                           onSelect={val => setSelections(prev => ({ ...prev, [key]: val }))}
-                          isSpecial
                           disabled={locked}
                         />
                       )
@@ -595,14 +594,13 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
 }
 
 /* ── Shift Row sub-component ── */
-function ShiftRow({ timeLabel, badge, badgeBg, badgeColor, selected, onSelect, isSpecial, disabled }: {
+function ShiftRow({ timeLabel, badge, badgeBg, badgeColor, selected, onSelect, disabled }: {
   timeLabel: string
   badge: string
   badgeBg: string
   badgeColor: string
   selected: boolean | undefined
   onSelect: (val: boolean) => void
-  isSpecial?: boolean
   disabled?: boolean
 }) {
   return (
