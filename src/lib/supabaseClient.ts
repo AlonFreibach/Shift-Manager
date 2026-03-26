@@ -14,6 +14,7 @@ export type SupabaseEmployee = {
   active_from?: string
   active_until?: string
   email?: string
+  phone?: string
   temp_password?: string
   role: 'admin' | 'employee'
   created_at: string

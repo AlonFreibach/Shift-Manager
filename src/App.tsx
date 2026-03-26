@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Routes, Route } from 'react-router-dom'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useAuth } from './hooks/useAuth'
 import { supabase } from './lib/supabaseClient'
@@ -9,6 +10,7 @@ import { FairnessTab } from './components/FairnessTab'
 import { AuthScreen } from './components/AuthScreen'
 import { EmployeeDashboard } from './components/EmployeeDashboard'
 import { PreferencesView } from './components/PreferencesView'
+import { JoinPage } from './pages/JoinPage'
 import './App.css'
 
 type TabId = 'board' | 'employees' | 'preferences' | 'fairness';
@@ -20,7 +22,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'fairness', label: 'טבלת צדק' },
 ];
 
-function App() {
+function AppContent() {
   const { session, role, employeeData, signOut, loading } = useAuth()
   const [savedEmployees, setSavedEmployees] = useLocalStorage<Employee[]>('employees', employees)
   const [currentTab, setCurrentTab] = useState<TabId>('board')
@@ -31,7 +33,10 @@ function App() {
     setCurrentTab('board')
   }
 
-  const forceSignOut = () => supabase.auth.signOut()
+  const forceSignOut = () => {
+    localStorage.removeItem('guest_employee')
+    supabase.auth.signOut()
+  }
 
   // Always-visible sign out button (top-right corner)
   const floatingSignOutBtn = (
@@ -65,12 +70,12 @@ function App() {
     )
   }
 
-  // Not logged in
-  if (!session) {
+  // Not logged in (and no guest session)
+  if (!session && !role) {
     return <AuthScreen />
   }
 
-  // Employee view
+  // Employee view (both auth and guest)
   if (role === 'employee') {
     if (!employeeData) {
       return (
@@ -173,6 +178,15 @@ function App() {
         )}
       </main>
     </div>
+  )
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/join/:token" element={<JoinPage />} />
+      <Route path="*" element={<AppContent />} />
+    </Routes>
   )
 }
 

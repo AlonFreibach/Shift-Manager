@@ -10,9 +10,27 @@ export function useAuth() {
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [employeeData, setEmployeeData] = useState<SupabaseEmployee | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isGuest, setIsGuest] = useState(false)
 
-  // Early check: if session exists but no employee record, force sign out
+  // Check for guest session first
   useEffect(() => {
+    const guestRaw = localStorage.getItem('guest_employee')
+    if (guestRaw) {
+      try {
+        const guest = JSON.parse(guestRaw) as SupabaseEmployee
+        setRole('employee')
+        setEmployeeId(guest.id)
+        setEmployeeData(guest)
+        setIsGuest(true)
+        setLoading(false)
+        return
+      } catch {
+        localStorage.removeItem('guest_employee')
+      }
+    }
+
+    // No guest — proceed with Supabase auth
+    // Early check: if session exists but no employee record, force sign out
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) return
       supabase.from('employees').select('id,role').eq('email', data.session.user.email!).single()
@@ -40,6 +58,9 @@ export function useAuth() {
   }
 
   useEffect(() => {
+    // Skip Supabase auth if guest session active
+    if (isGuest) return
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
@@ -65,9 +86,16 @@ export function useAuth() {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [isGuest])
 
-  const signOut = () => supabase.auth.signOut()
+  const signOut = () => {
+    localStorage.removeItem('guest_employee')
+    setIsGuest(false)
+    setRole(null)
+    setEmployeeId(null)
+    setEmployeeData(null)
+    return supabase.auth.signOut()
+  }
 
   return { session, user, role, employeeId, employeeData, signOut, loading }
 }

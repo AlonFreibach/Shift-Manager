@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Employee, FixedShift } from '../data/employees';
 import { CreateUserModal } from './CreateUserModal';
+import { supabase } from '../lib/supabaseClient';
 import type { SupabaseEmployee } from '../lib/supabaseClient';
 
 interface EmployeesTabProps {
@@ -35,26 +36,43 @@ const IconPerson = () => (
   </svg>
 );
 
-export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
-  // Modal state — add only
-  const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState<Partial<Employee>>({
-    name: '',
-    shiftsPerWeek: 3,
-    fridayAvailability: 'never',
-    shiftType: 'הכל',
-    isTrainee: false,
-    availableFromDate: '',
-    availableToDate: '',
-    fixedShifts: [],
-  });
+// ── Add Modal Form State ──
+interface AddFormData {
+  name: string;
+  phone: string;
+  email: string;
+  seniority: number;
+  shiftType: 'all' | 'morning' | 'evening';
+  friday: 'yes' | 'biweekly' | 'no';
+  activeFrom: string;
+  activeUntil: string;
+}
 
-  // Create-user modal state
+const INITIAL_FORM: AddFormData = {
+  name: '',
+  phone: '',
+  email: '',
+  seniority: 0,
+  shiftType: 'all',
+  friday: 'no',
+  activeFrom: '',
+  activeUntil: '',
+};
+
+export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
+  // Modal state — 3-step wizard
+  const [showModal, setShowModal] = useState(false);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [formData, setFormData] = useState<AddFormData>(INITIAL_FORM);
+  const [saving, setSaving] = useState(false);
+  const [magicLink, setMagicLink] = useState('');
+  const [copyFeedback, setCopyFeedback] = useState('');
+
+  // Create-user modal state (existing 🔑 flow)
   const [createUserTarget, setCreateUserTarget] = useState<Employee | null>(null);
 
-  // "Create user immediately" in add modal
-  const [createUserOnAdd, setCreateUserOnAdd] = useState(false);
-  const [newUserEmail, setNewUserEmail] = useState('');
+  // Copy-link feedback per card
+  const [cardCopyId, setCardCopyId] = useState<number | null>(null);
 
   // Inline card edit state
   const [editingCardId, setEditingCardId] = useState<number | null>(null);
@@ -64,48 +82,143 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
   const dayOptions = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
   const shiftTypeOptions = ['בוקר', 'ערב'];
 
-  // ── Add Modal ──
+  // ── Add Modal — 3-step wizard ──
   const openAddModal = () => {
-    setFormData({
-      name: '',
-      shiftsPerWeek: 3,
-      fridayAvailability: 'never',
-      shiftType: 'הכל',
-      isTrainee: false,
-      availableFromDate: '',
-      availableToDate: '',
-      fixedShifts: [],
-    });
-    setCreateUserOnAdd(false);
-    setNewUserEmail('');
+    setFormData(INITIAL_FORM);
+    setWizardStep(1);
+    setMagicLink('');
+    setCopyFeedback('');
     setShowModal(true);
   };
 
-  const closeModal = () => setShowModal(false);
+  const closeModal = () => {
+    setShowModal(false);
+    setWizardStep(1);
+    setMagicLink('');
+  };
 
-  const handleAddSave = () => {
-    if (!formData.name?.trim()) {
-      alert('אנא הזן שם עובדת');
+  const handleSaveToSupabase = async () => {
+    if (!formData.name.trim()) return;
+    setSaving(true);
+
+    // Map shiftType/friday for local Employee compatibility
+    const localShiftType = formData.shiftType === 'all' ? 'הכל' : formData.shiftType === 'morning' ? 'בוקר' : 'ערב';
+    const localFriday = formData.friday === 'yes' ? 'always' : formData.friday === 'biweekly' ? 'biweekly' : 'never';
+
+    // Insert employee to Supabase
+    const { data: newEmp, error } = await supabase
+      .from('employees')
+      .insert({
+        name: formData.name.trim(),
+        phone: formData.phone.trim() || null,
+        email: formData.email.trim() || null,
+        seniority: formData.seniority,
+        shift_type: formData.shiftType,
+        friday: formData.friday,
+        active_from: formData.activeFrom || null,
+        active_until: formData.activeUntil || null,
+        role: 'employee',
+      })
+      .select()
+      .single();
+
+    if (error || !newEmp) {
+      alert('שגיאה בשמירת עובדת: ' + (error?.message || 'Unknown error'));
+      setSaving(false);
       return;
     }
+
+    // Create token
+    const { data: tokenData } = await supabase
+      .from('employee_tokens')
+      .insert({ employee_id: newEmp.id })
+      .select('token')
+      .single();
+
+    const link = tokenData
+      ? `${window.location.origin}/join/${tokenData.token}`
+      : '';
+    setMagicLink(link);
+
+    // Also add to local employees list for WeeklyBoard compatibility
     const newId = Math.max(...employees.map(e => e.id), 0) + 1;
-    const employee: Employee = {
+    const localEmployee: Employee = {
       id: newId,
-      name: formData.name,
-      shiftsPerWeek: formData.shiftsPerWeek || 3,
-      fridayAvailability: formData.fridayAvailability || 'never',
-      shiftType: formData.shiftType || 'הכל',
-      isTrainee: formData.isTrainee || false,
+      name: formData.name.trim(),
+      shiftsPerWeek: 3,
+      fridayAvailability: localFriday as 'always' | 'never' | 'biweekly',
+      shiftType: localShiftType as 'הכל' | 'בוקר' | 'ערב',
+      isTrainee: false,
       availableFrom: '',
       availableTo: '',
-      availableFromDate: formData.availableFromDate || '',
-      availableToDate: formData.availableToDate || '',
+      availableFromDate: formData.activeFrom,
+      availableToDate: formData.activeUntil,
       fairnessHistory: [],
       flexibilityHistory: [],
-      fixedShifts: (formData.fixedShifts as FixedShift[]) || [],
+      fixedShifts: [],
     };
-    onUpdate([...employees, employee]);
-    closeModal();
+    onUpdate([...employees, localEmployee]);
+
+    setSaving(false);
+    setWizardStep(3);
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFeedback('הועתק!');
+      setTimeout(() => setCopyFeedback(''), 2000);
+    } catch {
+      setCopyFeedback('שגיאה בהעתקה');
+    }
+  };
+
+  // ── Copy link for existing employee card ──
+  const handleCopyLink = async (empId: number) => {
+    // Employee IDs in Supabase are UUIDs but local IDs are numbers
+    // We need to find the employee by name in Supabase first
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return;
+
+    const { data: supaEmp } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('name', emp.name)
+      .single();
+
+    if (!supaEmp) {
+      setCardCopyId(empId);
+      setTimeout(() => setCardCopyId(null), 2000);
+      return;
+    }
+
+    // Check for existing active token
+    let { data: tokenRow } = await supabase
+      .from('employee_tokens')
+      .select('token')
+      .eq('employee_id', supaEmp.id)
+      .eq('is_active', true)
+      .single();
+
+    // Create token if none exists
+    if (!tokenRow) {
+      const { data: newToken } = await supabase
+        .from('employee_tokens')
+        .insert({ employee_id: supaEmp.id })
+        .select('token')
+        .single();
+      tokenRow = newToken;
+    }
+
+    if (tokenRow) {
+      const link = `${window.location.origin}/join/${tokenRow.token}`;
+      try {
+        await navigator.clipboard.writeText(link);
+      } catch { /* fallback below */ }
+    }
+
+    setCardCopyId(empId);
+    setTimeout(() => setCardCopyId(null), 2000);
   };
 
   // ── Inline Card Edit ──
@@ -214,6 +327,22 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
     fontSize: 12, fontWeight: 500, padding: '2px 10px', borderRadius: 999, background: bg, color, whiteSpace: 'nowrap',
   });
   const dividerStyle: React.CSSProperties = { height: 0, borderTop: '0.5px solid #e8e0d4', margin: '10px 0' };
+
+  // ── Toggle button helper ──
+  const toggleBtn = (label: string, active: boolean, onClick: () => void) => (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '6px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8,
+        border: active ? '2px solid #1a4a2e' : '1px solid #e8e0d4',
+        background: active ? '#EAF3DE' : 'white',
+        color: active ? '#1a4a2e' : '#64748b',
+        cursor: 'pointer', transition: 'all 0.15s',
+      }}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div dir="rtl">
@@ -531,6 +660,26 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
                       ערוך
                     </button>
                     <button
+                      onClick={() => handleCopyLink(employee.id)}
+                      title="העתק קישור כניסה"
+                      style={{
+                        padding: '7px 12px',
+                        fontSize: 13,
+                        fontWeight: 500,
+                        background: cardCopyId === employee.id ? '#DCFCE7' : 'transparent',
+                        color: cardCopyId === employee.id ? '#166534' : '#2563EB',
+                        border: `0.5px solid ${cardCopyId === employee.id ? '#86EFAC' : '#93C5FD'}`,
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {cardCopyId === employee.id ? '✓' : '🔗'}
+                    </button>
+                    <button
                       onClick={() => setCreateUserTarget(employee)}
                       title="הגדר כניסה"
                       style={{
@@ -577,7 +726,7 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
         })}
       </div>
 
-      {/* Add Employee Modal */}
+      {/* ═══ Add Employee Modal — 3-Step Wizard ═══ */}
       {showModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -608,226 +757,227 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
             >
               ✕
             </button>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a4a2e', marginBottom: 20, marginTop: 0 }}>
-              הוסף עובדת חדשה
-            </h2>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {/* Name */}
-              <div>
-                <label style={labelStyle}>שם:</label>
-                <input
-                  type="text"
-                  value={formData.name || ''}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  placeholder="הזן שם עובדת"
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Shifts Per Week */}
-              <div>
-                <label style={labelStyle}>מספר משמרות בשבוע:</label>
-                <select
-                  value={formData.shiftsPerWeek ?? 3}
-                  onChange={(e) => setFormData({...formData, shiftsPerWeek: parseInt(e.target.value)})}
-                  style={selectStyle}
-                >
-                  {shiftOptions.map(num => (
-                    <option key={num} value={num}>{num}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Friday */}
-              <div>
-                <label style={labelStyle}>שישי:</label>
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                    <input type="radio" name="fridayAvailability" value="always"
-                      checked={formData.fridayAvailability === 'always'}
-                      onChange={() => setFormData({...formData, fridayAvailability: 'always'})}
-                    /> כן — כל שישי
-                  </label>
-                  <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                    <input type="radio" name="fridayAvailability" value="never"
-                      checked={formData.fridayAvailability === 'never'}
-                      onChange={() => setFormData({...formData, fridayAvailability: 'never'})}
-                    /> לא — אף פעם
-                  </label>
-                  <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                    <input type="radio" name="fridayAvailability" value="biweekly"
-                      checked={formData.fridayAvailability === 'biweekly'}
-                      onChange={() => setFormData({...formData, fridayAvailability: 'biweekly'})}
-                    /> אחת לשבועיים
-                  </label>
-                </div>
-              </div>
-
-              {/* Trainee */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input
-                  type="checkbox"
-                  id="modal-isTrainee"
-                  checked={formData.isTrainee || false}
-                  onChange={(e) => setFormData({...formData, isTrainee: e.target.checked})}
-                  style={{ width: 18, height: 18, accentColor: '#c17f3b' }}
-                />
-                <label htmlFor="modal-isTrainee" style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>מתלמדת (בהכשרה)</label>
-              </div>
-
-              {/* Shift Type */}
-              <div>
-                <label style={labelStyle}>סוג משמרת:</label>
-                <select
-                  value={formData.shiftType || 'הכל'}
-                  onChange={(e) => setFormData({...formData, shiftType: e.target.value as any})}
-                  style={selectStyle}
-                >
-                  <option>הכל</option>
-                  <option>בוקר</option>
-                  <option>ערב</option>
-                </select>
-              </div>
-
-              {/* Date Range */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div>
-                  <label style={labelStyle}>זמין מ:</label>
-                  <input
-                    type="date"
-                    value={formData.availableFromDate || ''}
-                    onChange={(e) => setFormData({...formData, availableFromDate: e.target.value})}
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>זמין עד:</label>
-                  <input
-                    type="date"
-                    value={formData.availableToDate || ''}
-                    onChange={(e) => setFormData({...formData, availableToDate: e.target.value})}
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Create User Immediately */}
-            <div style={{ marginTop: 14, borderTop: '1px solid #f0ebe3', paddingTop: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <input
-                  type="checkbox"
-                  id="modal-createUser"
-                  checked={createUserOnAdd}
-                  onChange={e => { setCreateUserOnAdd(e.target.checked); if (!e.target.checked) setNewUserEmail(''); }}
-                  style={{ width: 16, height: 16, accentColor: '#7c3aed' }}
-                />
-                <label htmlFor="modal-createUser" style={{ fontSize: 13, fontWeight: 500, color: '#7c3aed' }}>
-                  🔑 צור משתמש מיד
-                </label>
-              </div>
-              {createUserOnAdd && (
-                <div>
-                  <label style={labelStyle}>אימייל למשתמש:</label>
-                  <input
-                    type="email"
-                    value={newUserEmail}
-                    onChange={e => setNewUserEmail(e.target.value)}
-                    placeholder="example@email.com"
-                    dir="ltr"
-                    style={inputStyle}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Fixed Shifts in Modal */}
-            <div style={{ marginTop: 14, borderTop: '1px solid #f0ebe3', paddingTop: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#0C447C' }}>
-                  משמרות קבועות {((formData.fixedShifts as FixedShift[])?.length || 0) > 0 && `(${(formData.fixedShifts as FixedShift[])!.length})`}
-                </label>
-                <button
-                  onClick={() => {
-                    const newFs: FixedShift = { day: 'ראשון', shift: 'בוקר', arrivalTime: '07:00', departureTime: '14:00' };
-                    setFormData({ ...formData, fixedShifts: [...((formData.fixedShifts as FixedShift[]) || []), newFs] });
-                  }}
-                  style={{ fontSize: 11, padding: '2px 8px', background: '#E6F1FB', color: '#0C447C', border: '1px solid #B3D4F0', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-                >
-                  + הוסף
-                </button>
-              </div>
-              {((formData.fixedShifts as FixedShift[]) || []).map((fs, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
-                  <select value={fs.day} onChange={e => {
-                    const arr = [...((formData.fixedShifts as FixedShift[]) || [])];
-                    arr[idx] = { ...arr[idx], day: e.target.value };
-                    if (e.target.value === 'שישי') { arr[idx].shift = 'בוקר'; arr[idx].arrivalTime = '07:00'; arr[idx].departureTime = '14:00'; }
-                    setFormData({ ...formData, fixedShifts: arr });
-                  }} style={{ fontSize: 11, padding: '3px 4px', borderRadius: 4, border: '1px solid #e8e0d4', width: 60 }}>
-                    {dayOptions.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                  <select value={fs.shift} onChange={e => {
-                    const arr = [...((formData.fixedShifts as FixedShift[]) || [])];
-                    arr[idx] = { ...arr[idx], shift: e.target.value, arrivalTime: e.target.value === 'בוקר' ? '07:00' : '14:00', departureTime: e.target.value === 'בוקר' ? '14:00' : '21:00' };
-                    setFormData({ ...formData, fixedShifts: arr });
-                  }} style={{ fontSize: 11, padding: '3px 4px', borderRadius: 4, border: '1px solid #e8e0d4', width: 50 }}>
-                    {(fs.day === 'שישי' ? ['בוקר'] : shiftTypeOptions).map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <input type="time" value={fs.arrivalTime} onChange={e => {
-                    const arr = [...((formData.fixedShifts as FixedShift[]) || [])];
-                    arr[idx] = { ...arr[idx], arrivalTime: e.target.value };
-                    setFormData({ ...formData, fixedShifts: arr });
-                  }} style={{ fontSize: 11, padding: '3px 2px', borderRadius: 4, border: '1px solid #e8e0d4', width: 70 }} />
-                  <input type="time" value={fs.departureTime} onChange={e => {
-                    const arr = [...((formData.fixedShifts as FixedShift[]) || [])];
-                    arr[idx] = { ...arr[idx], departureTime: e.target.value };
-                    setFormData({ ...formData, fixedShifts: arr });
-                  }} style={{ fontSize: 11, padding: '3px 2px', borderRadius: 4, border: '1px solid #e8e0d4', width: 70 }} />
-                  <button onClick={() => {
-                    const arr = ((formData.fixedShifts as FixedShift[]) || []).filter((_, i) => i !== idx);
-                    setFormData({ ...formData, fixedShifts: arr });
-                  }} style={{ fontSize: 12, background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '0 4px', fontWeight: 700 }}>✕</button>
+            {/* Step indicator */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+              {[1, 2, 3].map(step => (
+                <div key={step} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, fontWeight: 700,
+                    background: wizardStep >= step ? '#1a4a2e' : '#e8e0d4',
+                    color: wizardStep >= step ? 'white' : '#9ca3af',
+                  }}>
+                    {wizardStep > step ? '✓' : step}
+                  </div>
+                  {step < 3 && <div style={{ width: 24, height: 2, background: wizardStep > step ? '#1a4a2e' : '#e8e0d4' }} />}
                 </div>
               ))}
             </div>
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-              <button
-                onClick={handleAddSave}
-                style={{
-                  flex: 1,
-                  padding: '8px 16px',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  background: '#1a4a2e',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                }}
-              >
-                שמור
-              </button>
-              <button
-                onClick={closeModal}
-                style={{
-                  flex: 1,
-                  padding: '8px 16px',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  background: '#f5f0e8',
-                  color: '#475569',
-                  border: '1px solid #e8e0d4',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                }}
-              >
-                ביטול
-              </button>
-            </div>
+            {/* ═══ Step 1: Personal Details ═══ */}
+            {wizardStep === 1 && (
+              <>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a4a2e', marginBottom: 16, marginTop: 0 }}>
+                  פרטים אישיים
+                </h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <label style={labelStyle}>שם מלא *</label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={e => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="הזן שם עובדת"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>מספר טלפון</label>
+                    <input
+                      type="tel"
+                      value={formData.phone}
+                      onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="050-1234567"
+                      dir="ltr"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>אימייל</label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={e => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="example@email.com"
+                      dir="ltr"
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+                  <button onClick={closeModal} style={{ padding: '8px 16px', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+                    ביטול
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!formData.name.trim()) { alert('נא להזין שם'); return; }
+                      setWizardStep(2);
+                    }}
+                    style={{ padding: '8px 20px', fontSize: 14, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                  >
+                    הבא &larr;
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ═══ Step 2: Shift Settings ═══ */}
+            {wizardStep === 2 && (
+              <>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a4a2e', marginBottom: 16, marginTop: 0 }}>
+                  הגדרות משמרת
+                </h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Seniority */}
+                  <div>
+                    <label style={labelStyle}>ותק בחודשים</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={formData.seniority}
+                      onChange={e => setFormData({ ...formData, seniority: parseInt(e.target.value) || 0 })}
+                      style={inputStyle}
+                    />
+                    <span style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, display: 'block' }}>
+                      לדוגמה: שנתיים = 24 חודשים
+                    </span>
+                  </div>
+
+                  {/* Shift Type toggle */}
+                  <div>
+                    <label style={labelStyle}>סוג משמרת</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {toggleBtn('הכל', formData.shiftType === 'all', () => setFormData({ ...formData, shiftType: 'all' }))}
+                      {toggleBtn('בוקר בלבד', formData.shiftType === 'morning', () => setFormData({ ...formData, shiftType: 'morning' }))}
+                      {toggleBtn('ערב בלבד', formData.shiftType === 'evening', () => setFormData({ ...formData, shiftType: 'evening' }))}
+                    </div>
+                  </div>
+
+                  {/* Friday toggle */}
+                  <div>
+                    <label style={labelStyle}>עובדת בשישי</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {toggleBtn('כל שישי', formData.friday === 'yes', () => setFormData({ ...formData, friday: 'yes' }))}
+                      {toggleBtn('אחת לשבועיים', formData.friday === 'biweekly', () => setFormData({ ...formData, friday: 'biweekly' }))}
+                      {toggleBtn('בכלל לא', formData.friday === 'no', () => setFormData({ ...formData, friday: 'no' }))}
+                    </div>
+                  </div>
+
+                  {/* Date Range */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div>
+                      <label style={labelStyle}>תאריך התחלה</label>
+                      <input
+                        type="date"
+                        value={formData.activeFrom}
+                        onChange={e => setFormData({ ...formData, activeFrom: e.target.value })}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>תאריך סיום</label>
+                      <input
+                        type="date"
+                        value={formData.activeUntil}
+                        onChange={e => setFormData({ ...formData, activeUntil: e.target.value })}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'space-between' }}>
+                  <button onClick={() => setWizardStep(1)} style={{ padding: '8px 16px', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+                    &rarr; הקודם
+                  </button>
+                  <button
+                    onClick={handleSaveToSupabase}
+                    disabled={saving}
+                    style={{
+                      padding: '8px 20px', fontSize: 14, fontWeight: 600,
+                      background: saving ? '#9ca3af' : '#1a4a2e', color: 'white',
+                      border: 'none', borderRadius: 6, cursor: saving ? 'default' : 'pointer',
+                      opacity: saving ? 0.7 : 1,
+                    }}
+                  >
+                    {saving ? 'שומר...' : 'שמור וצור קישור'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ═══ Step 3: Success + Magic Link ═══ */}
+            {wizardStep === 3 && (
+              <>
+                <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>✅</div>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a4a2e', margin: '0 0 4px' }}>
+                    {formData.name} נוספה בהצלחה!
+                  </h2>
+                  <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
+                    שלחי לה את הקישור הבא כדי שתוכל להגיש העדפות
+                  </p>
+                </div>
+
+                {magicLink ? (
+                  <div style={{ background: '#f8f7f4', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                    <label style={{ ...labelStyle, marginBottom: 6 }}>קישור כניסה:</label>
+                    <div style={{
+                      display: 'flex', gap: 8, alignItems: 'center',
+                    }}>
+                      <input
+                        readOnly
+                        value={magicLink}
+                        dir="ltr"
+                        style={{
+                          ...inputStyle, flex: 1,
+                          background: 'white', fontSize: 12, fontFamily: 'monospace',
+                        }}
+                        onClick={e => (e.target as HTMLInputElement).select()}
+                      />
+                      <button
+                        onClick={() => copyToClipboard(magicLink)}
+                        style={{
+                          padding: '6px 14px', fontSize: 13, fontWeight: 600,
+                          background: copyFeedback === 'הועתק!' ? '#DCFCE7' : '#1a4a2e',
+                          color: copyFeedback === 'הועתק!' ? '#166534' : 'white',
+                          border: 'none', borderRadius: 6, cursor: 'pointer',
+                          whiteSpace: 'nowrap', transition: 'all 0.15s',
+                        }}
+                      >
+                        {copyFeedback || 'העתק קישור'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ background: '#FEF3C7', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#92400E' }}>
+                    לא הצלחנו ליצור קישור. נסי ליצור דרך כפתור 🔗 בכרטיס העובדת.
+                  </div>
+                )}
+
+                <button
+                  onClick={closeModal}
+                  style={{
+                    width: '100%', padding: '10px 16px', fontSize: 14, fontWeight: 600,
+                    background: '#f5f0e8', color: '#475569',
+                    border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer',
+                  }}
+                >
+                  סגור
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
