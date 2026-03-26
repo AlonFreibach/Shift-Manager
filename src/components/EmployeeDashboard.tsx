@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase, type SupabaseEmployee } from '../lib/supabaseClient'
-import { isWeekLocked } from '../utils/submissionWindow'
+import { getSubmissionWindow, isWeekLocked } from '../utils/submissionWindow'
 
 interface EmployeeDashboardProps {
   employee: SupabaseEmployee
@@ -27,13 +27,6 @@ interface SpecialShift {
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
 
-const RANGE_OPTIONS = [
-  { value: 1, label: 'שבוע קרוב' },
-  { value: 2, label: 'שבועיים' },
-  { value: 3, label: '3 שבועות' },
-  { value: 4, label: 'חודש קדימה' },
-]
-
 function toISO(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -45,21 +38,15 @@ function fmtDate(d: Date): string {
   return `${d.getDate()}/${d.getMonth() + 1}`
 }
 
-function getBaseNextSunday(): Date {
-  const now = new Date()
-  const day = now.getDay()
-
-  if (day === 0) {
-    const daysToAdd = now.getHours() < 20 ? 7 : 14
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysToAdd)
-  }
-
-  const daysUntilSunday = 7 - day
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysUntilSunday)
+interface TabInfo {
+  weekStart: Date
+  weekStartISO: string
+  type: 'locked' | 'active' | 'early'
+  locked: boolean
 }
 
 export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps) {
-  const [range, setRange] = useState(1)
+  const [activeTab, setActiveTab] = useState(1) // Default to active (open) week
   const [selections, setSelections] = useState<Record<string, boolean>>({})
   const [specialShifts, setSpecialShifts] = useState<SpecialShift[]>([])
   const [note, setNote] = useState('')
@@ -67,25 +54,59 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
   const [showSuccess, setShowSuccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [loadingData, setLoadingData] = useState(true)
-  const [hasExisting, setHasExisting] = useState(false)
+  const [existingWeeks, setExistingWeeks] = useState<Set<string>>(new Set())
+  const firstLoadDone = useRef(false)
 
-  const firstSunday = useMemo(() => getBaseNextSunday(), [])
-  const locked = useMemo(() => isWeekLocked(toISO(firstSunday)), [firstSunday])
+  // Compute 5 tabs from submission window
+  const { tabs, deadline } = useMemo(() => {
+    const sw = getSubmissionWindow()
+    const result: TabInfo[] = []
 
-  // Generate weeks (each week = array of 6 dates, Sun–Fri)
-  const weeks = useMemo(() => {
-    const result: Date[][] = []
-    for (let w = 0; w < range; w++) {
-      const week: Date[] = []
-      for (let d = 0; d < 6; d++) {
-        const date = new Date(firstSunday)
-        date.setDate(firstSunday.getDate() + w * 7 + d)
-        week.push(date)
-      }
-      result.push(week)
+    // Tab 0: locked week
+    result.push({
+      weekStart: new Date(sw.lockedWeekStart),
+      weekStartISO: toISO(sw.lockedWeekStart),
+      type: 'locked',
+      locked: true,
+    })
+
+    // Tab 1: active week
+    result.push({
+      weekStart: new Date(sw.activeWeekStart),
+      weekStartISO: toISO(sw.activeWeekStart),
+      type: 'active',
+      locked: isWeekLocked(toISO(sw.activeWeekStart)),
+    })
+
+    // Tabs 2-4: early weeks
+    for (let i = 1; i <= 3; i++) {
+      const ws = new Date(sw.activeWeekStart)
+      ws.setDate(ws.getDate() + i * 7)
+      const wsISO = toISO(ws)
+      result.push({
+        weekStart: ws,
+        weekStartISO: wsISO,
+        type: 'early',
+        locked: isWeekLocked(wsISO),
+      })
     }
-    return result
-  }, [firstSunday, range])
+
+    return { tabs: result, deadline: sw.deadline }
+  }, [])
+
+  const currentTab = tabs[activeTab]
+  const isCurrentLocked = currentTab.locked
+
+  // Generate week days (6 days: Sun–Fri) for the current tab
+  const weekDays = useMemo(() => {
+    const week: Date[] = []
+    for (let d = 0; d < 6; d++) {
+      const date = new Date(currentTab.weekStart)
+      date.setDate(currentTab.weekStart.getDate() + d)
+      week.push(date)
+    }
+    return week
+  }, [currentTab])
 
   // Employee shift filters
   const isMorningAllowed =
@@ -99,60 +120,59 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
 
   // Generate available shifts per day
   const allDays = useMemo(() => {
-    const days: { weekIndex: number; dayDate: Date; dayIndex: number; shifts: DayShift[] }[] = []
+    const days: { dayDate: Date; dayIndex: number; shifts: DayShift[] }[] = []
 
-    weeks.forEach((week, wi) => {
-      week.forEach((date, di) => {
-        const dateISO = toISO(date)
+    weekDays.forEach((date, di) => {
+      const dateISO = toISO(date)
 
-        // Active date filter
-        if (employee.active_from && dateISO < employee.active_from) return
-        if (employee.active_until && dateISO > employee.active_until) return
+      if (employee.active_from && dateISO < employee.active_from) return
+      if (employee.active_until && dateISO > employee.active_until) return
 
-        const isFriday = di === 5
-        if (isFriday && !fridayAllowed) return
+      const isFriday = di === 5
+      if (isFriday && !fridayAllowed) return
 
-        const dayShifts: DayShift[] = []
+      const dayShifts: DayShift[] = []
 
-        if (isFriday) {
-          if (isMorningAllowed) {
-            dayShifts.push({
-              dateISO, dayName: 'שישי', type: 'morning', label: 'בוקר',
-              startTime: '07:00', endTime: '14:00', key: `${dateISO}_morning`,
-            })
-          }
-        } else {
-          if (isMorningAllowed) {
-            dayShifts.push({
-              dateISO, dayName: DAY_NAMES[di], type: 'morning', label: 'בוקר',
-              startTime: '07:00', endTime: '14:00', key: `${dateISO}_morning`,
-            })
-          }
-          if (isEveningAllowed) {
-            dayShifts.push({
-              dateISO, dayName: DAY_NAMES[di], type: 'evening', label: 'ערב',
-              startTime: '14:00', endTime: '21:00', key: `${dateISO}_evening`,
-            })
-          }
+      if (isFriday) {
+        if (isMorningAllowed) {
+          dayShifts.push({
+            dateISO, dayName: 'שישי', type: 'morning', label: 'בוקר',
+            startTime: '07:00', endTime: '14:00', key: `${dateISO}_morning`,
+          })
         }
-
-        if (dayShifts.length > 0) {
-          days.push({ weekIndex: wi, dayDate: date, dayIndex: di, shifts: dayShifts })
+      } else {
+        if (isMorningAllowed) {
+          dayShifts.push({
+            dateISO, dayName: DAY_NAMES[di], type: 'morning', label: 'בוקר',
+            startTime: '07:00', endTime: '14:00', key: `${dateISO}_morning`,
+          })
         }
-      })
+        if (isEveningAllowed) {
+          dayShifts.push({
+            dateISO, dayName: DAY_NAMES[di], type: 'evening', label: 'ערב',
+            startTime: '14:00', endTime: '21:00', key: `${dateISO}_evening`,
+          })
+        }
+      }
+
+      if (dayShifts.length > 0) {
+        days.push({ dayDate: date, dayIndex: di, shifts: dayShifts })
+      }
     })
 
     return days
-  }, [weeks, employee, isMorningAllowed, isEveningAllowed, fridayAllowed])
+  }, [weekDays, employee, isMorningAllowed, isEveningAllowed, fridayAllowed])
 
-  // Load special shifts + existing preferences
+  // Load special shifts + existing preferences for current tab
   useEffect(() => {
+    const tab = tabs[activeTab]
+
     const loadData = async () => {
       setLoadingData(true)
 
-      const firstDate = toISO(firstSunday)
-      const lastDay = new Date(firstSunday)
-      lastDay.setDate(firstSunday.getDate() + range * 7 - 2) // Friday of last week
+      const firstDate = tab.weekStartISO
+      const lastDay = new Date(tab.weekStart)
+      lastDay.setDate(tab.weekStart.getDate() + 5)
       const lastDate = toISO(lastDay)
 
       // Special shifts
@@ -163,19 +183,12 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
         .lte('date', lastDate)
       if (specials) setSpecialShifts(specials)
 
-      // Existing preferences
-      const weekStarts: string[] = []
-      for (let w = 0; w < range; w++) {
-        const ws = new Date(firstSunday)
-        ws.setDate(firstSunday.getDate() + w * 7)
-        weekStarts.push(toISO(ws))
-      }
-
+      // Existing preferences for this week
       const { data: prefs } = await supabase
         .from('preferences')
         .select('*')
         .eq('employee_id', employee.id)
-        .in('week_start', weekStarts)
+        .eq('week_start', firstDate)
 
       if (prefs && prefs.length > 0) {
         const sel: Record<string, boolean> = {}
@@ -187,70 +200,67 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
         })
         setSelections(sel)
         if (prefs[0].note) setNote(prefs[0].note)
-        setHasExisting(true)
+        else setNote('')
+        setExistingWeeks(prev => new Set(prev).add(firstDate))
       } else {
         setSelections({})
-        setHasExisting(false)
+        setNote('')
       }
 
       setLoadingData(false)
+      firstLoadDone.current = true
     }
 
     loadData()
-  }, [firstSunday, range, employee.id])
+  }, [activeTab, tabs, employee.id])
 
-  // Counts
+  // Counts for current tab
   const totalShifts = allDays.reduce((sum, d) => sum + d.shifts.length, 0) +
-    specialShifts.filter(s => {
-      // Only count specials that fall within visible days
-      return allDays.some(d => d.shifts[0]?.dateISO === s.date || toISO(d.dayDate) === s.date)
-    }).length
+    specialShifts.filter(s => allDays.some(d => d.shifts[0]?.dateISO === s.date || toISO(d.dayDate) === s.date)).length
   const selectedCount = Object.values(selections).filter(v => v === true).length
+  const hasExisting = existingWeeks.has(currentTab.weekStartISO)
 
   // Submit
   const handleSubmit = async () => {
     setSubmitting(true)
 
     const rows: any[] = []
+    const weekStart = currentTab.weekStartISO
 
-    weeks.forEach((week) => {
-      const weekStart = toISO(week[0])
+    weekDays.forEach((date, di) => {
+      const dateISO = toISO(date)
 
-      week.forEach((date, di) => {
-        const dateISO = toISO(date)
+      for (const type of ['morning', 'evening'] as const) {
+        const key = `${dateISO}_${type}`
+        if (key in selections) {
+          rows.push({
+            employee_id: employee.id,
+            week_start: weekStart,
+            day_of_week: di,
+            shift_type: type,
+            available: selections[key],
+            note,
+            submitted_at: new Date().toISOString(),
+          })
+        }
+      }
 
-        for (const type of ['morning', 'evening'] as const) {
-          const key = `${dateISO}_${type}`
+      specialShifts
+        .filter(s => s.date === dateISO)
+        .forEach(s => {
+          const key = `${dateISO}_special_${s.id}`
           if (key in selections) {
             rows.push({
               employee_id: employee.id,
               week_start: weekStart,
               day_of_week: di,
-              shift_type: type,
+              shift_type: `special_${s.id}`,
               available: selections[key],
               note,
               submitted_at: new Date().toISOString(),
             })
           }
-        }
-
-        specialShifts
-          .filter(s => s.date === dateISO)
-          .forEach(s => {
-            const key = `${dateISO}_special_${s.id}`
-            if (key in selections) {
-              rows.push({
-                employee_id: employee.id,
-                week_start: weekStart,
-                day_of_week: di,
-                shift_type: `special_${s.id}`,
-                available: selections[key],
-                note,
-                submitted_at: new Date().toISOString(),
-              })
-            }
-          })
-      })
+        })
     })
 
     if (rows.length > 0) {
@@ -262,18 +272,62 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
     setSubmitting(false)
     setShowSummary(false)
     setShowSuccess(true)
-    setHasExisting(true)
+    setExistingWeeks(prev => new Set(prev).add(weekStart))
   }
 
   // Helpers
   const getSpecialsForDate = (dateISO: string) =>
     specialShifts.filter(s => s.date === dateISO).sort((a, b) => a.start_time.localeCompare(b.start_time))
 
-  const weekHeaderText = (wi: number) => `${fmtDate(weeks[wi][0])} — ${fmtDate(weeks[wi][5])}`
+  // Status card per tab type
+  function getStatusCard() {
+    if (currentTab.type === 'locked') {
+      const d = new Date(currentTab.weekStartISO + 'T00:00:00')
+      d.setDate(d.getDate() - 7)
+      return {
+        icon: '🔒',
+        text: `נעול — ההגשה נסגרה ב-${fmtDate(d)} בשעה 20:00`,
+        bg: '#FEF3C7',
+        border: '#F59E0B',
+        color: '#92400E',
+      }
+    }
+    if (currentTab.type === 'active') {
+      return {
+        icon: '✅',
+        text: `פתוח — יש להגיש עד ${fmtDate(deadline)} בשעה 20:00`,
+        bg: '#EBF3D8',
+        border: '#C8DBA0',
+        color: '#2D5016',
+      }
+    }
+    // early
+    const lockDate = new Date(currentTab.weekStartISO + 'T00:00:00')
+    lockDate.setDate(lockDate.getDate() - 7)
+    return {
+      icon: '📋',
+      text: `הגשה מוקדמת — ינעל ב-${fmtDate(lockDate)} בשעה 20:00`,
+      bg: '#E8F0FE',
+      border: '#93B5E0',
+      color: '#1A4A7A',
+    }
+  }
+
+  // Tab labels
+  function getTabLabel(tab: TabInfo, index: number) {
+    const ws = tab.weekStart
+    const we = new Date(ws)
+    we.setDate(we.getDate() + 5)
+    const label = `${fmtDate(ws)}-${fmtDate(we)}`
+    if (index === 0) return `🔒 ${label}`
+    if (index === 1) return `✅ ${label}`
+    return label
+  }
 
   // ── Render ──
 
-  if (loadingData) {
+  // Full-screen loader only on first load
+  if (!firstLoadDone.current && loadingData) {
     return (
       <div dir="rtl" style={{ minHeight: '100vh', background: '#EBF3D8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
@@ -286,6 +340,8 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
       </div>
     )
   }
+
+  const status = getStatusCard()
 
   return (
     <div dir="rtl" style={{ minHeight: '100vh', background: '#EBF3D8' }}>
@@ -310,165 +366,153 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
       </header>
 
       <main style={{ maxWidth: 480, margin: '0 auto', padding: '16px 16px 80px' }}>
-        {/* ═══ Range Selector ═══ */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 12, background: 'rgba(200,219,160,0.3)', borderRadius: 10, padding: 4 }}>
-          {RANGE_OPTIONS.map(opt => (
+        {/* ═══ Week Tabs ═══ */}
+        <div style={{
+          display: 'flex', gap: 4, marginBottom: 12,
+          background: 'rgba(200,219,160,0.3)', borderRadius: 10, padding: 4,
+          overflowX: 'auto',
+        }}>
+          {tabs.map((tab, i) => (
             <button
-              key={opt.value}
-              onClick={() => setRange(opt.value)}
+              key={i}
+              onClick={() => setActiveTab(i)}
               style={{
-                flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600,
+                flex: '0 0 auto', padding: '8px 10px', fontSize: 11, fontWeight: 600,
                 borderRadius: 8, border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-                background: range === opt.value ? '#F5F0E8' : 'transparent',
-                color: range === opt.value ? '#2D5016' : '#5A8A1F',
+                background: activeTab === i ? '#F5F0E8' : 'transparent',
+                color: activeTab === i ? '#2D5016' : '#5A8A1F',
+                whiteSpace: 'nowrap',
               }}
             >
-              {opt.label}
+              {getTabLabel(tab, i)}
             </button>
           ))}
         </div>
 
-        {/* ═══ Lock Banner / Edit Badge ═══ */}
-        {locked ? (
-          <div style={{
-            background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 10,
-            padding: '10px 14px', marginBottom: 12, textAlign: 'center',
-          }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#92400E' }}>
-              ⏰ ההגשה לשבוע זה נסגרה ביום ראשון בשעה 20:00
-            </span>
-          </div>
-        ) : hasExisting ? (
-          <div style={{
-            background: '#EBF3D8', border: '1px solid #C8DBA0', borderRadius: 10,
-            padding: '10px 14px', marginBottom: 12, textAlign: 'center',
-          }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#2D5016' }}>
-              ✅ הגשתך נשמרה — ניתן לערוך עד ראשון 20:00
-            </span>
-          </div>
-        ) : null}
-
-        {/* ═══ Progress Card ═══ */}
-        <div style={{ background: '#F5F0E8', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#1A3008' }}>
-              {selectedCount} / {totalShifts} משמרות סומנו
-            </span>
-            <span style={{ fontSize: 12, color: '#5A8A1F' }}>
-              {totalShifts > 0 ? Math.round((selectedCount / totalShifts) * 100) : 0}%
-            </span>
-          </div>
-          <div style={{ height: 8, borderRadius: 4, background: '#C8DBA0' }}>
-            <div style={{
-              height: '100%', borderRadius: 4, background: '#2D5016',
-              width: `${totalShifts > 0 ? (selectedCount / totalShifts) * 100 : 0}%`,
-              transition: 'width 0.3s',
-            }} />
-          </div>
-        </div>
-
-        {/* ═══ Shifts by Week ═══ */}
-        {weeks.map((_, wi) => {
-          const daysInWeek = allDays.filter(d => d.weekIndex === wi)
-          if (daysInWeek.length === 0) return null
-
-          return (
-            <div key={wi} style={{ marginBottom: 16 }}>
-              {/* Week header (multi-week only) */}
-              {range > 1 && (
-                <div style={{
-                  fontSize: 14, fontWeight: 700, color: '#2D5016',
-                  marginBottom: 10, paddingBottom: 6,
-                  borderBottom: '2px solid #C8DBA0',
-                }}>
-                  שבוע {wi + 1}: {weekHeaderText(wi)}
-                </div>
-              )}
-
-              {daysInWeek.map(({ dayDate, dayIndex, shifts: dayShifts }) => {
-                const dateISO = toISO(dayDate)
-                const specials = getSpecialsForDate(dateISO)
-
-                return (
-                  <div key={dateISO} style={{
-                    background: 'white', borderRadius: 10, padding: 14, marginBottom: 8,
-                    border: '1px solid #C8DBA0',
-                  }}>
-                    {/* Day header */}
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#1A3008', marginBottom: 8 }}>
-                      יום {DAY_NAMES[dayIndex]} — {fmtDate(dayDate)}
-                    </div>
-
-                    {/* Regular shifts */}
-                    {dayShifts.map(shift => (
-                      <ShiftRow
-                        key={shift.key}
-                        timeLabel={`${shift.startTime} — ${shift.endTime}`}
-                        badge={shift.label}
-                        badgeBg={shift.type === 'morning' ? '#EBF3D8' : '#F5F0E8'}
-                        badgeColor={shift.type === 'morning' ? '#2D5016' : '#5A8A1F'}
-                        selected={selections[shift.key]}
-                        onSelect={val => setSelections(prev => ({ ...prev, [shift.key]: val }))}
-                        disabled={locked}
-                      />
-                    ))}
-
-                    {/* Special shifts */}
-                    {specials.map(special => {
-                      const key = `${dateISO}_special_${special.id}`
-                      return (
-                        <ShiftRow
-                          key={key}
-                          timeLabel={`${special.start_time} — ${special.end_time}`}
-                          badge={`✨ ${special.title}`}
-                          badgeBg="#FEF3C7"
-                          badgeColor="#92400E"
-                          selected={selections[key]}
-                          onSelect={val => setSelections(prev => ({ ...prev, [key]: val }))}
-                          disabled={locked}
-                        />
-                      )
-                    })}
-                  </div>
-                )
-              })}
+        {/* ═══ Status Card ═══ */}
+        <div style={{
+          background: status.bg, border: `1px solid ${status.border}`, borderRadius: 10,
+          padding: '10px 14px', marginBottom: 12, textAlign: 'center',
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: status.color }}>
+            {status.icon} {status.text}
+          </span>
+          {hasExisting && !isCurrentLocked && (
+            <div style={{ fontSize: 12, color: '#2D5016', marginTop: 4 }}>
+              ✅ הגשתך נשמרה — ניתן לערוך
             </div>
-          )
-        })}
-
-        {/* ═══ Note + Submit ═══ */}
-        <div style={{ background: '#F5F0E8', borderRadius: 12, padding: 16, marginTop: 8 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1A3008', marginBottom: 6 }}>
-            הערה (אופציונלי)
-          </label>
-          <textarea
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            placeholder="הערות נוספות..."
-            rows={3}
-            disabled={locked}
-            style={{
-              width: '100%', padding: 10, fontSize: 13,
-              border: '1px solid #C8DBA0', borderRadius: 8,
-              resize: 'vertical', background: locked ? '#f0f0f0' : 'white', boxSizing: 'border-box',
-              opacity: locked ? 0.6 : 1,
-            }}
-          />
-          <button
-            onClick={() => setShowSummary(true)}
-            disabled={selectedCount === 0 || locked}
-            style={{
-              width: '100%', marginTop: 12, padding: 14, borderRadius: 10, border: 'none',
-              background: selectedCount > 0 && !locked ? '#2D5016' : '#C8DBA0',
-              color: selectedCount > 0 && !locked ? '#C8DBA0' : '#F5F0E8',
-              fontSize: 15, fontWeight: 600,
-              cursor: selectedCount > 0 && !locked ? 'pointer' : 'default',
-            }}
-          >
-            {locked ? '🔒 ההגשה נעולה' : hasExisting ? 'עדכני הגשה ✓' : 'סיכום והגשה ←'}
-          </button>
+          )}
         </div>
+
+        {loadingData ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <div
+              className="animate-spin"
+              style={{ width: 32, height: 32, border: '3px solid #C8DBA0', borderTopColor: '#2D5016', borderRadius: '50%', margin: '0 auto 8px' }}
+            />
+            <span style={{ fontSize: 13, color: '#5A8A1F' }}>טוען...</span>
+          </div>
+        ) : (
+          <>
+            {/* ═══ Progress Card ═══ */}
+            <div style={{ background: '#F5F0E8', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#1A3008' }}>
+                  {selectedCount} / {totalShifts} משמרות סומנו
+                </span>
+                <span style={{ fontSize: 12, color: '#5A8A1F' }}>
+                  {totalShifts > 0 ? Math.round((selectedCount / totalShifts) * 100) : 0}%
+                </span>
+              </div>
+              <div style={{ height: 8, borderRadius: 4, background: '#C8DBA0' }}>
+                <div style={{
+                  height: '100%', borderRadius: 4, background: '#2D5016',
+                  width: `${totalShifts > 0 ? (selectedCount / totalShifts) * 100 : 0}%`,
+                  transition: 'width 0.3s',
+                }} />
+              </div>
+            </div>
+
+            {/* ═══ Shifts ═══ */}
+            {allDays.map(({ dayDate, dayIndex, shifts: dayShifts }) => {
+              const dateISO = toISO(dayDate)
+              const specials = getSpecialsForDate(dateISO)
+
+              return (
+                <div key={dateISO} style={{
+                  background: 'white', borderRadius: 10, padding: 14, marginBottom: 8,
+                  border: '1px solid #C8DBA0',
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#1A3008', marginBottom: 8 }}>
+                    יום {DAY_NAMES[dayIndex]} — {fmtDate(dayDate)}
+                  </div>
+
+                  {dayShifts.map(shift => (
+                    <ShiftRow
+                      key={shift.key}
+                      timeLabel={`${shift.startTime} — ${shift.endTime}`}
+                      badge={shift.label}
+                      badgeBg={shift.type === 'morning' ? '#EBF3D8' : '#F5F0E8'}
+                      badgeColor={shift.type === 'morning' ? '#2D5016' : '#5A8A1F'}
+                      selected={selections[shift.key]}
+                      onSelect={val => setSelections(prev => ({ ...prev, [shift.key]: val }))}
+                      disabled={isCurrentLocked}
+                    />
+                  ))}
+
+                  {specials.map(special => {
+                    const key = `${dateISO}_special_${special.id}`
+                    return (
+                      <ShiftRow
+                        key={key}
+                        timeLabel={`${special.start_time} — ${special.end_time}`}
+                        badge={`✨ ${special.title}`}
+                        badgeBg="#FEF3C7"
+                        badgeColor="#92400E"
+                        selected={selections[key]}
+                        onSelect={val => setSelections(prev => ({ ...prev, [key]: val }))}
+                        disabled={isCurrentLocked}
+                      />
+                    )
+                  })}
+                </div>
+              )
+            })}
+
+            {/* ═══ Note + Submit ═══ */}
+            <div style={{ background: '#F5F0E8', borderRadius: 12, padding: 16, marginTop: 8 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1A3008', marginBottom: 6 }}>
+                הערה (אופציונלי)
+              </label>
+              <textarea
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                placeholder="הערות נוספות..."
+                rows={3}
+                disabled={isCurrentLocked}
+                style={{
+                  width: '100%', padding: 10, fontSize: 13,
+                  border: '1px solid #C8DBA0', borderRadius: 8,
+                  resize: 'vertical', background: isCurrentLocked ? '#f0f0f0' : 'white', boxSizing: 'border-box',
+                  opacity: isCurrentLocked ? 0.6 : 1,
+                }}
+              />
+              <button
+                onClick={() => setShowSummary(true)}
+                disabled={selectedCount === 0 || isCurrentLocked}
+                style={{
+                  width: '100%', marginTop: 12, padding: 14, borderRadius: 10, border: 'none',
+                  background: selectedCount > 0 && !isCurrentLocked ? '#2D5016' : '#C8DBA0',
+                  color: selectedCount > 0 && !isCurrentLocked ? '#C8DBA0' : '#F5F0E8',
+                  fontSize: 15, fontWeight: 600,
+                  cursor: selectedCount > 0 && !isCurrentLocked ? 'pointer' : 'default',
+                }}
+              >
+                {isCurrentLocked ? '🔒 ההגשה נעולה' : hasExisting ? 'עדכני הגשה ✓' : 'סיכום והגשה ←'}
+              </button>
+            </div>
+          </>
+        )}
       </main>
 
       {/* ═══ Summary Modal ═══ */}

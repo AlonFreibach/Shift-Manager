@@ -1,32 +1,49 @@
+/**
+ * Submission Window Logic:
+ * Every Sunday at 20:01:
+ *   - Opens submission for the week starting Sunday+14
+ *   - Closes submission for the week starting Sunday+7
+ *
+ * Example (Thursday 26.3):
+ *   - Window opened 22.3 at 20:01
+ *   - Window closes 29.3 at 20:00
+ *   - Active week for submission: 5.4–11.4
+ */
+
 export function getSubmissionWindow() {
   const now = new Date()
-  const day = now.getDay() // 0=ראשון
+  const day = now.getDay()
 
-  // מצא את ראשון הקרוב (תחילת שבוע ההגשה הבא)
-  const daysUntilSunday = day === 0 ? 7 : 7 - day
-  const nextSunday = new Date(now)
-  nextSunday.setDate(now.getDate() + daysUntilSunday)
-  nextSunday.setHours(0, 0, 0, 0)
+  // Find the Sunday that started the current submission window
+  let lastSunday: Date
+  if (day === 0 && now.getHours() < 20) {
+    // Sunday before 20:00 — previous Sunday's window is still active
+    lastSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
+  } else {
+    // Most recent Sunday (or today if Sunday ≥ 20:00)
+    lastSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day)
+  }
 
-  // מצא את ראשון הנוכחי (תחילת חלון ההגשה)
-  const currentSunday = new Date(nextSunday)
-  currentSunday.setDate(currentSunday.getDate() - 7)
-
-  // האם החלון פתוח?
-  const deadline = new Date(currentSunday)
+  // deadline = next Sunday at 20:00
+  const deadline = new Date(lastSunday)
+  deadline.setDate(deadline.getDate() + 7)
   deadline.setHours(20, 0, 0, 0)
 
-  const targetWeekISO = formatWeekStart(nextSunday)
-  const unlocked = getUnlockedWeeks()
-  const isManuallyUnlocked = unlocked.includes(targetWeekISO)
+  // activeWeekStart = 2 Sundays ahead from lastSunday
+  const activeWeekStart = new Date(lastSunday)
+  activeWeekStart.setDate(activeWeekStart.getDate() + 14)
 
-  const isLocked = !isManuallyUnlocked && now > deadline
+  // lockedWeekStart = 1 Sunday ahead (just got locked)
+  const lockedWeekStart = new Date(lastSunday)
+  lockedWeekStart.setDate(lockedWeekStart.getDate() + 7)
+
+  const isLocked = now > deadline
 
   return {
-    targetWeekStart: nextSunday,      // השבוע שאליו מגישים
-    deadlineDate: deadline,            // מתי נסגר (ראשון 20:00)
-    isLocked,                          // האם נעול?
-    canSubmit: !isLocked,
+    activeWeekStart,      // השבוע הפעיל להגשה
+    deadline,             // מתי נסגר (ראשון הקרוב 20:00)
+    isLocked,             // האם עבר ה-deadline?
+    lockedWeekStart,      // השבוע שנסגר זה עתה
   }
 }
 
@@ -34,7 +51,7 @@ export function isWeekLocked(weekStartISO: string): boolean {
   const unlocked = getUnlockedWeeks()
   if (unlocked.includes(weekStartISO)) return false
 
-  // Deadline = שבוע לפני ראשון היעד בשעה 20:00
+  // Deadline for week W = W - 7 days at 20:00
   const targetDate = new Date(weekStartISO + 'T00:00:00')
   const deadline = new Date(targetDate)
   deadline.setDate(deadline.getDate() - 7)
