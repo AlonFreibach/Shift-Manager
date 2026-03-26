@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { Employee, FixedShift } from '../data/employees';
+import { CreateUserModal } from './CreateUserModal';
+import type { SupabaseEmployee } from '../lib/supabaseClient';
 
 interface EmployeesTabProps {
   employees: Employee[];
@@ -47,6 +49,13 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
     fixedShifts: [],
   });
 
+  // Create-user modal state
+  const [createUserTarget, setCreateUserTarget] = useState<Employee | null>(null);
+
+  // "Create user immediately" in add modal
+  const [createUserOnAdd, setCreateUserOnAdd] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState('');
+
   // Inline card edit state
   const [editingCardId, setEditingCardId] = useState<number | null>(null);
   const [draftEmployee, setDraftEmployee] = useState<Partial<Employee> | null>(null);
@@ -67,6 +76,8 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
       availableToDate: '',
       fixedShifts: [],
     });
+    setCreateUserOnAdd(false);
+    setNewUserEmail('');
     setShowModal(true);
   };
 
@@ -178,6 +189,19 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
     if (from) return `מ-${fmtDate(from)}`;
     return `עד ${fmtDate(to!)}`;
   };
+
+  // Bridge local Employee to SupabaseEmployee shape for CreateUserModal
+  const toSupabaseEmployee = (emp: Employee): SupabaseEmployee => ({
+    id: String(emp.id),
+    name: emp.name,
+    seniority: 0,
+    friday: emp.fridayAvailability,
+    shift_type: emp.shiftType,
+    active_from: emp.availableFromDate || undefined,
+    active_until: emp.availableToDate || undefined,
+    role: emp.id === MIYA_ID ? 'admin' : 'employee',
+    created_at: '',
+  });
 
   const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 500, color: '#64748b', marginBottom: 4 };
   const inputStyle: React.CSSProperties = { width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6 };
@@ -507,6 +531,25 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
                       ערוך
                     </button>
                     <button
+                      onClick={() => setCreateUserTarget(employee)}
+                      title="הגדר כניסה"
+                      style={{
+                        padding: '7px 12px',
+                        fontSize: 13,
+                        fontWeight: 500,
+                        background: 'transparent',
+                        color: '#7c3aed',
+                        border: '0.5px solid #c4b5fd',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      🔑
+                    </button>
+                    <button
                       onClick={() => {
                         if (window.confirm(`האם למחוק את ${employee.name}? פעולה זו אינה ניתנת לביטול.`)) {
                           onUpdate(employees.filter(e => e.id !== employee.id));
@@ -670,6 +713,35 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
               </div>
             </div>
 
+            {/* Create User Immediately */}
+            <div style={{ marginTop: 14, borderTop: '1px solid #f0ebe3', paddingTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <input
+                  type="checkbox"
+                  id="modal-createUser"
+                  checked={createUserOnAdd}
+                  onChange={e => { setCreateUserOnAdd(e.target.checked); if (!e.target.checked) setNewUserEmail(''); }}
+                  style={{ width: 16, height: 16, accentColor: '#7c3aed' }}
+                />
+                <label htmlFor="modal-createUser" style={{ fontSize: 13, fontWeight: 500, color: '#7c3aed' }}>
+                  🔑 צור משתמש מיד
+                </label>
+              </div>
+              {createUserOnAdd && (
+                <div>
+                  <label style={labelStyle}>אימייל למשתמש:</label>
+                  <input
+                    type="email"
+                    value={newUserEmail}
+                    onChange={e => setNewUserEmail(e.target.value)}
+                    placeholder="example@email.com"
+                    dir="ltr"
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Fixed Shifts in Modal */}
             <div style={{ marginTop: 14, borderTop: '1px solid #f0ebe3', paddingTop: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -758,6 +830,14 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Create User Modal */}
+      {createUserTarget && (
+        <CreateUserModal
+          employee={toSupabaseEmployee(createUserTarget)}
+          onClose={() => setCreateUserTarget(null)}
+        />
       )}
     </div>
   );
