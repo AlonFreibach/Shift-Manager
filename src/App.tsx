@@ -36,7 +36,7 @@ function App() {
         top: 0,
         zIndex: 100,
       }}>
-        <div className="header-inner" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 16px', display: 'flex', alignItems: 'center', height: 56 }}>
+        <div className="header-inner" style={{ width: '100%', padding: '0 24px', display: 'flex', alignItems: 'center', height: 56 }}>
           <div className="header-brand" style={{ fontWeight: 700, fontSize: 18, color: '#ffffff', marginLeft: 32, whiteSpace: 'nowrap' }}>
             נוי השדה — שוהם
           </div>
@@ -97,7 +97,7 @@ function App() {
       </header>
 
       {/* Tab Content */}
-      <main style={{ maxWidth: 1200, margin: '0 auto', padding: 16 }}>
+      <main style={{ width: '100%', padding: '16px 24px' }}>
         {currentTab === 'board' && (
           <WeeklyBoard
             employees={savedEmployees}
