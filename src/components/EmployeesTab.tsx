@@ -73,8 +73,13 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
   // Create-user modal state (existing 🔑 flow)
   const [createUserTarget, setCreateUserTarget] = useState<Employee | null>(null);
 
-  // Copy-link feedback per card
-  const [cardCopyId, setCardCopyId] = useState<number | null>(null);
+  // Link modal state
+  const [linkModal, setLinkModal] = useState<{
+    emp: Employee;
+    link: string | null;
+    loading: boolean;
+    copied: boolean;
+  } | null>(null);
 
   // Inline card edit state
   const [editingCardId, setEditingCardId] = useState<number | null>(null);
@@ -186,12 +191,12 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
     }
   };
 
-  // ── Copy link for existing employee card ──
-  const handleCopyLink = async (empId: number) => {
-    // Employee IDs in Supabase are UUIDs but local IDs are numbers
-    // We need to find the employee by name in Supabase first
+  // ── Open link modal for existing employee card ──
+  const handleOpenLinkModal = async (empId: number) => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return;
+
+    setLinkModal({ emp, link: null, loading: true, copied: false });
 
     const { data: supaEmp } = await supabase
       .from('employees')
@@ -200,12 +205,10 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
       .single();
 
     if (!supaEmp) {
-      setCardCopyId(empId);
-      setTimeout(() => setCardCopyId(null), 2000);
+      setLinkModal(prev => prev ? { ...prev, loading: false } : null);
       return;
     }
 
-    // Check for existing active token
     let { data: tokenRow } = await supabase
       .from('employee_tokens')
       .select('token')
@@ -213,7 +216,6 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
       .eq('is_active', true)
       .single();
 
-    // Create token if none exists
     if (!tokenRow) {
       const { data: newToken } = await supabase
         .from('employee_tokens')
@@ -223,15 +225,19 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
       tokenRow = newToken;
     }
 
-    if (tokenRow) {
-      const link = `${window.location.origin}/join/${tokenRow.token}`;
-      try {
-        await navigator.clipboard.writeText(link);
-      } catch { /* fallback below */ }
-    }
+    const link = tokenRow ? `${window.location.origin}/join/${tokenRow.token}` : null;
+    setLinkModal(prev => prev ? { ...prev, link, loading: false } : null);
+  };
 
-    setCardCopyId(empId);
-    setTimeout(() => setCardCopyId(null), 2000);
+  const handleCopyLinkFromModal = async () => {
+    if (!linkModal?.link) return;
+    try {
+      await navigator.clipboard.writeText(linkModal.link);
+      setLinkModal(prev => prev ? { ...prev, copied: true } : null);
+      setTimeout(() => setLinkModal(prev => prev ? { ...prev, copied: false } : null), 2000);
+    } catch {
+      // Clipboard API unavailable — user can select manually
+    }
   };
 
   // ── Inline Card Edit ──
@@ -673,24 +679,23 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
                       ערוך
                     </button>
                     <button
-                      onClick={() => handleCopyLink(employee.id)}
-                      title="העתק קישור כניסה"
+                      onClick={() => handleOpenLinkModal(employee.id)}
+                      title="הצג קישור כניסה"
                       style={{
                         padding: '7px 12px',
                         fontSize: 13,
                         fontWeight: 500,
-                        background: cardCopyId === employee.id ? '#DCFCE7' : 'transparent',
-                        color: cardCopyId === employee.id ? '#166534' : '#2563EB',
-                        border: `0.5px solid ${cardCopyId === employee.id ? '#86EFAC' : '#93C5FD'}`,
+                        background: 'transparent',
+                        color: '#2563EB',
+                        border: '0.5px solid #93C5FD',
                         borderRadius: 8,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 4,
-                        transition: 'all 0.15s',
                       }}
                     >
-                      {cardCopyId === employee.id ? '✓' : '🔗'}
+                      🔗
                     </button>
                     <button
                       onClick={() => setCreateUserTarget(employee)}
@@ -1017,6 +1022,81 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
           employee={toSupabaseEmployee(createUserTarget)}
           onClose={() => setCreateUserTarget(null)}
         />
+      )}
+
+      {/* ═══ Link Modal ═══ */}
+      {linkModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}
+          onClick={() => setLinkModal(null)}
+        >
+          <div
+            dir="rtl"
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'white', borderRadius: 14, padding: 24, width: '90%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#EAF3DE', color: '#3B6D11', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700, flexShrink: 0 }}>
+                {linkModal.emp.name.charAt(0)}
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#1a4a2e' }}>
+                  קישור כניסה — {linkModal.emp.name}
+                </div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
+                  שלחי את הקישור לעובדת כדי שתוכל להגיש העדפות
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            {linkModal.loading ? (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: '#6b7280', fontSize: 13 }}>
+                <div style={{ width: 28, height: 28, border: '3px solid #C8DBA0', borderTopColor: '#2D5016', borderRadius: '50%', margin: '0 auto 10px', animation: 'spin 0.8s linear infinite' }} />
+                טוען קישור...
+              </div>
+            ) : linkModal.link ? (
+              <>
+                <div style={{ background: '#f5f0e8', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+                  <input
+                    readOnly
+                    value={linkModal.link}
+                    dir="ltr"
+                    style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'monospace', color: '#1a1a1a', cursor: 'text' }}
+                    onClick={e => (e.target as HTMLInputElement).select()}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={handleCopyLinkFromModal}
+                    style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, background: linkModal.copied ? '#DCFCE7' : '#1a4a2e', color: linkModal.copied ? '#166534' : 'white', border: 'none', borderRadius: 8, cursor: 'pointer', transition: 'all 0.15s' }}
+                  >
+                    {linkModal.copied ? '✓ הועתק!' : 'העתק קישור'}
+                  </button>
+                  <button
+                    onClick={() => setLinkModal(null)}
+                    style={{ padding: '10px 18px', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 8, cursor: 'pointer' }}
+                  >
+                    סגור
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ background: '#FEF3C7', borderRadius: 8, padding: 12, marginBottom: 14, fontSize: 13, color: '#92400E' }}>
+                  לא נמצאה עובדת במערכת. ייתכן שהעובדת לא נוספה עדיין ל-Supabase.
+                </div>
+                <button
+                  onClick={() => setLinkModal(null)}
+                  style={{ width: '100%', padding: '10px 0', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 8, cursor: 'pointer' }}
+                >
+                  סגור
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
