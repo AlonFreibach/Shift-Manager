@@ -42,6 +42,7 @@ interface AddFormData {
   phone: string;
   email: string;
   seniority: number;
+  shiftsPerWeek: number;
   shiftType: 'all' | 'morning' | 'evening';
   friday: 'yes' | 'biweekly' | 'no';
   activeFrom: string;
@@ -53,6 +54,7 @@ const INITIAL_FORM: AddFormData = {
   phone: '',
   email: '',
   seniority: 0,
+  shiftsPerWeek: 3,
   shiftType: 'all',
   friday: 'no',
   activeFrom: '',
@@ -105,14 +107,14 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
     const localShiftType = formData.shiftType === 'all' ? 'הכל' : formData.shiftType === 'morning' ? 'בוקר' : 'ערב';
     const localFriday = formData.friday === 'yes' ? 'always' : formData.friday === 'biweekly' ? 'biweekly' : 'never';
 
-    // Insert employee to Supabase
+    // Insert employee to Supabase (without email — handled separately to avoid unique-constraint crashes)
     const { data: newEmp, error } = await supabase
       .from('employees')
       .insert({
         name: formData.name.trim(),
         phone: formData.phone.trim() || null,
-        email: formData.email.trim() || null,
         seniority: formData.seniority,
+        shifts_per_week: formData.shiftsPerWeek,
         shift_type: formData.shiftType,
         friday: formData.friday,
         active_from: formData.activeFrom || null,
@@ -126,6 +128,17 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
       alert('שגיאה בשמירת עובדת: ' + (error?.message || 'Unknown error'));
       setSaving(false);
       return;
+    }
+
+    // Save email separately — unique-constraint or format errors won't block employee creation
+    if (formData.email.trim()) {
+      const { error: emailError } = await supabase
+        .from('employees')
+        .update({ email: formData.email.trim() })
+        .eq('id', newEmp.id);
+      if (emailError) {
+        alert('העובדת נוספה בהצלחה, אך לא ניתן לשמור את האימייל: ' + emailError.message);
+      }
     }
 
     // Create token
@@ -145,7 +158,7 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
     const localEmployee: Employee = {
       id: newId,
       name: formData.name.trim(),
-      shiftsPerWeek: 3,
+      shiftsPerWeek: formData.shiftsPerWeek,
       fridayAvailability: localFriday as 'always' | 'never' | 'biweekly',
       shiftType: localShiftType as 'הכל' | 'בוקר' | 'ערב',
       isTrainee: false,
@@ -840,19 +853,35 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
                   הגדרות משמרת
                 </h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {/* Seniority */}
-                  <div>
-                    <label style={labelStyle}>ותק בחודשים</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={formData.seniority}
-                      onChange={e => setFormData({ ...formData, seniority: parseInt(e.target.value) || 0 })}
-                      style={inputStyle}
-                    />
-                    <span style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, display: 'block' }}>
-                      לדוגמה: שנתיים = 24 חודשים
-                    </span>
+                  {/* Shifts per week + Seniority (one row) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <label style={labelStyle}>משמרות בשבוע</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={12}
+                        value={formData.shiftsPerWeek}
+                        onChange={e => setFormData({ ...formData, shiftsPerWeek: parseInt(e.target.value) || 0 })}
+                        style={inputStyle}
+                      />
+                      <span style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, display: 'block' }}>
+                        כמה משמרות מחויבת בשבוע
+                      </span>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>ותק בחודשים</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={formData.seniority}
+                        onChange={e => setFormData({ ...formData, seniority: parseInt(e.target.value) || 0 })}
+                        style={inputStyle}
+                      />
+                      <span style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, display: 'block' }}>
+                        לדוגמה: שנתיים = 24
+                      </span>
+                    </div>
                   </div>
 
                   {/* Shift Type toggle */}

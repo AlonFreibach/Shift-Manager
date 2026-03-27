@@ -13,6 +13,7 @@ export type SupabaseEmployee = {
   id: string
   name: string
   seniority: number
+  shifts_per_week?: number
   friday: string
   shift_type: string
   active_from?: string
