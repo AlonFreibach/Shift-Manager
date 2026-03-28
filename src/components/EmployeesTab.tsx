@@ -92,6 +92,13 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const [vacationFrom, setVacationFrom] = useState('');
   const [vacationTo, setVacationTo] = useState('');
 
+  // Fixed shift modal state
+  const [fixedShiftModal, setFixedShiftModal] = useState(false);
+  const [fsDay, setFsDay] = useState('ראשון');
+  const [fsShift, setFsShift] = useState('בוקר');
+  const [fsArrival, setFsArrival] = useState('');
+  const [fsDeparture, setFsDeparture] = useState('');
+
   const shiftOptions = Array.from({ length: 13 }, (_, i) => i); // 0..12
   const dayOptions = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
   const shiftTypeOptions = ['בוקר', 'ערב'];
@@ -276,20 +283,6 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     setDraftEmployee(null);
   };
 
-  const updateDraftFixedShift = (idx: number, field: keyof FixedShift, value: string) => {
-    if (!draftEmployee) return;
-    const shifts = [...((draftEmployee.fixedShifts as FixedShift[]) || [])];
-    shifts[idx] = { ...shifts[idx], [field]: value };
-    if (field === 'shift') {
-      if (value === 'בוקר') { shifts[idx].arrivalTime = '07:00'; shifts[idx].departureTime = '14:00'; }
-      else { shifts[idx].arrivalTime = '14:00'; shifts[idx].departureTime = '21:00'; }
-    }
-    if (field === 'day' && value === 'שישי') {
-      shifts[idx].shift = 'בוקר'; shifts[idx].arrivalTime = '07:00'; shifts[idx].departureTime = '14:00';
-    }
-    setDraftEmployee({ ...draftEmployee, fixedShifts: shifts });
-  };
-
   // ── Split active / former ──
   const isInactive = (emp: Employee) => {
     if (!emp.availableToDate) return false;
@@ -316,6 +309,24 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     if (!draftEmployee) return;
     const current = (draftEmployee.vacationPeriods || []) as { from: string; to: string }[];
     setDraftEmployee({ ...draftEmployee, vacationPeriods: current.filter((_, i) => i !== idx) });
+  };
+
+  const addFixedShiftToDraft = () => {
+    if (!draftEmployee) return;
+    const defaultArrival = fsShift === 'בוקר' ? '07:00' : '14:00';
+    const defaultDeparture = fsShift === 'בוקר' ? '14:00' : '21:00';
+    const newFs: FixedShift = {
+      day: fsDay,
+      shift: fsShift,
+      arrivalTime: fsArrival || defaultArrival,
+      departureTime: fsDeparture || defaultDeparture,
+    };
+    setDraftEmployee({ ...draftEmployee, fixedShifts: [...((draftEmployee.fixedShifts as FixedShift[]) || []), newFs] });
+    setFixedShiftModal(false);
+    setFsDay('ראשון');
+    setFsShift('בוקר');
+    setFsArrival('');
+    setFsDeparture('');
   };
 
   const fmtShort = (d: string) => {
@@ -640,26 +651,17 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       משמרות קבועות {((draft.fixedShifts as FixedShift[])?.length || 0) > 0 && `(${(draft.fixedShifts as FixedShift[])!.length})`}
                     </label>
                     {((draft.fixedShifts as FixedShift[]) || []).map((fs, idx) => (
-                      <div key={idx} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap', background: '#f8fafc', borderRadius: 6, padding: '6px 8px' }}>
-                        <select value={fs.day} onChange={e => updateDraftFixedShift(idx, 'day', e.target.value)} style={{ fontSize: 11, padding: '3px 4px', borderRadius: 4, border: '1px solid #e8e0d4', width: 60 }}>
-                          {dayOptions.map(d => <option key={d} value={d}>{d}</option>)}
-                        </select>
-                        <select value={fs.shift} onChange={e => updateDraftFixedShift(idx, 'shift', e.target.value)} style={{ fontSize: 11, padding: '3px 4px', borderRadius: 4, border: '1px solid #e8e0d4', width: 50 }}>
-                          {(fs.day === 'שישי' ? ['בוקר'] : shiftTypeOptions).map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                        <input type="time" value={fs.arrivalTime} onChange={e => updateDraftFixedShift(idx, 'arrivalTime', e.target.value)} style={{ fontSize: 11, padding: '3px 2px', borderRadius: 4, border: '1px solid #e8e0d4', width: 70 }} />
-                        <input type="time" value={fs.departureTime} onChange={e => updateDraftFixedShift(idx, 'departureTime', e.target.value)} style={{ fontSize: 11, padding: '3px 2px', borderRadius: 4, border: '1px solid #e8e0d4', width: 70 }} />
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', borderRadius: 6, padding: '6px 10px', fontSize: 13, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 500, color: '#1a4a2e' }}>{fs.day} — {fs.shift}</span>
+                        <span style={{ color: '#6b7280' }}>({fs.arrivalTime}–{fs.departureTime})</span>
                         <button onClick={() => {
                           const arr = ((draft.fixedShifts as FixedShift[]) || []).filter((_, i) => i !== idx);
                           setDraftEmployee({ ...draft, fixedShifts: arr });
-                        }} style={{ fontSize: 12, background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '0 4px', fontWeight: 700 }}>✕</button>
+                        }} style={{ marginRight: 'auto', fontSize: 12, background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '0 4px', fontWeight: 700 }}>✕</button>
                       </div>
                     ))}
                     <button
-                      onClick={() => {
-                        const newFs: FixedShift = { day: 'ראשון', shift: 'בוקר', arrivalTime: '07:00', departureTime: '14:00' };
-                        setDraftEmployee({ ...draft, fixedShifts: [...((draft.fixedShifts as FixedShift[]) || []), newFs] });
-                      }}
+                      onClick={() => { setFixedShiftModal(true); setFsDay('ראשון'); setFsShift('בוקר'); setFsArrival(''); setFsDeparture(''); }}
                       style={{ width: '100%', marginTop: 4, padding: '6px 0', fontSize: 12, fontWeight: 600, background: 'transparent', color: '#1a4a2e', border: '1px solid #4a7c59', borderRadius: 6, cursor: 'pointer' }}
                     >
                       + הוסף משמרת קבועה
@@ -837,20 +839,23 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     )}
                   </div>
 
-                  {/* 5b. ACTIVE VACATION INDICATOR (view only) */}
-                  {(() => {
-                    const now = new Date(); now.setHours(0, 0, 0, 0);
-                    const active = employee.vacationPeriods.find(vp => {
-                      const from = new Date(vp.from + 'T00:00:00');
-                      const to = new Date(vp.to + 'T23:59:59');
-                      return now >= from && now <= to;
-                    });
-                    return active ? (
-                      <div style={{ fontSize: 13, color: '#c17f3b', fontWeight: 600 }}>
-                        בחופש עד {fmtShort(active.to)}
+                  {/* 5b. VACATION PERIODS */}
+                  <div>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#6b7280', marginBottom: 6 }}>
+                      חופש
+                    </span>
+                    {employee.vacationPeriods.length === 0 ? (
+                      <span style={{ fontSize: 13, color: '#9ca3af' }}>אין</span>
+                    ) : (
+                      <div style={{ background: '#FEF3E2', borderRadius: 8, padding: '8px 12px' }}>
+                        {employee.vacationPeriods.map((vp, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 13 }}>
+                            <span style={{ fontWeight: 500, color: '#c17f3b' }}>{fmtShort(vp.from)} – {fmtShort(vp.to)}</span>
+                          </div>
+                        ))}
                       </div>
-                    ) : null;
-                  })()}
+                    )}
+                  </div>
 
                   {/* 6. ACTION BUTTONS */}
                   <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
@@ -1322,6 +1327,52 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                   background: (!vacationFrom || !vacationTo || vacationFrom > vacationTo) ? '#94a3b8' : '#1a4a2e',
                   color: 'white', opacity: (!vacationFrom || !vacationTo || vacationFrom > vacationTo) ? 0.6 : 1,
                 }}
+              >
+                שמור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Fixed shift mini modal */}
+      {fixedShiftModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setFixedShiftModal(false)}>
+          <div style={{ background: 'white', borderRadius: 12, padding: 24, minWidth: 320, maxWidth: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1a4a2e', marginBottom: 16 }}>
+              הוסף משמרת קבועה
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>יום</label>
+                <select value={fsDay} onChange={e => setFsDay(e.target.value)} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6 }}>
+                  {dayOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>משמרת</label>
+                <select value={fsShift} onChange={e => setFsShift(e.target.value)} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6 }}>
+                  {(fsDay === 'שישי' ? ['בוקר'] : shiftTypeOptions).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>התחלה</label>
+                  <input type="time" value={fsArrival} onChange={e => setFsArrival(e.target.value)} placeholder={fsShift === 'בוקר' ? '07:00' : '14:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>סיום</label>
+                  <input type="time" value={fsDeparture} onChange={e => setFsDeparture(e.target.value)} placeholder={fsShift === 'בוקר' ? '14:00' : '21:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>אם לא מוזן — ישתמש בשעות ברירת המחדל</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button onClick={() => setFixedShiftModal(false)} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+                ביטול
+              </button>
+              <button
+                onClick={addFixedShiftToDraft}
+                style={{ padding: '8px 18px', fontSize: 13, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', background: '#1a4a2e', color: 'white' }}
               >
                 שמור
               </button>
