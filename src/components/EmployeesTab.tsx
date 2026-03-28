@@ -87,6 +87,11 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [draftEmployee, setDraftEmployee] = useState<Partial<Employee> | null>(null);
 
+  // Vacation modal state
+  const [vacationModal, setVacationModal] = useState<{ empId: string } | null>(null);
+  const [vacationFrom, setVacationFrom] = useState('');
+  const [vacationTo, setVacationTo] = useState('');
+
   const shiftOptions = Array.from({ length: 13 }, (_, i) => i); // 0..12
   const dayOptions = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
   const shiftTypeOptions = ['בוקר', 'ערב'];
@@ -294,6 +299,32 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const restoreEmployee = async (emp: Employee) => {
     await supabase.from('employees').update({ active_until: null }).eq('id', emp.id);
     onRefresh();
+  };
+
+  const addVacation = async () => {
+    if (!vacationModal || !vacationFrom || !vacationTo) return;
+    const emp = employees.find(e => e.id === vacationModal.empId);
+    if (!emp) return;
+    const updated = [...emp.vacationPeriods, { from: vacationFrom, to: vacationTo }];
+    const { error } = await supabase.from('employees').update({ vacation_periods: updated }).eq('id', emp.id);
+    if (error) { alert('שגיאה בשמירת חופש — ודאי שעמודת vacation_periods קיימת ב-Supabase'); return; }
+    setVacationModal(null);
+    setVacationFrom('');
+    setVacationTo('');
+    onRefresh();
+  };
+
+  const removeVacation = async (empId: string, idx: number) => {
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return;
+    const updated = emp.vacationPeriods.filter((_, i) => i !== idx);
+    await supabase.from('employees').update({ vacation_periods: updated }).eq('id', emp.id);
+    onRefresh();
+  };
+
+  const fmtShort = (d: string) => {
+    const [, m, dd] = d.split('-');
+    return `${dd}.${m}`;
   };
 
   const getSubtitle = (emp: Employee) => {
@@ -781,6 +812,36 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     )}
                   </div>
 
+                  {/* 5b. VACATION PERIODS */}
+                  <div>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#6b7280', marginBottom: 6 }}>
+                      חופש
+                    </span>
+                    {employee.vacationPeriods.length === 0 ? (
+                      <span style={{ fontSize: 13, color: '#9ca3af' }}>אין</span>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {employee.vacationPeriods.map((vp, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FEF3E2', borderRadius: 6, padding: '4px 10px', fontSize: 13, color: '#92400e' }}>
+                            <span style={{ fontWeight: 600 }}>בחופש: {fmtShort(vp.from)} – {fmtShort(vp.to)}</span>
+                            <button
+                              onClick={() => removeVacation(employee.id, idx)}
+                              style={{ marginRight: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#92400e', padding: '0 2px', lineHeight: 1 }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => { setVacationModal({ empId: employee.id }); setVacationFrom(''); setVacationTo(''); }}
+                      style={{ marginTop: 6, padding: '4px 12px', fontSize: 12, fontWeight: 600, background: 'white', color: '#1a4a2e', border: '1px solid #1a4a2e', borderRadius: 6, cursor: 'pointer' }}
+                    >
+                      + הוסף חופש
+                    </button>
+                  </div>
+
                   {/* 6. ACTION BUTTONS */}
                   <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
                     <button
@@ -1219,6 +1280,42 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {/* Vacation mini modal */}
+      {vacationModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setVacationModal(null)}>
+          <div style={{ background: 'white', borderRadius: 12, padding: 24, minWidth: 320, maxWidth: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1a4a2e', marginBottom: 16 }}>
+              הוסף חופש — {employees.find(e => e.id === vacationModal.empId)?.name}
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>מתאריך</label>
+                <input type="date" value={vacationFrom} onChange={e => setVacationFrom(e.target.value)} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>עד תאריך</label>
+                <input type="date" value={vacationTo} onChange={e => setVacationTo(e.target.value)} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button onClick={() => setVacationModal(null)} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+                ביטול
+              </button>
+              <button
+                disabled={!vacationFrom || !vacationTo || vacationFrom > vacationTo}
+                onClick={addVacation}
+                style={{
+                  padding: '8px 18px', fontSize: 13, fontWeight: 700, borderRadius: 6, border: 'none', cursor: (!vacationFrom || !vacationTo || vacationFrom > vacationTo) ? 'not-allowed' : 'pointer',
+                  background: (!vacationFrom || !vacationTo || vacationFrom > vacationTo) ? '#94a3b8' : '#1a4a2e',
+                  color: 'white', opacity: (!vacationFrom || !vacationTo || vacationFrom > vacationTo) ? 0.6 : 1,
+                }}
+              >
+                שמור
+              </button>
+            </div>
           </div>
         </div>
       )}

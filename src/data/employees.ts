@@ -5,6 +5,11 @@ export interface FixedShift {
   departureTime: string;
 }
 
+export interface VacationPeriod {
+  from: string; // YYYY-MM-DD
+  to: string;   // YYYY-MM-DD
+}
+
 export interface Employee {
   id: string;
   name: string;
@@ -19,6 +24,7 @@ export interface Employee {
   fairnessHistory: { date: string; type: 1 | 2 }[];
   flexibilityHistory: { weekStart: string; submitted: number; committed: number }[];
   fixedShifts?: FixedShift[];
+  vacationPeriods: VacationPeriod[];
 }
 
 // Legacy hardcoded employee names for migrating old localStorage schedule data

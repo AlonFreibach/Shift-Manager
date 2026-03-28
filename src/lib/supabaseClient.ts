@@ -23,4 +23,5 @@ export type SupabaseEmployee = {
   temp_password?: string
   role: 'admin' | 'employee'
   created_at: string
+  vacation_periods?: { from: string; to: string }[] | null
 }

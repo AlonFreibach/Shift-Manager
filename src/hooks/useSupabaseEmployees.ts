@@ -28,6 +28,7 @@ function supabaseToEmployee(emp: SupabaseEmployee): Employee {
     fairnessHistory: [],
     flexibilityHistory: [],
     fixedShifts: [],
+    vacationPeriods: Array.isArray(emp.vacation_periods) ? emp.vacation_periods : [],
   };
 }
 

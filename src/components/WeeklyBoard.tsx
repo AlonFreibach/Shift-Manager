@@ -18,6 +18,21 @@ interface WeeklyBoardProps {
 
 const MIYA_NAME = 'מיה';
 
+/** Check if employee is on vacation during any part of the week (Sun–Fri) */
+function isOnVacation(emp: Employee, weekStartStr: string): boolean {
+  if (!emp.vacationPeriods || emp.vacationPeriods.length === 0) return false;
+  const weekStart = new Date(weekStartStr + 'T00:00:00');
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 5); // Friday
+  for (const vp of emp.vacationPeriods) {
+    const vFrom = new Date(vp.from + 'T00:00:00');
+    const vTo = new Date(vp.to + 'T23:59:59');
+    // Overlap check: vacation overlaps with week
+    if (vFrom <= weekEnd && vTo >= weekStart) return true;
+  }
+  return false;
+}
+
 interface Slot {
   employeeId: string | null;
   arrivalTime: string;
@@ -1127,9 +1142,10 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       }
     }
 
-    // Only schedule employees who submitted at least one preference this week
+    // Only schedule employees who submitted at least one preference this week and are not on vacation
     const activeEmployees = employees.filter(e => {
       if (e.id === miyaId) return false;
+      if (isOnVacation(e, weekKey)) return false;
       const empPrefs = prefs[e.id];
       return empPrefs && Object.values(empPrefs).flat().length > 0;
     });
@@ -2192,6 +2208,10 @@ ${pages}
                 const tempStationTaken = !!tempSlotData.station && tempSlotData.station !== 'התלמדות' && shiftSlots.some((s, i) =>
                   i !== slotIdx && !s.locked && s.station === tempSlotData.station && s.employeeId !== null
                 );
+                const tempOnVacation = tempEmpId !== null && (() => {
+                  const emp = employees.find(e => e.id === tempEmpId);
+                  return emp ? isOnVacation(emp, weekKey) : false;
+                })();
                 const tempIsIncomplete = tempEmpId === null || !tempSlotData.arrivalTime || !tempSlotData.departureTime || !tempSlotData.station;
                 return (
                   <>
@@ -2212,6 +2232,11 @@ ${pages}
                     {tempIsDuplicate && (
                       <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, fontWeight: 600 }}>
                         ⚠️ {tempDuplicateName} כבר משובצת ביום זה
+                      </div>
+                    )}
+                    {tempOnVacation && (
+                      <div style={{ fontSize: 10, color: '#c17f3b', marginBottom: 4, fontWeight: 600 }}>
+                        ⚠️ עובדת זו בחופש בתאריכים אלו
                       </div>
                     )}
                     {popoverValidationError && !tempIsDuplicate && tempEmpId === null && (
