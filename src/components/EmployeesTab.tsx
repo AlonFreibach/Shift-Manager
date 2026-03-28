@@ -377,6 +377,15 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
           const subtitle = getSubtitle(employee);
           const availText = getAvailabilityText(employee);
 
+          // Expiring within 30 days
+          const expiringDays = (() => {
+            if (!employee.availableToDate) return null;
+            const now = new Date(); now.setHours(0, 0, 0, 0);
+            const end = new Date(employee.availableToDate + 'T00:00:00');
+            const diff = Math.ceil((end.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+            return diff >= 0 && diff <= 30 ? diff : null;
+          })();
+
           return (
             <div
               key={employee.id}
@@ -530,7 +539,17 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                 </>
               ) : (
                 /* ════════ VIEW MODE ════════ */
-                <>
+                <div style={{ position: 'relative' }}>
+                  {expiringDays !== null && (
+                    <div style={{
+                      position: 'absolute', top: -8, right: -8, zIndex: 1,
+                      background: '#c17f3b', color: 'white',
+                      fontSize: 11, fontWeight: 700, padding: '3px 10px',
+                      borderRadius: 999, whiteSpace: 'nowrap',
+                    }}>
+                      פג בעוד {expiringDays} ימים
+                    </div>
+                  )}
                   {/* 1. HEADER */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {/* Avatar */}
@@ -723,7 +742,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       מחק
                     </button>
                   </div>
-                </>
+                </div>
               )}
             </div>
           );

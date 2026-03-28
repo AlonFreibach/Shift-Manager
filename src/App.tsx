@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import { useSupabaseEmployees } from './hooks/useSupabaseEmployees'
@@ -26,6 +26,25 @@ function AppContent() {
   const { employees, loading: empLoading, refresh: refreshEmployees } = useSupabaseEmployees()
   const [currentTab, setCurrentTab] = useState<TabId>('board')
   const [autoScheduleRequest, setAutoScheduleRequest] = useState<string | null>(null)
+  const [expiryBannerDismissed, setExpiryBannerDismissed] = useState(false)
+
+  const expiringEmployees = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const inOneMonth = new Date(now);
+    inOneMonth.setDate(inOneMonth.getDate() + 30);
+    return employees
+      .filter(emp => {
+        if (!emp.availableToDate) return false;
+        const endDate = new Date(emp.availableToDate + 'T00:00:00');
+        return endDate >= now && endDate <= inOneMonth;
+      })
+      .map(emp => {
+        const endDate = new Date(emp.availableToDate + 'T00:00:00');
+        const diffDays = Math.ceil((endDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+        return { name: emp.name, daysLeft: diffDays };
+      });
+  }, [employees])
 
   const loading = authLoading || empLoading
 
@@ -156,6 +175,28 @@ function AppContent() {
           </button>
         </div>
       </header>
+
+      {/* Expiration warning banner */}
+      {!expiryBannerDismissed && expiringEmployees.length > 0 && (
+        <div style={{
+          background: '#FEF3E2', border: '1px solid #F5D5A0', borderRadius: 0,
+          padding: '10px 24px', display: 'flex', alignItems: 'flex-start', gap: 12,
+        }}>
+          <div style={{ flex: 1 }}>
+            {expiringEmployees.map((emp, i) => (
+              <div key={i} style={{ fontSize: 14, fontWeight: 600, color: '#92400e', lineHeight: 1.6 }}>
+                תוקף העבודה של {emp.name} פג בעוד {emp.daysLeft} ימים
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => setExpiryBannerDismissed(true)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#92400e', padding: '0 4px', lineHeight: 1, flexShrink: 0 }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Tab Content */}
       <main style={{ width: '100%', padding: '16px 24px' }}>
