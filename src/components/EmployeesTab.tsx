@@ -229,6 +229,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
       availableFromDate: emp.availableFromDate,
       availableToDate: emp.availableToDate,
       fixedShifts: emp.fixedShifts ? emp.fixedShifts.map(fs => ({ ...fs })) : [],
+      vacationPeriods: emp.vacationPeriods.map(vp => ({ ...vp })),
     });
   };
 
@@ -253,6 +254,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     if (shiftType !== undefined) updateData.shift_type = shiftType;
     if (draftEmployee.availableFromDate !== undefined) updateData.active_from = draftEmployee.availableFromDate || null;
     if (draftEmployee.availableToDate !== undefined) updateData.active_until = draftEmployee.availableToDate || null;
+    if (draftEmployee.vacationPeriods !== undefined) updateData.vacation_periods = draftEmployee.vacationPeriods;
 
     const { error } = await supabase
       .from('employees')
@@ -301,25 +303,19 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     onRefresh();
   };
 
-  const addVacation = async () => {
-    if (!vacationModal || !vacationFrom || !vacationTo) return;
-    const emp = employees.find(e => e.id === vacationModal.empId);
-    if (!emp) return;
-    const updated = [...emp.vacationPeriods, { from: vacationFrom, to: vacationTo }];
-    const { error } = await supabase.from('employees').update({ vacation_periods: updated }).eq('id', emp.id);
-    if (error) { alert('שגיאה בשמירת חופש — ודאי שעמודת vacation_periods קיימת ב-Supabase'); return; }
+  const addVacationToDraft = () => {
+    if (!vacationFrom || !vacationTo || !draftEmployee) return;
+    const current = (draftEmployee.vacationPeriods || []) as { from: string; to: string }[];
+    setDraftEmployee({ ...draftEmployee, vacationPeriods: [...current, { from: vacationFrom, to: vacationTo }] });
     setVacationModal(null);
     setVacationFrom('');
     setVacationTo('');
-    onRefresh();
   };
 
-  const removeVacation = async (empId: string, idx: number) => {
-    const emp = employees.find(e => e.id === empId);
-    if (!emp) return;
-    const updated = emp.vacationPeriods.filter((_, i) => i !== idx);
-    await supabase.from('employees').update({ vacation_periods: updated }).eq('id', emp.id);
-    onRefresh();
+  const removeDraftVacation = (idx: number) => {
+    if (!draftEmployee) return;
+    const current = (draftEmployee.vacationPeriods || []) as { from: string; to: string }[];
+    setDraftEmployee({ ...draftEmployee, vacationPeriods: current.filter((_, i) => i !== idx) });
   };
 
   const fmtShort = (d: string) => {
@@ -671,28 +667,33 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                   </div>
 
                   {/* Vacation Periods (edit) */}
-                  <div style={{ marginTop: 10, borderTop: '1px solid #f0ebe3', paddingTop: 10 }}>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#92400e', marginBottom: 6 }}>
-                      חופש {employee.vacationPeriods.length > 0 && `(${employee.vacationPeriods.length})`}
-                    </label>
-                    {employee.vacationPeriods.map((vp, idx) => (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FEF3E2', borderRadius: 6, padding: '4px 10px', fontSize: 13, color: '#92400e', marginBottom: 4 }}>
-                        <span style={{ fontWeight: 600 }}>{fmtShort(vp.from)} – {fmtShort(vp.to)}</span>
+                  {(() => {
+                    const draftVacations = ((draft.vacationPeriods || []) as { from: string; to: string }[]);
+                    return (
+                      <div style={{ marginTop: 10, borderTop: '1px solid #f0ebe3', paddingTop: 10 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#92400e', marginBottom: 6 }}>
+                          חופש {draftVacations.length > 0 && `(${draftVacations.length})`}
+                        </label>
+                        {draftVacations.map((vp, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FEF3E2', borderRadius: 6, padding: '4px 10px', fontSize: 13, color: '#92400e', marginBottom: 4 }}>
+                            <span style={{ fontWeight: 600 }}>{fmtShort(vp.from)} – {fmtShort(vp.to)}</span>
+                            <button
+                              onClick={() => removeDraftVacation(idx)}
+                              style={{ marginRight: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#92400e', padding: '0 2px', lineHeight: 1 }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
                         <button
-                          onClick={() => removeVacation(employee.id, idx)}
-                          style={{ marginRight: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#92400e', padding: '0 2px', lineHeight: 1 }}
+                          onClick={() => { setVacationModal({ empId: employee.id }); setVacationFrom(''); setVacationTo(''); }}
+                          style={{ width: '100%', marginTop: 4, padding: '6px 0', fontSize: 12, fontWeight: 600, background: 'transparent', color: '#c17f3b', border: '1px solid #c17f3b', borderRadius: 6, cursor: 'pointer' }}
                         >
-                          ✕
+                          + הוסף חופש
                         </button>
                       </div>
-                    ))}
-                    <button
-                      onClick={() => { setVacationModal({ empId: employee.id }); setVacationFrom(''); setVacationTo(''); }}
-                      style={{ width: '100%', marginTop: 4, padding: '6px 0', fontSize: 12, fontWeight: 600, background: 'transparent', color: '#c17f3b', border: '1px solid #c17f3b', borderRadius: 6, cursor: 'pointer' }}
-                    >
-                      + הוסף חופש
-                    </button>
-                  </div>
+                    );
+                  })()}
 
                   {/* Edit Buttons */}
                   <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
@@ -1315,7 +1316,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
               </button>
               <button
                 disabled={!vacationFrom || !vacationTo || vacationFrom > vacationTo}
-                onClick={addVacation}
+                onClick={addVacationToDraft}
                 style={{
                   padding: '8px 18px', fontSize: 13, fontWeight: 700, borderRadius: 6, border: 'none', cursor: (!vacationFrom || !vacationTo || vacationFrom > vacationTo) ? 'not-allowed' : 'pointer',
                   background: (!vacationFrom || !vacationTo || vacationFrom > vacationTo) ? '#94a3b8' : '#1a4a2e',
