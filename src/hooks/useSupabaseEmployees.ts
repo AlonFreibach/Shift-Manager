@@ -17,6 +17,9 @@ function supabaseToEmployee(emp: SupabaseEmployee): Employee {
   return {
     id: String(emp.id),
     name: emp.name,
+    phone: emp.phone || '',
+    email: emp.email || '',
+    seniority: emp.seniority ?? 0,
     shiftsPerWeek: emp.shifts_per_week ?? 3,
     fridayAvailability: fridayMap[emp.friday] || 'never',
     shiftType: shiftMap[emp.shift_type] || 'הכל',
@@ -27,7 +30,7 @@ function supabaseToEmployee(emp: SupabaseEmployee): Employee {
     availableToDate: emp.active_until || '',
     fairnessHistory: [],
     flexibilityHistory: [],
-    fixedShifts: [],
+    fixedShifts: Array.isArray(emp.fixed_shifts) ? emp.fixed_shifts : [],
     vacationPeriods: Array.isArray(emp.vacation_periods) ? emp.vacation_periods : [],
     birthday: emp.birthday || undefined,
   };

@@ -13,6 +13,9 @@ export interface VacationPeriod {
 export interface Employee {
   id: string;
   name: string;
+  phone?: string;
+  email?: string;
+  seniority: number;
   shiftsPerWeek: number;
   fridayAvailability: 'always' | 'never' | 'biweekly';
   shiftType: "הכל" | "בוקר" | "ערב";

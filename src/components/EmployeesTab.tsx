@@ -232,6 +232,9 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     setEditingCardId(emp.id);
     setDraftEmployee({
       name: emp.name,
+      phone: emp.phone || '',
+      email: emp.email || '',
+      seniority: emp.seniority ?? 0,
       shiftsPerWeek: emp.shiftsPerWeek,
       fridayAvailability: emp.fridayAvailability,
       shiftType: emp.shiftType,
@@ -260,11 +263,15 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
 
     const updateData: Record<string, unknown> = {};
     if (draftEmployee.name !== undefined) updateData.name = draftEmployee.name.trim();
+    if (draftEmployee.phone !== undefined) updateData.phone = (draftEmployee.phone as string)?.trim() || null;
+    if (draftEmployee.email !== undefined) updateData.email = (draftEmployee.email as string)?.trim() || null;
+    if (draftEmployee.seniority !== undefined) updateData.seniority = draftEmployee.seniority;
     if (draftEmployee.shiftsPerWeek !== undefined) updateData.shifts_per_week = draftEmployee.shiftsPerWeek;
     if (friday !== undefined) updateData.friday = friday;
     if (shiftType !== undefined) updateData.shift_type = shiftType;
     if (draftEmployee.availableFromDate !== undefined) updateData.active_from = draftEmployee.availableFromDate || null;
     if (draftEmployee.availableToDate !== undefined) updateData.active_until = draftEmployee.availableToDate || null;
+    if (draftEmployee.fixedShifts !== undefined) updateData.fixed_shifts = draftEmployee.fixedShifts;
     if (draftEmployee.vacationPeriods !== undefined) updateData.vacation_periods = draftEmployee.vacationPeriods;
     if (draftEmployee.birthday !== undefined) updateData.birthday = (draftEmployee.birthday as string)?.trim() || null;
 
@@ -575,16 +582,54 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       />
                     </div>
 
-                    {/* Shifts Per Week */}
-                    <div>
-                      <label style={labelStyle}>משמרות בשבוע:</label>
-                      <select
-                        value={draft.shiftsPerWeek ?? 3}
-                        onChange={(e) => setDraftEmployee({ ...draft, shiftsPerWeek: parseInt(e.target.value) })}
-                        style={selectStyle}
-                      >
-                        {shiftOptions.map(num => <option key={num} value={num}>{num}</option>)}
-                      </select>
+                    {/* Phone + Email */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <label style={labelStyle}>טלפון:</label>
+                        <input
+                          type="tel"
+                          value={(draft.phone as string) || ''}
+                          onChange={(e) => setDraftEmployee({ ...draft, phone: e.target.value })}
+                          placeholder="050-1234567"
+                          dir="ltr"
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>אימייל:</label>
+                        <input
+                          type="email"
+                          value={(draft.email as string) || ''}
+                          onChange={(e) => setDraftEmployee({ ...draft, email: e.target.value })}
+                          placeholder="example@email.com"
+                          dir="ltr"
+                          style={inputStyle}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Shifts Per Week + Seniority */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <label style={labelStyle}>משמרות בשבוע:</label>
+                        <select
+                          value={draft.shiftsPerWeek ?? 3}
+                          onChange={(e) => setDraftEmployee({ ...draft, shiftsPerWeek: parseInt(e.target.value) })}
+                          style={selectStyle}
+                        >
+                          {shiftOptions.map(num => <option key={num} value={num}>{num}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>ותק (חודשים):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={draft.seniority ?? 0}
+                          onChange={(e) => setDraftEmployee({ ...draft, seniority: parseInt(e.target.value) || 0 })}
+                          style={inputStyle}
+                        />
+                      </div>
                     </div>
 
                     {/* Friday */}
@@ -778,14 +823,40 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                   <div style={dividerStyle} />
 
                   {/* 3. INFO ROWS */}
-                  {/* Row 1 — Shifts per week */}
+                  {/* Row — Phone (conditional) */}
+                  {employee.phone && (
+                    <div style={infoRowStyle}>
+                      <span style={iconWrapStyle}>📞</span>
+                      <span style={infoLabelStyle}>טלפון</span>
+                      <span style={{ fontSize: 13, direction: 'ltr' as const }}>{employee.phone}</span>
+                    </div>
+                  )}
+                  {/* Row — Email (conditional) */}
+                  {employee.email && (
+                    <div style={infoRowStyle}>
+                      <span style={iconWrapStyle}>✉️</span>
+                      <span style={infoLabelStyle}>אימייל</span>
+                      <span style={{ fontSize: 12, direction: 'ltr' as const, wordBreak: 'break-all' as const }}>{employee.email}</span>
+                    </div>
+                  )}
+
+                  {/* Row — Shifts per week */}
                   <div style={infoRowStyle}>
                     <span style={iconWrapStyle}><IconCalendar /></span>
                     <span style={infoLabelStyle}>משמרות בשבוע</span>
                     <span style={{ fontWeight: 500 }}>{employee.shiftsPerWeek}</span>
                   </div>
 
-                  {/* Row 2 — Shift type */}
+                  {/* Row — Seniority (conditional) */}
+                  {employee.seniority > 0 && (
+                    <div style={infoRowStyle}>
+                      <span style={iconWrapStyle}><IconStar /></span>
+                      <span style={infoLabelStyle}>ותק</span>
+                      <span style={{ fontSize: 13, color: '#475569' }}>{employee.seniority} חודשים</span>
+                    </div>
+                  )}
+
+                  {/* Row — Shift type */}
                   <div style={infoRowStyle}>
                     <span style={iconWrapStyle}><IconClock /></span>
                     <span style={infoLabelStyle}>סוג משמרת</span>
