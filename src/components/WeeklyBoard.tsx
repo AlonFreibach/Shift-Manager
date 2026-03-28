@@ -286,6 +286,10 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [customShiftForm, setCustomShiftForm] = useState({ name: '', startTime: '', endTime: '', requiredCount: 2 });
   const [holidayDismissed, setHolidayDismissed] = useState(false);
 
+  // PDF export modal state
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [pdfWeekChecks, setPdfWeekChecks] = useState<boolean[]>([true, false, false, false, false]);
+
   // Constraints modal state
   const [showConstraintsModal, setShowConstraintsModal] = useState(false);
   const [schedulingConstraints, setSchedulingConstraints] = useState<SchedulingConstraint[]>([]);
@@ -1779,18 +1783,9 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     return lines.join('\n');
   }
 
-  function generatePDF() {
+  function generatePDF(selectedWeekKeys: string[]) {
     try {
-      // Collect all week keys from localStorage
-      const allKeys: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('schedule_')) {
-          const wk = k.replace('schedule_', '');
-          if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(wk)) allKeys.push(wk);
-        }
-      }
-      allKeys.sort();
+      const allKeys = [...selectedWeekKeys].sort();
       if (allKeys.length === 0) { alert('אין שבועות שמורים'); return; }
 
       // Build station badge helper
@@ -2768,10 +2763,10 @@ ${pages}
           העתק לווטסאפ
         </button>
         <button
-          onClick={generatePDF}
+          onClick={() => { setPdfWeekChecks([true, false, false, false, false]); setShowPdfModal(true); }}
           style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
         >
-          הורד PDF
+          ייצוא PDF
         </button>
       </div>
 
@@ -3985,6 +3980,65 @@ ${pages}
                   style={{ padding: '8px 16px', background: isValid ? '#EF9F27' : '#d1cdc6', color: 'white', border: 'none', borderRadius: 6, cursor: isValid ? 'pointer' : 'not-allowed', fontWeight: 700, fontSize: 13 }}
                 >
                   שמור והוסף משמרת
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* PDF export modal */}
+      {showPdfModal && (() => {
+        const PDF_WEEK_OPTIONS = [
+          { label: 'השבוע הנוכחי', offset: 0 },
+          { label: 'השבוע הבא', offset: 1 },
+          { label: 'עוד שבועיים', offset: 2 },
+          { label: 'עוד שלושה שבועות', offset: 3 },
+          { label: 'עוד חודש', offset: 4 },
+        ];
+        const pdfWeekInfos = PDF_WEEK_OPTIONS.map(opt => {
+          const sun = getWeekStart(opt.offset);
+          const fri = new Date(sun.getTime() + 5 * 86400000);
+          const range = `${sun.getDate()}.${sun.getMonth() + 1} – ${fri.getDate()}.${fri.getMonth() + 1}.${sun.getFullYear()}`;
+          const key = formatWeekKey(sun);
+          return { ...opt, range, key };
+        });
+        const anyChecked = pdfWeekChecks.some(Boolean);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowPdfModal(false)}>
+            <div style={{ background: 'white', borderRadius: 12, padding: 28, minWidth: 380, maxWidth: 440, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1a4a2e', marginBottom: 4 }}>ייצוא ל-PDF</h3>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748b', marginBottom: 18 }}>בחרי את השבועות לייצוא — כל שבוע יופיע בעמוד נפרד</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {pdfWeekInfos.map((w, i) => (
+                  <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, cursor: 'pointer', background: pdfWeekChecks[i] ? '#f0fdf4' : '#fafaf9', border: `1px solid ${pdfWeekChecks[i] ? '#86efac' : '#e8e0d4'}`, transition: 'all 0.15s' }}>
+                    <input
+                      type="checkbox"
+                      checked={pdfWeekChecks[i]}
+                      onChange={() => setPdfWeekChecks(prev => prev.map((v, j) => j === i ? !v : v))}
+                      style={{ width: 18, height: 18, accentColor: '#1a4a2e', cursor: 'pointer' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: '#1a4a2e' }}>{w.label}</div>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>{w.range}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18, borderTop: '1px solid #e8e0d4', paddingTop: 14 }}>
+                <button onClick={() => setShowPdfModal(false)} style={{ padding: '8px 18px', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+                  ביטול
+                </button>
+                <button
+                  disabled={!anyChecked}
+                  onClick={() => {
+                    const selectedKeys = pdfWeekInfos.filter((_, i) => pdfWeekChecks[i]).map(w => w.key);
+                    setShowPdfModal(false);
+                    generatePDF(selectedKeys);
+                  }}
+                  style={{ padding: '8px 22px', fontSize: 14, fontWeight: 700, background: anyChecked ? '#1a4a2e' : '#94a3b8', color: 'white', border: 'none', borderRadius: 6, cursor: anyChecked ? 'pointer' : 'not-allowed', opacity: anyChecked ? 1 : 0.6 }}
+                >
+                  ייצא PDF
                 </button>
               </div>
             </div>
