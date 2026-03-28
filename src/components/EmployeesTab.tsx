@@ -736,7 +736,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                 <div style={{ position: 'relative' }}>
                   {expiringDays !== null && (
                     <div style={{
-                      position: 'absolute', top: -8, right: -8, zIndex: 1,
+                      position: 'absolute', top: -10, left: -10, zIndex: 1,
                       background: '#c17f3b', color: 'white',
                       fontSize: 11, fontWeight: 700, padding: '3px 10px',
                       borderRadius: 999, whiteSpace: 'nowrap',
@@ -756,7 +756,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       {employee.name.charAt(0)}
                     </div>
                     {/* Name + subtitle */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
                       <span style={{ fontSize: 17, fontWeight: 500, color: '#1a1a1a', lineHeight: 1.2 }}>{employee.name}</span>
                       {subtitle && (
                         <span style={{ fontSize: 12, color: '#8b8b8b' }}>{subtitle}</span>
