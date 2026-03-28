@@ -3864,11 +3864,10 @@ ${pages}
                   onClick={() => {
                     setShowConstraintsModal(false);
                     setAddingConstraintType(null);
-                    autoSchedule();
                   }}
                   style={{ padding: '8px 22px', fontSize: 14, fontWeight: 700, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
                 >
-                  שבץ אוטומטית &larr;
+                  שמור הנחיות
                 </button>
               </div>
             </div>
