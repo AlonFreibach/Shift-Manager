@@ -6,10 +6,10 @@ import type { SupabaseEmployee } from '../lib/supabaseClient';
 
 interface EmployeesTabProps {
   employees: Employee[];
-  onUpdate: (employees: Employee[]) => void;
+  onRefresh: () => void;
 }
 
-const MIYA_ID = 1;
+const MIYA_NAME = 'מיה';
 
 // ── SVG Icons (16px, currentColor) ──
 const IconCalendar = () => (
@@ -61,7 +61,7 @@ const INITIAL_FORM: AddFormData = {
   activeUntil: '',
 };
 
-export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
+export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   // Modal state — 3-step wizard
   const [showModal, setShowModal] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
@@ -82,7 +82,7 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
   } | null>(null);
 
   // Inline card edit state
-  const [editingCardId, setEditingCardId] = useState<number | null>(null);
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [draftEmployee, setDraftEmployee] = useState<Partial<Employee> | null>(null);
 
   const shiftOptions = Array.from({ length: 13 }, (_, i) => i); // 0..12
@@ -107,10 +107,6 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
   const handleSaveToSupabase = async () => {
     if (!formData.name.trim()) return;
     setSaving(true);
-
-    // Map shiftType/friday for local Employee compatibility
-    const localShiftType = formData.shiftType === 'all' ? 'הכל' : formData.shiftType === 'morning' ? 'בוקר' : 'ערב';
-    const localFriday = formData.friday === 'yes' ? 'always' : formData.friday === 'biweekly' ? 'biweekly' : 'never';
 
     // Insert employee to Supabase (without email — handled separately to avoid unique-constraint crashes)
     const { data: newEmp, error } = await supabase
@@ -158,24 +154,8 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
       : '';
     setMagicLink(link);
 
-    // Also add to local employees list for WeeklyBoard compatibility
-    const newId = Math.max(...employees.map(e => e.id), 0) + 1;
-    const localEmployee: Employee = {
-      id: newId,
-      name: formData.name.trim(),
-      shiftsPerWeek: formData.shiftsPerWeek,
-      fridayAvailability: localFriday as 'always' | 'never' | 'biweekly',
-      shiftType: localShiftType as 'הכל' | 'בוקר' | 'ערב',
-      isTrainee: false,
-      availableFrom: '',
-      availableTo: '',
-      availableFromDate: formData.activeFrom,
-      availableToDate: formData.activeUntil,
-      fairnessHistory: [],
-      flexibilityHistory: [],
-      fixedShifts: [],
-    };
-    onUpdate([...employees, localEmployee]);
+    // Refresh employee list from Supabase
+    onRefresh();
 
     setSaving(false);
     setWizardStep(3);
@@ -192,34 +172,24 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
   };
 
   // ── Open link modal for existing employee card ──
-  const handleOpenLinkModal = async (empId: number) => {
+  const handleOpenLinkModal = async (empId: string) => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return;
 
     setLinkModal({ emp, link: null, loading: true, copied: false });
 
-    const { data: supaEmp } = await supabase
-      .from('employees')
-      .select('id')
-      .eq('name', emp.name)
-      .single();
-
-    if (!supaEmp) {
-      setLinkModal(prev => prev ? { ...prev, loading: false } : null);
-      return;
-    }
-
+    // Employee already has Supabase ID — look up token directly
     let { data: tokenRow } = await supabase
       .from('employee_tokens')
       .select('token')
-      .eq('employee_id', supaEmp.id)
+      .eq('employee_id', emp.id)
       .eq('is_active', true)
       .single();
 
     if (!tokenRow) {
       const { data: newToken } = await supabase
         .from('employee_tokens')
-        .insert({ employee_id: supaEmp.id })
+        .insert({ employee_id: emp.id })
         .select('token')
         .single();
       tokenRow = newToken;
@@ -255,25 +225,39 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
     });
   };
 
-  const saveCardEdit = () => {
+  const saveCardEdit = async () => {
     if (!draftEmployee || editingCardId === null) return;
     if (!draftEmployee.name?.trim()) {
       alert('אנא הזן שם עובדת');
       return;
     }
-    onUpdate(employees.map(emp =>
-      emp.id === editingCardId ? {
-        ...emp,
-        name: draftEmployee.name!,
-        shiftsPerWeek: draftEmployee.shiftsPerWeek ?? emp.shiftsPerWeek,
-        fridayAvailability: draftEmployee.fridayAvailability ?? emp.fridayAvailability,
-        shiftType: draftEmployee.shiftType ?? emp.shiftType,
-        isTrainee: draftEmployee.isTrainee ?? emp.isTrainee,
-        availableFromDate: draftEmployee.availableFromDate ?? emp.availableFromDate,
-        availableToDate: draftEmployee.availableToDate ?? emp.availableToDate,
-        fixedShifts: (draftEmployee.fixedShifts as FixedShift[]) ?? emp.fixedShifts ?? [],
-      } : emp
-    ));
+
+    // Map local values to Supabase format
+    const fridayMap: Record<string, string> = { always: 'yes', never: 'no', biweekly: 'biweekly' };
+    const shiftMap: Record<string, string> = { 'הכל': 'all', 'בוקר': 'morning', 'ערב': 'evening' };
+
+    const friday = draftEmployee.fridayAvailability ? fridayMap[draftEmployee.fridayAvailability] || 'no' : undefined;
+    const shiftType = draftEmployee.shiftType ? shiftMap[draftEmployee.shiftType] || 'all' : undefined;
+
+    const updateData: Record<string, unknown> = {};
+    if (draftEmployee.name !== undefined) updateData.name = draftEmployee.name.trim();
+    if (draftEmployee.shiftsPerWeek !== undefined) updateData.shifts_per_week = draftEmployee.shiftsPerWeek;
+    if (friday !== undefined) updateData.friday = friday;
+    if (shiftType !== undefined) updateData.shift_type = shiftType;
+    if (draftEmployee.availableFromDate !== undefined) updateData.active_from = draftEmployee.availableFromDate || null;
+    if (draftEmployee.availableToDate !== undefined) updateData.active_until = draftEmployee.availableToDate || null;
+
+    const { error } = await supabase
+      .from('employees')
+      .update(updateData)
+      .eq('id', editingCardId);
+
+    if (error) {
+      alert('שגיאה בעדכון: ' + error.message);
+      return;
+    }
+
+    onRefresh();
     setEditingCardId(null);
     setDraftEmployee(null);
   };
@@ -304,7 +288,7 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
   };
 
   const getSubtitle = (emp: Employee) => {
-    if (emp.id === MIYA_ID && !emp.isTrainee) return 'מנהלת החנות';
+    if (emp.name === MIYA_NAME && !emp.isTrainee) return 'מנהלת החנות';
     if (emp.isTrainee) return 'מתלמדת';
     return '';
   };
@@ -324,14 +308,14 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
 
   // Bridge local Employee to SupabaseEmployee shape for CreateUserModal
   const toSupabaseEmployee = (emp: Employee): SupabaseEmployee => ({
-    id: String(emp.id),
+    id: emp.id,
     name: emp.name,
     seniority: 0,
     friday: emp.fridayAvailability,
     shift_type: emp.shiftType,
     active_from: emp.availableFromDate || undefined,
     active_until: emp.availableToDate || undefined,
-    role: emp.id === MIYA_ID ? 'admin' : 'employee',
+    role: emp.name === MIYA_NAME ? 'admin' : 'employee',
     created_at: '',
   });
 
@@ -717,9 +701,11 @@ export function EmployeesTab({ employees, onUpdate }: EmployeesTabProps) {
                       🔑
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (window.confirm(`האם למחוק את ${employee.name}? פעולה זו אינה ניתנת לביטול.`)) {
-                          onUpdate(employees.filter(e => e.id !== employee.id));
+                          const { error } = await supabase.from('employees').delete().eq('id', employee.id);
+                          if (error) { alert('שגיאה במחיקה: ' + error.message); return; }
+                          onRefresh();
                         }
                       }}
                       style={{

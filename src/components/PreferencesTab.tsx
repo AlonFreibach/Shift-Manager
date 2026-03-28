@@ -68,8 +68,8 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
     }));
   }
 
-  const [preferences, setPreferences] = useState<Record<number, EmployeePrefs>>({});
-  const [editModalEmpId, setEditModalEmpId] = useState<number | null>(null);
+  const [preferences, setPreferences] = useState<Record<string, EmployeePrefs>>({});
+  const [editModalEmpId, setEditModalEmpId] = useState<string | null>(null);
   const [prefsText, setPrefsText] = useState('');
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [statusCopyToast, setStatusCopyToast] = useState(false);
@@ -83,7 +83,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
 
   // Load preferences from localStorage
   useEffect(() => {
-    const prefForWeek: Record<number, EmployeePrefs> = {};
+    const prefForWeek: Record<string, EmployeePrefs> = {};
     employees.forEach(emp => {
       const raw = localStorage.getItem(`preferences_${emp.id}_${weekKey}`);
       if (raw) {
@@ -107,7 +107,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
     setPreferences(prefForWeek);
   }, [weekKey, employees]);
 
-  function setPreferencesForEmployee(empId: number, prefs: EmployeePrefs) {
+  function setPreferencesForEmployee(empId: string, prefs: EmployeePrefs) {
     localStorage.setItem(`preferences_${empId}_${weekKey}`, JSON.stringify(prefs));
     setPreferences(prev => ({ ...prev, [empId]: prefs }));
     const submittedShifts = Object.values(prefs).flat().length;
@@ -115,7 +115,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
     updateFlexibility(empId, weekKey, submittedShifts, emp?.shiftsPerWeek ?? 3);
   }
 
-  function deletePreferencesForEmployee(empId: number) {
+  function deletePreferencesForEmployee(empId: string) {
     localStorage.removeItem(`preferences_${empId}_${weekKey}`);
     setPreferences(prev => { const next = { ...prev }; delete next[empId]; return next; });
     removeFlexibility(empId, weekKey);
@@ -136,7 +136,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
     }).join('/');
   }
 
-  function serializePreferences(empId: number): string {
+  function serializePreferences(empId: string): string {
     const prefs = preferences[empId] || {};
     const lines: string[] = [];
     for (const d of weekDays) {
@@ -156,7 +156,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
     return lines.join('\n');
   }
 
-  function generateEmployeePrefsText(empId: number): string {
+  function generateEmployeePrefsText(empId: string): string {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return '';
     const prefs = preferences[empId] || {};

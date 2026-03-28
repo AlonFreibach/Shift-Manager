@@ -7,7 +7,7 @@ export interface AccumulatedHistory {
   flexibilityHistory: { weekStart: string; submitted: number; committed: number }[];
 }
 
-export type AccumulatedData = Record<number, AccumulatedHistory>;
+export type AccumulatedData = Record<string, AccumulatedHistory>;
 
 export interface FlexibilityEntry {
   weekKey: string;
@@ -47,23 +47,22 @@ export function resetAccumulatedData(): void {
  * One event per assigned shift.
  */
 export function addFairnessEvents(
-  schedule: Record<string, { employeeId: number | null }[]>,
+  schedule: Record<string, { employeeId: string | null }[]>,
   weekKey: string,
 ): void {
   const data = loadAccumulatedData();
 
   // Count shifts per employee in this schedule
-  const shiftCounts: Record<number, number> = {};
+  const shiftCounts: Record<string, number> = {};
   for (const slots of Object.values(schedule)) {
     for (const slot of slots) {
-      if (slot.employeeId && slot.employeeId > 0) {
+      if (slot.employeeId) {
         shiftCounts[slot.employeeId] = (shiftCounts[slot.employeeId] || 0) + 1;
       }
     }
   }
 
-  for (const [empIdStr, count] of Object.entries(shiftCounts)) {
-    const empId = Number(empIdStr);
+  for (const [empId, count] of Object.entries(shiftCounts)) {
     if (!data[empId]) {
       data[empId] = { fairnessHistory: [], flexibilityHistory: [] };
     }
@@ -83,7 +82,7 @@ export function addFairnessEvents(
 /**
  * Load flexibility history for an employee from per-employee localStorage key.
  */
-export function loadFlexibilityHistory(empId: number): FlexibilityEntry[] {
+export function loadFlexibilityHistory(empId: string): FlexibilityEntry[] {
   try {
     const raw = localStorage.getItem(`flexibility_history_${empId}`);
     return raw ? JSON.parse(raw) : [];
@@ -97,7 +96,7 @@ export function loadFlexibilityHistory(empId: number): FlexibilityEntry[] {
  * Stores up to 8 most recent entries in per-employee localStorage key.
  */
 export function updateFlexibility(
-  empId: number,
+  empId: string,
   weekKey: string,
   submittedShifts: number,
   weeklyShifts: number,
@@ -130,7 +129,7 @@ export function updateFlexibility(
 /**
  * Called when preferences are deleted. Removes flexibility entry for that employee+week.
  */
-export function removeFlexibility(empId: number, weekKey: string): void {
+export function removeFlexibility(empId: string, weekKey: string): void {
   let history = loadFlexibilityHistory(empId);
   history = history.filter(e => e.weekKey !== weekKey);
   localStorage.setItem(`flexibility_history_${empId}`, JSON.stringify(history));

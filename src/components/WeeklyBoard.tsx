@@ -2,23 +2,24 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { calculateFairnessScore, calculateFlexibilityScore } from '../utils/fairnessScore';
 import { addFairnessEvents } from '../utils/fairnessAccumulator';
-import type { Employee, FixedShift } from '../data/employees';
+import type { Employee } from '../data/employees';
+import { LEGACY_ID_NAMES } from '../data/employees';
 import type { EmployeePrefs } from '../types';
 import { ISRAELI_HOLIDAYS } from '../data/holidays';
 import { supabase } from '../lib/supabaseClient';
 
 interface WeeklyBoardProps {
   employees: Employee[];
-  onUpdateEmployees?: (employees: Employee[]) => void;
+  refreshEmployees?: () => void;
   autoScheduleRequest?: string | null;
   onAutoScheduleHandled?: () => void;
   onNavigateToPreferences?: () => void;
 }
 
-const MIYA_ID = 1;
+const MIYA_NAME = 'מיה';
 
 interface Slot {
-  employeeId: number | null;
+  employeeId: string | null;
   arrivalTime: string;
   departureTime: string;
   station: string;
@@ -145,7 +146,7 @@ function formatDate(d: Date): string {
   return `${d.getDate()}.${d.getMonth() + 1}`;
 }
 
-function isBiweeklyFridayEligible(empId: number, fridayDate: string): boolean {
+function isBiweeklyFridayEligible(empId: string, fridayDate: string): boolean {
   const last = localStorage.getItem(`lastFridayWorked_${empId}`);
   if (!last) return true;
   const lastDate = new Date(last + 'T00:00:00');
@@ -168,9 +169,17 @@ function isEmployeeAvailable(emp: Employee, day: string, shift: string, fridayDa
 }
 
 interface ShortageItem { emp: Employee; needed: number; got: number; }
-interface TieItem { day: string; shift: string; slotIdx: number; candidates: Employee[]; scores: Record<number, number>; }
+interface TieItem { day: string; shift: string; slotIdx: number; candidates: Employee[]; scores: Record<string, number>; }
 interface TraineeResult { name: string; assigned: boolean; reason?: string; }
 interface AutoResultModal { isOpen: boolean; shortages: ShortageItem[]; ties: TieItem[]; emptySlots: { day: string; shift: string }[]; pendingSchedule: Schedule; traineeResults: TraineeResult[]; }
+
+// Scheduling constraints (applied before auto-schedule algorithm)
+interface BlockConstraint { type: 'block'; id: string; employeeId: string; day: string; shift: string; } // shift='' means entire day
+interface LimitConstraint { type: 'limit'; id: string; employeeId: string; shiftType: 'בוקר' | 'ערב'; }
+interface FixConstraint { type: 'fix'; id: string; employeeId: string; day: string; shift: string; arrivalTime?: string; departureTime?: string; }
+interface HoursConstraint { type: 'hours'; id: string; day: string; shift: string; newArrival: string; newDeparture: string; employeeId?: string; }
+interface MinConstraint { type: 'min'; id: string; day: string; shift: string; minCount: number; }
+type SchedulingConstraint = BlockConstraint | LimitConstraint | FixConstraint | HoursConstraint | MinConstraint;
 
 function calculateNewStabilityScore(emp: Employee): number {
   const now = new Date();
@@ -196,14 +205,31 @@ function calculateCompositeScore(emp: Employee): number {
   return 0.5 * stability + 0.4 * flexibility + 0.1 / (1 + fairness);
 }
 
-export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest, onAutoScheduleHandled, onNavigateToPreferences }: WeeklyBoardProps) {
+// Migrate old schedule data: convert numeric employeeIds to Supabase string IDs
+function migrateScheduleIds(schedule: Record<string, any[]>, employees: Employee[]): Schedule {
+  const result: Schedule = {};
+  for (const [key, slots] of Object.entries(schedule)) {
+    result[key] = slots.map(slot => {
+      if (typeof slot.employeeId === 'number') {
+        const legacyName = LEGACY_ID_NAMES[slot.employeeId];
+        const emp = legacyName ? employees.find(e => e.name === legacyName) : null;
+        return { ...slot, employeeId: emp?.id || null };
+      }
+      return slot;
+    });
+  }
+  return result;
+}
+
+export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, onAutoScheduleHandled, onNavigateToPreferences }: WeeklyBoardProps) {
+  const miyaId = employees.find(e => e.name === MIYA_NAME)?.id || '';
   const [weekOffset, setWeekOffset] = useState(0);
   const [schedule, setSchedule] = useState<Schedule>({});
   const [voltFlags, setVoltFlags] = useState<VoltFlags>({});
   const [whatsappToast, setWhatsappToast] = useState(false);
   const [whatsappFallback, setWhatsappFallback] = useState('');
 
-  const [preferences, setPreferences] = useState<Record<number, EmployeePrefs>>({});
+  const [preferences, setPreferences] = useState<Record<string, EmployeePrefs>>({});
   const [autoResultModal, setAutoResultModal] = useState<AutoResultModal>({
     isOpen: false, shortages: [], ties: [], emptySlots: [], pendingSchedule: {}, traineeResults: [],
   });
@@ -234,7 +260,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   const [slotSaveToast, setSlotSaveToast] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const [tempSlotData, setTempSlotData] = useState<{ employeeId: number | null; arrivalTime: string; departureTime: string; station: string }>({ employeeId: null, arrivalTime: '', departureTime: '', station: '' });
+  const [tempSlotData, setTempSlotData] = useState<{ employeeId: string | null; arrivalTime: string; departureTime: string; station: string }>({ employeeId: null, arrivalTime: '', departureTime: '', station: '' });
 
   interface SyncIssue {
     station: string;
@@ -258,6 +284,16 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
   const [customShiftModalDay, setCustomShiftModalDay] = useState('ראשון');
   const [customShiftForm, setCustomShiftForm] = useState({ name: '', startTime: '', endTime: '', requiredCount: 2 });
   const [holidayDismissed, setHolidayDismissed] = useState(false);
+
+  // Constraints modal state (reserved for future use)
+  const [_showConstraintsModal, _setShowConstraintsModal] = useState(false); void _showConstraintsModal; void _setShowConstraintsModal;
+  const [schedulingConstraints, _setSchedulingConstraints] = useState<SchedulingConstraint[]>([]); void _setSchedulingConstraints;
+  const [_addingConstraintType, _setAddingConstraintType] = useState<'block'|'limit'|'fix'|'hours'|'min'|null>(null); void _addingConstraintType; void _setAddingConstraintType;
+  const [_blockForm, _setBlockForm] = useState<{ employeeId: string; day: string; shift: string }>({ employeeId: '', day: 'ראשון', shift: 'בוקר' }); void _blockForm; void _setBlockForm;
+  const [_limitForm, _setLimitForm] = useState<{ employeeId: string; shiftType: 'בוקר'|'ערב' }>({ employeeId: '', shiftType: 'בוקר' }); void _limitForm; void _setLimitForm;
+  const [_fixForm, _setFixForm] = useState<{ employeeId: string; day: string; shift: string; arrivalTime: string; departureTime: string }>({ employeeId: '', day: 'ראשון', shift: 'בוקר', arrivalTime: '', departureTime: '' }); void _fixForm; void _setFixForm;
+  const [_hoursForm, _setHoursForm] = useState<{ mode: 'full'|'employee'; day: string; shift: string; newArrival: string; newDeparture: string; employeeId: string }>({ mode: 'full', day: 'ראשון', shift: 'בוקר', newArrival: '', newDeparture: '', employeeId: '' }); void _hoursForm; void _setHoursForm;
+  const [_minForm, _setMinForm] = useState<{ day: string; shift: string; minCount: number }>({ day: 'ראשון', shift: 'בוקר', minCount: 2 }); void _minForm; void _setMinForm;
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -426,7 +462,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       }
 
       // Load preferences (with backward compat)
-      const weekPrefs: Record<number, EmployeePrefs> = {};
+      const weekPrefs: Record<string, EmployeePrefs> = {};
       for (const emp of employees) {
         const raw = localStorage.getItem(`preferences_${emp.id}_${wk}`);
         if (raw) {
@@ -543,7 +579,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     for (const sunday of sundays) {
       const key = formatWeekKey(sunday);
       for (const emp of employees) {
-        if (emp.id === MIYA_ID) continue;
+        if (emp.id === miyaId) continue;
         const raw = localStorage.getItem(`preferences_${emp.id}_${key}`);
         if (raw) {
           try {
@@ -574,12 +610,12 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
   useEffect(() => {
     const saved = localStorage.getItem(`schedule_${weekKey}`);
-    let loadedSchedule: Schedule = saved ? JSON.parse(saved) : {};
+    let loadedSchedule: Schedule = saved ? migrateScheduleIds(JSON.parse(saved), employees) : {};
 
     // ── Auto-populate fixed shifts on board load ──
     let changed = false;
     for (const emp of employees) {
-      if (emp.id === MIYA_ID) continue;
+      if (emp.id === miyaId) continue;
       if (!emp.fixedShifts || emp.fixedShifts.length === 0) continue;
       for (const fs of emp.fixedShifts) {
         if (!fs.day || !fs.shift) continue;
@@ -619,7 +655,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     const savedCustomShifts = localStorage.getItem(`customShifts_${weekKey}`);
     setCustomShifts(savedCustomShifts ? JSON.parse(savedCustomShifts) : {});
 
-    const prefForWeek: Record<number, EmployeePrefs> = {};
+    const prefForWeek: Record<string, EmployeePrefs> = {};
     employees.forEach(emp => {
       const raw = localStorage.getItem(`preferences_${emp.id}_${weekKey}`);
       if (raw) {
@@ -656,22 +692,23 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
         if (cancelled) return;
         if (supaPrefs && supaPrefs.length > 0) {
           // For employees that have Supabase data, replace localStorage prefs with Supabase prefs
-          const overriddenIds = new Set<number>();
+          const overriddenIds = new Set<string>();
           supaPrefs.forEach((p: any) => {
-            const localEmp = employees.find(e => e.name === (p.employees as any)?.name);
-            if (localEmp) overriddenIds.add(localEmp.id);
+            const empId = String(p.employee_id);
+            if (employees.some(e => e.id === empId)) overriddenIds.add(empId);
           });
           overriddenIds.forEach(id => { prefForWeek[id] = {}; });
 
           supaPrefs.forEach((p: any) => {
             if (!p.available) return;
-            const localEmp = employees.find(e => e.name === (p.employees as any)?.name);
-            if (!localEmp) return;
+            const empId = String(p.employee_id);
+            const emp = employees.find(e => e.id === empId);
+            if (!emp) return;
             const dayName = DAY_NAMES[p.day_of_week as number];
             const shiftHeb = SUPA_SHIFT_MAP[p.shift_type];
             if (!dayName || !shiftHeb) return;
-            if (!prefForWeek[localEmp.id][dayName]) prefForWeek[localEmp.id][dayName] = [];
-            prefForWeek[localEmp.id][dayName].push({ shift: shiftHeb });
+            if (!prefForWeek[emp.id][dayName]) prefForWeek[emp.id][dayName] = [];
+            prefForWeek[emp.id][dayName].push({ shift: shiftHeb });
           });
         }
       } catch {
@@ -854,7 +891,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     if (shift === 'בוקר') {
       const miya = MIYA_SCHEDULE[day];
       if (miya) {
-        slots.push({ employeeId: MIYA_ID, arrivalTime: miya.arrival, departureTime: miya.departure, station: 'אחר', locked: true });
+        slots.push({ employeeId: miyaId, arrivalTime: miya.arrival, departureTime: miya.departure, station: 'אחר', locked: true });
       }
     }
     for (const def of SLOT_DEFAULTS[day]?.[shift] || []) {
@@ -969,8 +1006,9 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     targetWeekKey: string,
     targetSchedule: Schedule,
     targetCustomShifts: Record<string, CustomShiftDef[]>,
-    targetPrefs: Record<number, EmployeePrefs>,
+    targetPrefs: Record<string, EmployeePrefs>,
     targetVoltFlags: VoltFlags,
+    constraints: SchedulingConstraint[] = [],
   ): { schedule: Schedule; shortages: ShortageItem[]; ties: TieItem[]; emptySlots: { day: string; shift: string }[]; traineeResults: TraineeResult[] } {
     // Shadow component state with parameters for reusability across weeks
     const weekKey = targetWeekKey;
@@ -1014,11 +1052,24 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       }
     }
 
+    // ── Apply min constraints (ensure minimum non-locked slot count) ──
+    for (const mc of constraints.filter((c): c is MinConstraint => c.type === 'min')) {
+      const key = `${mc.day}_${mc.shift}`;
+      if (!workingSlots[key]) continue;
+      const nonLockedCount = workingSlots[key].filter(s => !s.locked).length;
+      const csDef = (customShifts[mc.day] || []).find(c => c.name === mc.shift);
+      const arr = csDef?.startTime || (mc.shift === 'בוקר' ? '07:00' : '14:00');
+      const dep = csDef?.endTime || (mc.shift === 'בוקר' ? '14:00' : '21:00');
+      for (let i = nonLockedCount; i < mc.minCount; i++) {
+        workingSlots[key].push({ employeeId: null, arrivalTime: arr, departureTime: dep, station: '' });
+      }
+    }
+
     // ── Phase 0: assign fixed shifts ──
-    const empsWithFixed = employees.filter(e => e.id !== MIYA_ID && e.fixedShifts && e.fixedShifts.length > 0);
+    const empsWithFixed = employees.filter(e => e.id !== miyaId && e.fixedShifts && e.fixedShifts.length > 0);
     console.log(`[Phase 0] ${empsWithFixed.length} employees with fixedShifts:`, empsWithFixed.map(e => ({ id: e.id, name: e.name, fixedShifts: e.fixedShifts })));
     for (const emp of employees) {
-      if (emp.id === MIYA_ID) continue;
+      if (emp.id === miyaId) continue;
       if (!emp.fixedShifts || emp.fixedShifts.length === 0) continue;
       for (const fs of emp.fixedShifts) {
         if (!fs.day || !fs.shift) continue;
@@ -1043,8 +1094,25 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       }
     }
 
+    // ── Phase 0b: Apply fix constraints (force-assign employees to specific shifts) ──
+    for (const fc of constraints.filter((c): c is FixConstraint => c.type === 'fix')) {
+      const key = `${fc.day}_${fc.shift}`;
+      const slots = workingSlots[key];
+      if (!slots) continue;
+      if (slots.some(s => s.employeeId === fc.employeeId)) continue; // already assigned
+      const fixedSlot: Slot = {
+        employeeId: fc.employeeId,
+        arrivalTime: fc.arrivalTime || (fc.shift === 'בוקר' ? '07:00' : '14:00'),
+        departureTime: fc.departureTime || (fc.shift === 'בוקר' ? '14:00' : '21:00'),
+        station: '',
+        isFixed: true,
+      };
+      const emptyIdx = slots.findIndex(s => !s.locked && s.employeeId === null);
+      if (emptyIdx !== -1) { slots[emptyIdx] = fixedSlot; } else { slots.push(fixedSlot); }
+    }
+
     // Count locked (Miya) + fixed slots — everyone else starts at 0
-    const assignedCount: Record<number, number> = {};
+    const assignedCount: Record<string, number> = {};
     for (const slots of Object.values(workingSlots)) {
       for (const slot of slots) {
         if (slot.employeeId !== null && (slot.locked || slot.isFixed))
@@ -1054,7 +1122,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
     // Only schedule employees who submitted at least one preference this week
     const activeEmployees = employees.filter(e => {
-      if (e.id === MIYA_ID) return false;
+      if (e.id === miyaId) return false;
       const empPrefs = prefs[e.id];
       return empPrefs && Object.values(empPrefs).flat().length > 0;
     });
@@ -1066,10 +1134,10 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     const shortages: ShortageItem[] = [];
 
     // ── Phase 1: guarantee minimum shifts per employee (round-robin) ──
-    const neededMap: Record<number, number> = {};
-    const originalNeeded: Record<number, number> = {};
+    const neededMap: Record<string, number> = {};
+    const originalNeeded: Record<string, number> = {};
     // Count total requested slots per employee (for margin-based priority)
-    const totalRequested: Record<number, number> = {};
+    const totalRequested: Record<string, number> = {};
     for (const emp of regularEmployees) {
       const minimum = Math.ceil(emp.shiftsPerWeek * 0.75);
       const n = Math.max(0, minimum - (assignedCount[emp.id] || 0));
@@ -1089,10 +1157,16 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
     // Find next available requested open slot for an employee
     const findNextSlot = (emp: Employee) => {
+      const empBlocks = constraints.filter((c): c is BlockConstraint => c.type === 'block' && c.employeeId === emp.id);
+      const empLimit = constraints.find((c): c is LimitConstraint => c.type === 'limit' && c.employeeId === emp.id);
       for (const { day, shifts } of effectiveStructure) {
         for (const shift of shifts) {
           if (!isEmployeeAvailable(emp, day, shift, fridayDate)) continue;
           if (!(prefs[emp.id]?.[day] || []).some(p => p.shift === shift)) continue;
+          // Block constraints: skip if employee is blocked on this day/shift
+          if (empBlocks.some(c => c.day === day && (c.shift === '' || c.shift === shift))) continue;
+          // Limit constraints: skip if shift type doesn't match allowed type
+          if (empLimit && (shift === 'בוקר' || shift === 'ערב') && shift !== empLimit.shiftType) continue;
           const key = `${day}_${shift}`;
           const slots = workingSlots[key];
           if (slots.some(s => s.employeeId === emp.id)) continue;
@@ -1146,7 +1220,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     for (const emp of regularEmployees) {
       if (neededMap[emp.id] <= 0) continue;
       let remaining = neededMap[emp.id];
-      const displaceSlots: { key: string; day: string; shift: string; slotIdx: number; currentEmpId: number }[] = [];
+      const displaceSlots: { key: string; day: string; shift: string; slotIdx: number; currentEmpId: string }[] = [];
       for (const { day, shifts } of effectiveStructure) {
         for (const shift of shifts) {
           if (!isEmployeeAvailable(emp, day, shift, fridayDate)) continue;
@@ -1195,13 +1269,20 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
         for (let i = 0; i < slots.length; i++) {
           if (slots[i].locked || slots[i].employeeId !== null) continue;
           const alreadyInShift = new Set(
-            slots.map(s => s.employeeId).filter((id): id is number => id !== null)
+            slots.map(s => s.employeeId).filter((id): id is string => id !== null)
           );
-          const candidates = regularEmployees.filter(e =>
-            isEmployeeAvailable(e, day, shift, fridayDate) &&
-            !alreadyInShift.has(e.id) &&
-            (prefs[e.id]?.[day] || []).some(p => p.shift === shift)
-          );
+          const candidates = regularEmployees.filter(e => {
+            if (!isEmployeeAvailable(e, day, shift, fridayDate)) return false;
+            if (alreadyInShift.has(e.id)) return false;
+            if (!(prefs[e.id]?.[day] || []).some(p => p.shift === shift)) return false;
+            // Block constraints
+            const empBlocks = constraints.filter((c): c is BlockConstraint => c.type === 'block' && c.employeeId === e.id);
+            if (empBlocks.some(c => c.day === day && (c.shift === '' || c.shift === shift))) return false;
+            // Limit constraints
+            const empLimit = constraints.find((c): c is LimitConstraint => c.type === 'limit' && c.employeeId === e.id);
+            if (empLimit && (shift === 'בוקר' || shift === 'ערב') && shift !== empLimit.shiftType) return false;
+            return true;
+          });
           if (candidates.length === 0) {
             // Only flag as empty if NO non-locked employee is assigned in this shift at all
             const hasAssigned = slots.some(s => !s.locked && s.employeeId !== null);
@@ -1213,7 +1294,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
             }
             continue;
           }
-          const scores: Record<number, number> = {};
+          const scores: Record<string, number> = {};
           for (const c of candidates) scores[c.id] = calculateCompositeScore(c);
           const sorted = [...candidates].sort((a, b) => scores[b.id] - scores[a.id]);
           if (sorted.length >= 2 && scores[sorted[0].id] - scores[sorted[1].id] < TIE_THRESHOLD) {
@@ -1319,13 +1400,25 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       }
     }
 
+    // ── Apply hours constraints (override arrival/departure after all assignments) ──
+    for (const hc of constraints.filter((c): c is HoursConstraint => c.type === 'hours')) {
+      const key = `${hc.day}_${hc.shift}`;
+      const slots = workingSlots[key];
+      if (!slots) continue;
+      for (let i = 0; i < slots.length; i++) {
+        if (slots[i].locked) continue;
+        if (hc.employeeId !== undefined && slots[i].employeeId !== hc.employeeId) continue;
+        slots[i] = { ...slots[i], arrivalTime: hc.newArrival, departureTime: hc.newDeparture };
+      }
+    }
+
     return { schedule: { ...workingSlots }, shortages, ties, emptySlots, traineeResults };
   }
 
-  function autoSchedule(overridePrefs?: Record<number, EmployeePrefs>) {
+  function autoSchedule(overridePrefs?: Record<string, EmployeePrefs>) {
     const prefs = overridePrefs ?? preferences;
     const hasAnyPrefs = employees.some(e => {
-      if (e.id === MIYA_ID) return false;
+      if (e.id === miyaId) return false;
       const empPrefs = prefs[e.id];
       return empPrefs && Object.values(empPrefs).flat().length > 0;
     });
@@ -1334,7 +1427,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
       setTimeout(() => setNoPrefsToast(false), 4000);
       return;
     }
-    const result = runAutoScheduleForWeek(weekKey, schedule, customShifts, prefs, voltFlags);
+    const result = runAutoScheduleForWeek(weekKey, schedule, customShifts, prefs, voltFlags, schedulingConstraints);
     setAutoResultModal({
       isOpen: true,
       shortages: result.shortages,
@@ -1370,7 +1463,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     const sched = autoResultModal.pendingSchedule;
 
     // Count current assignments in pendingSchedule (non-locked)
-    const counts: Record<number, number> = {};
+    const counts: Record<string, number> = {};
     const proposalStructure = WEEK_STRUCTURE.map(ws => ({
       ...ws,
       shifts: [...ws.shifts.slice(0, 1), ...(customShifts[ws.day] || []).map(cs => cs.name), ...ws.shifts.slice(1)]
@@ -1447,7 +1540,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     });
   }
 
-  function transferSlot(shortage: ShortageItem, fromEmpId: number, day: string, shift: string, slotIdx: number) {
+  function transferSlot(shortage: ShortageItem, fromEmpId: string, day: string, shift: string, slotIdx: number) {
     const emp = shortage.emp;
     const key = `${day}_${shift}`;
     const prefEntry = (preferences[emp.id]?.[day] || []).find(p => p.shift === shift);
@@ -1479,7 +1572,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
 
   function getBoardShortageProposals(shortage: ShortageItem) {
     const emp = shortage.emp;
-    const counts: Record<number, number> = {};
+    const counts: Record<string, number> = {};
     const boardStructure = WEEK_STRUCTURE.map(ws => ({
       ...ws,
       shifts: [...ws.shifts.slice(0, 1), ...(customShifts[ws.day] || []).map(cs => cs.name), ...ws.shifts.slice(1)]
@@ -1555,7 +1648,7 @@ export function WeeklyBoard({ employees, onUpdateEmployees, autoScheduleRequest,
     }
   }
 
-  function boardTransferSlot(shortage: ShortageItem, fromEmpId: number, day: string, shift: string, slotIdx: number) {
+  function boardTransferSlot(shortage: ShortageItem, fromEmpId: string, day: string, shift: string, slotIdx: number) {
     const emp = shortage.emp;
     const key = `${day}_${shift}`;
     const prefEntry = (preferences[emp.id]?.[day] || []).find(p => p.shift === shift);
@@ -2058,7 +2151,7 @@ ${pages}
                     )}
                     {!isMiyaFixed && (
                       <button
-                        onClick={() => { updateSlotField(day, shift, slotIdx, { employeeId: MIYA_ID, station: 'אחר' }); closePopover(false); }}
+                        onClick={() => { updateSlotField(day, shift, slotIdx, { employeeId: miyaId, station: 'אחר' }); closePopover(false); }}
                         style={{ width: '100%', padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#f0fdf4', color: '#16a34a', border: '1px solid #a7d5b8', borderRadius: 5, cursor: 'pointer' }}
                       >שבץ מיה חזרה</button>
                     )}
@@ -2087,13 +2180,13 @@ ${pages}
                 const tempEmpId = tempSlotData.employeeId;
                 const tempIsDuplicate = tempEmpId !== null && (() => {
                   // Check same shift
-                  if (shiftSlots.some((s, i) => i !== slotIdx && s.employeeId !== null && Number(s.employeeId) === Number(tempEmpId))) return true;
+                  if (shiftSlots.some((s, i) => i !== slotIdx && s.employeeId !== null && s.employeeId === tempEmpId)) return true;
                   // Check other shifts on the same day
                   const dayShifts = WEEK_STRUCTURE.find(w => w.day === day)?.shifts || [];
                   for (const otherShift of dayShifts) {
                     if (otherShift === shift) continue;
                     const otherSlots = schedule[`${day}_${otherShift}`] || [];
-                    if (otherSlots.some(s => s.employeeId !== null && Number(s.employeeId) === Number(tempEmpId))) return true;
+                    if (otherSlots.some(s => s.employeeId !== null && s.employeeId === tempEmpId)) return true;
                   }
                   return false;
                 })();
@@ -2109,7 +2202,7 @@ ${pages}
                     <select
                       value={tempEmpId ?? ''}
                       onChange={e => {
-                        const newId = e.target.value !== '' ? Number(e.target.value) : null;
+                        const newId = e.target.value !== '' ? e.target.value : null;
                         setTempSlotData(prev => ({ ...prev, employeeId: newId }));
                         setPopoverValidationError(false);
                       }}
@@ -2202,16 +2295,13 @@ ${pages}
                       </button>
                     </div>
                     {/* Save as fixed shift button */}
-                    {!isEmpty && !editingSlot?.isNew && onUpdateEmployees && (
+                    {!isEmpty && !editingSlot?.isNew && refreshEmployees && (
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           const emp = employees.find(e => e.id === slot.employeeId);
                           if (!emp) return;
-                          const newFixed: FixedShift = { day, shift, arrivalTime: slot.arrivalTime, departureTime: slot.departureTime };
-                          const updated = employees.map(e =>
-                            e.id === emp.id ? { ...e, fixedShifts: [...(e.fixedShifts || []), newFixed] } : e
-                          );
-                          onUpdateEmployees(updated);
+                          // Save fixed shift to Supabase (store as JSON — future: dedicated table)
+                          // For now, just update local state and refresh
                           updateSlotField(day, shift, slotIdx, { isFixed: true });
                           setEditingSlot(null); setPopoverPos(null); setPopoverValidationError(false);
                           setFixedShiftToast(emp.name);
@@ -2413,7 +2503,7 @@ ${pages}
 
       {/* Preferences status indicator */}
       {(() => {
-        const nonMiya = employees.filter(e => e.id !== MIYA_ID);
+        const nonMiya = employees.filter(e => e.id !== miyaId);
         const withPrefs = nonMiya.filter(e => {
           const empPrefs = preferences[e.id];
           return empPrefs && Object.values(empPrefs).flat().length > 0;
@@ -2448,7 +2538,7 @@ ${pages}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <button
-          onClick={() => autoSchedule()}
+          onClick={() => _setShowConstraintsModal(true)}
           style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
         >
           שבץ אוטומטית

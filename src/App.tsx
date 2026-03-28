@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { Routes, Route } from 'react-router-dom'
-import { useLocalStorage } from './hooks/useLocalStorage'
 import { useAuth } from './hooks/useAuth'
+import { useSupabaseEmployees } from './hooks/useSupabaseEmployees'
 import { supabase } from './lib/supabaseClient'
-import { employees, type Employee } from './data/employees'
 import { WeeklyBoard } from './components/WeeklyBoard'
 import { EmployeesTab } from './components/EmployeesTab'
 import { FairnessTab } from './components/FairnessTab'
@@ -23,10 +22,12 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 function AppContent() {
-  const { session, role, employeeData, signOut, loading } = useAuth()
-  const [savedEmployees, setSavedEmployees] = useLocalStorage<Employee[]>('employees', employees)
+  const { session, role, employeeData, signOut, loading: authLoading } = useAuth()
+  const { employees, loading: empLoading, refresh: refreshEmployees } = useSupabaseEmployees()
   const [currentTab, setCurrentTab] = useState<TabId>('board')
   const [autoScheduleRequest, setAutoScheduleRequest] = useState<string | null>(null)
+
+  const loading = authLoading || empLoading
 
   function handleAutoSchedule(targetWeekKey: string) {
     setAutoScheduleRequest(targetWeekKey)
@@ -160,21 +161,21 @@ function AppContent() {
       <main style={{ width: '100%', padding: '16px 24px' }}>
         {currentTab === 'board' && (
           <WeeklyBoard
-            employees={savedEmployees}
-            onUpdateEmployees={setSavedEmployees}
+            employees={employees}
+            refreshEmployees={refreshEmployees}
             autoScheduleRequest={autoScheduleRequest}
             onAutoScheduleHandled={() => setAutoScheduleRequest(null)}
             onNavigateToPreferences={() => setCurrentTab('preferences')}
           />
         )}
         {currentTab === 'employees' && (
-          <EmployeesTab employees={savedEmployees} onUpdate={setSavedEmployees} />
+          <EmployeesTab employees={employees} onRefresh={refreshEmployees} />
         )}
         {currentTab === 'preferences' && (
           <PreferencesView onAutoSchedule={handleAutoSchedule} />
         )}
         {currentTab === 'fairness' && (
-          <FairnessTab employees={savedEmployees} />
+          <FairnessTab employees={employees} />
         )}
       </main>
     </div>
