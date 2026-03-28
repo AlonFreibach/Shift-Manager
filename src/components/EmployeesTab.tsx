@@ -62,6 +62,8 @@ const INITIAL_FORM: AddFormData = {
 };
 
 export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
+  const [subTab, setSubTab] = useState<'active' | 'former'>('active');
+
   // Modal state — 3-step wizard
   const [showModal, setShowModal] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
@@ -281,10 +283,17 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     setDraftEmployee({ ...draftEmployee, fixedShifts: shifts });
   };
 
-  // ── Helpers ──
+  // ── Split active / former ──
   const isInactive = (emp: Employee) => {
     if (!emp.availableToDate) return false;
     return new Date(emp.availableToDate + 'T23:59:59') < new Date();
+  };
+  const activeEmployees = employees.filter(e => !isInactive(e));
+  const formerEmployees = employees.filter(e => isInactive(e));
+
+  const restoreEmployee = async (emp: Employee) => {
+    await supabase.from('employees').update({ active_until: null }).eq('id', emp.id);
+    onRefresh();
   };
 
   const getSubtitle = (emp: Employee) => {
@@ -349,28 +358,137 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
 
   return (
     <div dir="rtl">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>עובדות</h2>
+        {subTab === 'active' && (
+          <button
+            onClick={openAddModal}
+            style={{
+              padding: '8px 20px',
+              fontSize: 14,
+              fontWeight: 600,
+              background: '#1a4a2e',
+              color: 'white',
+              border: 'none',
+              borderRadius: 6,
+              cursor: 'pointer',
+            }}
+          >
+            + הוסף עובדת
+          </button>
+        )}
+      </div>
+
+      {/* Sub-tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
         <button
-          onClick={openAddModal}
+          onClick={() => setSubTab('active')}
           style={{
-            padding: '8px 20px',
-            fontSize: 14,
-            fontWeight: 600,
-            background: '#1a4a2e',
-            color: 'white',
-            border: 'none',
-            borderRadius: 6,
-            cursor: 'pointer',
+            padding: '7px 18px', fontSize: 13, fontWeight: 600, borderRadius: 8,
+            border: subTab === 'active' ? '2px solid #1a4a2e' : '1px solid #e8e0d4',
+            background: subTab === 'active' ? '#EAF3DE' : 'white',
+            color: subTab === 'active' ? '#1a4a2e' : '#64748b',
+            cursor: 'pointer', transition: 'all 0.15s',
           }}
         >
-          + הוסף עובדת
+          פעילות ({activeEmployees.length})
+        </button>
+        <button
+          onClick={() => setSubTab('former')}
+          style={{
+            padding: '7px 18px', fontSize: 13, fontWeight: 600, borderRadius: 8,
+            border: subTab === 'former' ? '2px solid #1a4a2e' : '1px solid #e8e0d4',
+            background: subTab === 'former' ? '#EAF3DE' : 'white',
+            color: subTab === 'former' ? '#1a4a2e' : '#64748b',
+            cursor: 'pointer', transition: 'all 0.15s',
+          }}
+        >
+          עבדו פעם ({formerEmployees.length})
         </button>
       </div>
 
-      {/* Employees Grid */}
+      {/* Former employees grid */}
+      {subTab === 'former' && (
+        formerEmployees.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8', fontSize: 14 }}>
+            אין עובדות שסיימו לעבוד
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
+            {formerEmployees.map((employee) => {
+              const subtitle = getSubtitle(employee);
+              const availText = getAvailabilityText(employee);
+              return (
+                <div
+                  key={employee.id}
+                  style={{
+                    background: 'white', borderRadius: 12, border: '0.5px solid #e0ddd8',
+                    padding: '1.25rem', direction: 'rtl', opacity: 0.85,
+                  }}
+                >
+                  {/* Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      width: 42, height: 42, borderRadius: '50%',
+                      background: '#F1EFE8', color: '#8b8b8b',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 18, fontWeight: 600, flexShrink: 0,
+                    }}>
+                      {employee.name.charAt(0)}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <span style={{ fontSize: 17, fontWeight: 500, color: '#1a1a1a', lineHeight: 1.2 }}>{employee.name}</span>
+                      {subtitle && <span style={{ fontSize: 12, color: '#8b8b8b' }}>{subtitle}</span>}
+                    </div>
+                    <span style={{
+                      marginRight: 'auto',
+                      ...badgeStyle('#FEE2E2', '#991B1B'),
+                    }}>
+                      לא פעילה
+                    </span>
+                  </div>
+                  <div style={dividerStyle} />
+                  {/* Info */}
+                  <div style={infoRowStyle}>
+                    <span style={iconWrapStyle}><IconCalendar /></span>
+                    <span style={infoLabelStyle}>משמרות בשבוע</span>
+                    <span style={{ fontWeight: 500 }}>{employee.shiftsPerWeek}</span>
+                  </div>
+                  <div style={infoRowStyle}>
+                    <span style={iconWrapStyle}><IconClock /></span>
+                    <span style={infoLabelStyle}>סוג משמרת</span>
+                    <span style={badgeStyle('#E6F1FB', '#185FA5')}>{employee.shiftType}</span>
+                  </div>
+                  {availText && (
+                    <div style={infoRowStyle}>
+                      <span style={iconWrapStyle}><IconCalendar /></span>
+                      <span style={infoLabelStyle}>זמינות</span>
+                      <span style={{ fontSize: 13, color: '#475569' }}>{availText}</span>
+                    </div>
+                  )}
+                  <div style={dividerStyle} />
+                  {/* Restore button */}
+                  <button
+                    onClick={() => restoreEmployee(employee)}
+                    style={{
+                      width: '100%', padding: '8px 0', fontSize: 13, fontWeight: 600,
+                      background: 'white', color: '#1a4a2e',
+                      border: '1.5px solid #1a4a2e', borderRadius: 8, cursor: 'pointer',
+                    }}
+                  >
+                    החזר לפעילות
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {/* Active employees grid */}
+      {subTab === 'active' && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
-        {employees.map((employee) => {
+        {activeEmployees.map((employee) => {
           const isEditing = editingCardId === employee.id;
           const draft = isEditing ? draftEmployee : null;
           const inactive = isInactive(employee);
@@ -748,6 +866,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
           );
         })}
       </div>
+      )}
 
       {/* ═══ Add Employee Modal — 3-Step Wizard ═══ */}
       {showModal && (

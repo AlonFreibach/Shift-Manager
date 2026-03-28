@@ -28,6 +28,15 @@ function AppContent() {
   const [autoScheduleRequest, setAutoScheduleRequest] = useState<string | null>(null)
   const [expiryBannerDismissed, setExpiryBannerDismissed] = useState(false)
 
+  const activeEmployees = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return employees.filter(emp => {
+      if (!emp.availableToDate) return true;
+      return new Date(emp.availableToDate + 'T23:59:59') >= now;
+    });
+  }, [employees])
+
   const expiringEmployees = useMemo(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -202,7 +211,7 @@ function AppContent() {
       <main style={{ width: '100%', padding: '16px 24px' }}>
         {currentTab === 'board' && (
           <WeeklyBoard
-            employees={employees}
+            employees={activeEmployees}
             refreshEmployees={refreshEmployees}
             autoScheduleRequest={autoScheduleRequest}
             onAutoScheduleHandled={() => setAutoScheduleRequest(null)}
@@ -216,7 +225,7 @@ function AppContent() {
           <PreferencesView onAutoSchedule={handleAutoSchedule} />
         )}
         {currentTab === 'fairness' && (
-          <FairnessTab employees={employees} />
+          <FairnessTab employees={activeEmployees} />
         )}
       </main>
     </div>
