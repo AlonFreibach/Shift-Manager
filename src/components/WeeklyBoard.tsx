@@ -230,6 +230,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [whatsappFallback, setWhatsappFallback] = useState('');
 
   const [preferences, setPreferences] = useState<Record<string, EmployeePrefs>>({});
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [autoResultModal, setAutoResultModal] = useState<AutoResultModal>({
     isOpen: false, shortages: [], ties: [], emptySlots: [], pendingSchedule: {}, traineeResults: [],
   });
@@ -609,6 +610,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   }
 
   useEffect(() => {
+    setPrefsLoaded(false);
     const saved = localStorage.getItem(`schedule_${weekKey}`);
     let loadedSchedule: Schedule = saved ? migrateScheduleIds(JSON.parse(saved), employees) : {};
 
@@ -717,6 +719,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
 
       if (cancelled) return;
       setPreferences({ ...prefForWeek });
+      setPrefsLoaded(true);
       if (pendingAutoScheduleRef.current) {
         pendingAutoScheduleRef.current = false;
         setTimeout(() => autoSchedule({ ...prefForWeek }), 0);
@@ -2539,9 +2542,10 @@ ${pages}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <button
           onClick={() => autoSchedule()}
-          style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
+          disabled={!prefsLoaded}
+          style={{ padding: '8px 16px', background: prefsLoaded ? '#1a4a2e' : '#94a3b8', color: 'white', border: 'none', borderRadius: 6, cursor: prefsLoaded ? 'pointer' : 'wait', fontWeight: 700, fontSize: 13, opacity: prefsLoaded ? 1 : 0.7 }}
         >
-          שבץ אוטומטית
+          {prefsLoaded ? 'שבץ אוטומטית' : 'טוען העדפות...'}
         </button>
         <button
           onClick={() => setShowConstraintsModal(true)}
