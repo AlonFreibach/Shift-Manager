@@ -285,15 +285,15 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [customShiftForm, setCustomShiftForm] = useState({ name: '', startTime: '', endTime: '', requiredCount: 2 });
   const [holidayDismissed, setHolidayDismissed] = useState(false);
 
-  // Constraints modal state (reserved for future use)
-  const [_showConstraintsModal, _setShowConstraintsModal] = useState(false); void _showConstraintsModal; void _setShowConstraintsModal;
-  const [schedulingConstraints, _setSchedulingConstraints] = useState<SchedulingConstraint[]>([]); void _setSchedulingConstraints;
-  const [_addingConstraintType, _setAddingConstraintType] = useState<'block'|'limit'|'fix'|'hours'|'min'|null>(null); void _addingConstraintType; void _setAddingConstraintType;
-  const [_blockForm, _setBlockForm] = useState<{ employeeId: string; day: string; shift: string }>({ employeeId: '', day: 'ראשון', shift: 'בוקר' }); void _blockForm; void _setBlockForm;
-  const [_limitForm, _setLimitForm] = useState<{ employeeId: string; shiftType: 'בוקר'|'ערב' }>({ employeeId: '', shiftType: 'בוקר' }); void _limitForm; void _setLimitForm;
-  const [_fixForm, _setFixForm] = useState<{ employeeId: string; day: string; shift: string; arrivalTime: string; departureTime: string }>({ employeeId: '', day: 'ראשון', shift: 'בוקר', arrivalTime: '', departureTime: '' }); void _fixForm; void _setFixForm;
-  const [_hoursForm, _setHoursForm] = useState<{ mode: 'full'|'employee'; day: string; shift: string; newArrival: string; newDeparture: string; employeeId: string }>({ mode: 'full', day: 'ראשון', shift: 'בוקר', newArrival: '', newDeparture: '', employeeId: '' }); void _hoursForm; void _setHoursForm;
-  const [_minForm, _setMinForm] = useState<{ day: string; shift: string; minCount: number }>({ day: 'ראשון', shift: 'בוקר', minCount: 2 }); void _minForm; void _setMinForm;
+  // Constraints modal state
+  const [showConstraintsModal, setShowConstraintsModal] = useState(false);
+  const [schedulingConstraints, setSchedulingConstraints] = useState<SchedulingConstraint[]>([]);
+  const [addingConstraintType, setAddingConstraintType] = useState<'block'|'limit'|'fix'|'hours'|'min'|null>(null);
+  const [blockForm, setBlockForm] = useState<{ employeeId: string; day: string; shift: string }>({ employeeId: '', day: 'ראשון', shift: '' });
+  const [limitForm, setLimitForm] = useState<{ employeeId: string; shiftType: 'בוקר'|'ערב' }>({ employeeId: '', shiftType: 'בוקר' });
+  const [fixForm, setFixForm] = useState<{ employeeId: string; day: string; shift: string; arrivalTime: string; departureTime: string }>({ employeeId: '', day: 'ראשון', shift: 'בוקר', arrivalTime: '', departureTime: '' });
+  const [hoursForm, setHoursForm] = useState<{ mode: 'full'|'employee'; day: string; shift: string; newArrival: string; newDeparture: string; employeeId: string }>({ mode: 'full', day: 'ראשון', shift: 'בוקר', newArrival: '', newDeparture: '', employeeId: '' });
+  const [minForm, setMinForm] = useState<{ day: string; shift: string; minCount: number }>({ day: 'ראשון', shift: 'בוקר', minCount: 2 });
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -2538,7 +2538,7 @@ ${pages}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <button
-          onClick={() => _setShowConstraintsModal(true)}
+          onClick={() => setShowConstraintsModal(true)}
           style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
         >
           שבץ אוטומטית
@@ -3522,6 +3522,345 @@ ${pages}
           </div>
         </div>
       )}
+
+      {/* ═══ Constraints Modal ═══ */}
+      {showConstraintsModal && (() => {
+        const DAY_OPTIONS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+        const SHIFT_OPTIONS = ['בוקר', 'ערב'];
+        const activeEmps = employees.filter(e => e.id !== miyaId);
+
+        const CONSTRAINT_META: Record<string, { label: string; labelPlural: string; color: string; bg: string }> = {
+          block: { label: 'חסימה', labelPlural: 'חסימות', color: '#a32d2d', bg: '#fce8e8' },
+          limit: { label: 'הגבלה', labelPlural: 'הגבלות', color: '#1d4ed8', bg: '#dbeafe' },
+          fix:   { label: 'קיבוע', labelPlural: 'קיבועים', color: '#c2410c', bg: '#fff7ed' },
+          hours: { label: 'שעות מותאמות', labelPlural: 'שעות מותאמות', color: '#7c3aed', bg: '#f3e8ff' },
+          min:   { label: 'מינימום', labelPlural: 'מינימום', color: '#15803d', bg: '#dcfce7' },
+        };
+
+        const removeConstraint = (id: string) => setSchedulingConstraints(prev => prev.filter(c => c.id !== id));
+
+        const addConstraint = (c: SchedulingConstraint) => {
+          setSchedulingConstraints(prev => [...prev, c]);
+          setAddingConstraintType(null);
+        };
+
+        const describeConstraint = (c: SchedulingConstraint): string => {
+          const empName = (id: string) => employees.find(e => e.id === id)?.name || '?';
+          switch (c.type) {
+            case 'block': return `${empName(c.employeeId)} לא תשובץ — ${c.day}${c.shift ? ` ${c.shift}` : ' (כל היום)'}`;
+            case 'limit': return `${empName(c.employeeId)} — ${c.shiftType} בלבד`;
+            case 'fix': return `${empName(c.employeeId)} → ${c.day} ${c.shift}${c.arrivalTime ? ` (${c.arrivalTime}–${c.departureTime})` : ''}`;
+            case 'hours': return `${c.day} ${c.shift} → ${c.newArrival}–${c.newDeparture}${c.employeeId ? ` (${empName(c.employeeId)})` : ''}`;
+            case 'min': return `${c.day} ${c.shift} — מינימום ${c.minCount} עובדות`;
+          }
+        };
+
+        const grouped = {
+          block: schedulingConstraints.filter(c => c.type === 'block'),
+          limit: schedulingConstraints.filter(c => c.type === 'limit'),
+          fix: schedulingConstraints.filter(c => c.type === 'fix'),
+          hours: schedulingConstraints.filter(c => c.type === 'hours'),
+          min: schedulingConstraints.filter(c => c.type === 'min'),
+        };
+
+        const modalSelectStyle: React.CSSProperties = { width: '100%', padding: '7px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4', background: 'white' };
+        const modalInputStyle: React.CSSProperties = { ...modalSelectStyle };
+        const modalLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 500, color: '#64748b', marginBottom: 4 };
+
+        // Render mini modal for adding a constraint
+        const renderMiniModal = () => {
+          if (!addingConstraintType) return null;
+          const meta = CONSTRAINT_META[addingConstraintType];
+          let title = '';
+          let body: React.ReactNode = null;
+          let canAdd = false;
+
+          if (addingConstraintType === 'block') {
+            title = 'הוסף חסימה';
+            canAdd = !!blockForm.employeeId && !!blockForm.day;
+            body = (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={modalLabelStyle}>עובדת *</label>
+                  <select value={blockForm.employeeId} onChange={e => setBlockForm(f => ({ ...f, employeeId: e.target.value }))} style={modalSelectStyle}>
+                    <option value="">— בחרי —</option>
+                    {activeEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={modalLabelStyle}>יום *</label>
+                  <select value={blockForm.day} onChange={e => setBlockForm(f => ({ ...f, day: e.target.value }))} style={modalSelectStyle}>
+                    {DAY_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={modalLabelStyle}>משמרת (ריק = כל היום)</label>
+                  <select value={blockForm.shift} onChange={e => setBlockForm(f => ({ ...f, shift: e.target.value }))} style={modalSelectStyle}>
+                    <option value="">כל היום</option>
+                    {SHIFT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            );
+          } else if (addingConstraintType === 'limit') {
+            title = 'הוסף הגבלה';
+            canAdd = !!limitForm.employeeId;
+            body = (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={modalLabelStyle}>עובדת *</label>
+                  <select value={limitForm.employeeId} onChange={e => setLimitForm(f => ({ ...f, employeeId: e.target.value }))} style={modalSelectStyle}>
+                    <option value="">— בחרי —</option>
+                    {activeEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={modalLabelStyle}>סוג משמרת *</label>
+                  <select value={limitForm.shiftType} onChange={e => setLimitForm(f => ({ ...f, shiftType: e.target.value as 'בוקר' | 'ערב' }))} style={modalSelectStyle}>
+                    {SHIFT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            );
+          } else if (addingConstraintType === 'fix') {
+            title = 'הוסף קיבוע';
+            canAdd = !!fixForm.employeeId && !!fixForm.day && !!fixForm.shift;
+            body = (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={modalLabelStyle}>עובדת *</label>
+                  <select value={fixForm.employeeId} onChange={e => setFixForm(f => ({ ...f, employeeId: e.target.value }))} style={modalSelectStyle}>
+                    <option value="">— בחרי —</option>
+                    {activeEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={modalLabelStyle}>יום *</label>
+                    <select value={fixForm.day} onChange={e => setFixForm(f => ({ ...f, day: e.target.value }))} style={modalSelectStyle}>
+                      {DAY_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={modalLabelStyle}>משמרת *</label>
+                    <select value={fixForm.shift} onChange={e => setFixForm(f => ({ ...f, shift: e.target.value }))} style={modalSelectStyle}>
+                      {(fixForm.day === 'שישי' ? ['בוקר'] : SHIFT_OPTIONS).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={modalLabelStyle}>שעת התחלה</label>
+                    <input type="time" value={fixForm.arrivalTime} onChange={e => setFixForm(f => ({ ...f, arrivalTime: e.target.value }))} style={modalInputStyle} />
+                  </div>
+                  <div>
+                    <label style={modalLabelStyle}>שעת סיום</label>
+                    <input type="time" value={fixForm.departureTime} onChange={e => setFixForm(f => ({ ...f, departureTime: e.target.value }))} style={modalInputStyle} />
+                  </div>
+                </div>
+              </div>
+            );
+          } else if (addingConstraintType === 'hours') {
+            title = 'הוסף שעות מותאמות';
+            canAdd = !!hoursForm.day && !!hoursForm.shift && !!hoursForm.newArrival && !!hoursForm.newDeparture && (hoursForm.mode === 'full' || !!hoursForm.employeeId);
+            body = (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={modalLabelStyle}>מצב</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setHoursForm(f => ({ ...f, mode: 'full', employeeId: '' }))} style={{ flex: 1, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: hoursForm.mode === 'full' ? '2px solid #7c3aed' : '1px solid #e8e0d4', background: hoursForm.mode === 'full' ? '#f3e8ff' : 'white', color: hoursForm.mode === 'full' ? '#7c3aed' : '#64748b', cursor: 'pointer' }}>
+                      משמרת שלמה
+                    </button>
+                    <button onClick={() => setHoursForm(f => ({ ...f, mode: 'employee' }))} style={{ flex: 1, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: hoursForm.mode === 'employee' ? '2px solid #7c3aed' : '1px solid #e8e0d4', background: hoursForm.mode === 'employee' ? '#f3e8ff' : 'white', color: hoursForm.mode === 'employee' ? '#7c3aed' : '#64748b', cursor: 'pointer' }}>
+                      עובדת ספציפית
+                    </button>
+                  </div>
+                </div>
+                {hoursForm.mode === 'employee' && (
+                  <div>
+                    <label style={modalLabelStyle}>עובדת *</label>
+                    <select value={hoursForm.employeeId} onChange={e => setHoursForm(f => ({ ...f, employeeId: e.target.value }))} style={modalSelectStyle}>
+                      <option value="">— בחרי —</option>
+                      {activeEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={modalLabelStyle}>יום *</label>
+                    <select value={hoursForm.day} onChange={e => setHoursForm(f => ({ ...f, day: e.target.value }))} style={modalSelectStyle}>
+                      {DAY_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={modalLabelStyle}>משמרת *</label>
+                    <select value={hoursForm.shift} onChange={e => setHoursForm(f => ({ ...f, shift: e.target.value }))} style={modalSelectStyle}>
+                      {(hoursForm.day === 'שישי' ? ['בוקר'] : SHIFT_OPTIONS).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={modalLabelStyle}>שעת התחלה *</label>
+                    <input type="time" value={hoursForm.newArrival} onChange={e => setHoursForm(f => ({ ...f, newArrival: e.target.value }))} style={modalInputStyle} />
+                  </div>
+                  <div>
+                    <label style={modalLabelStyle}>שעת סיום *</label>
+                    <input type="time" value={hoursForm.newDeparture} onChange={e => setHoursForm(f => ({ ...f, newDeparture: e.target.value }))} style={modalInputStyle} />
+                  </div>
+                </div>
+              </div>
+            );
+          } else if (addingConstraintType === 'min') {
+            title = 'הוסף מינימום';
+            canAdd = !!minForm.day && !!minForm.shift && minForm.minCount > 0;
+            body = (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={modalLabelStyle}>יום *</label>
+                    <select value={minForm.day} onChange={e => setMinForm(f => ({ ...f, day: e.target.value }))} style={modalSelectStyle}>
+                      {DAY_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={modalLabelStyle}>משמרת *</label>
+                    <select value={minForm.shift} onChange={e => setMinForm(f => ({ ...f, shift: e.target.value }))} style={modalSelectStyle}>
+                      {(minForm.day === 'שישי' ? ['בוקר'] : SHIFT_OPTIONS).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={modalLabelStyle}>מינימום עובדות *</label>
+                  <select value={minForm.minCount} onChange={e => setMinForm(f => ({ ...f, minCount: Number(e.target.value) }))} style={modalSelectStyle}>
+                    {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              </div>
+            );
+          }
+
+          const handleAdd = () => {
+            const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+            if (addingConstraintType === 'block') {
+              addConstraint({ type: 'block', id, employeeId: blockForm.employeeId, day: blockForm.day, shift: blockForm.shift });
+              setBlockForm({ employeeId: '', day: 'ראשון', shift: '' });
+            } else if (addingConstraintType === 'limit') {
+              addConstraint({ type: 'limit', id, employeeId: limitForm.employeeId, shiftType: limitForm.shiftType });
+              setLimitForm({ employeeId: '', shiftType: 'בוקר' });
+            } else if (addingConstraintType === 'fix') {
+              addConstraint({ type: 'fix', id, employeeId: fixForm.employeeId, day: fixForm.day, shift: fixForm.shift, arrivalTime: fixForm.arrivalTime || undefined, departureTime: fixForm.departureTime || undefined });
+              setFixForm({ employeeId: '', day: 'ראשון', shift: 'בוקר', arrivalTime: '', departureTime: '' });
+            } else if (addingConstraintType === 'hours') {
+              addConstraint({ type: 'hours', id, day: hoursForm.day, shift: hoursForm.shift, newArrival: hoursForm.newArrival, newDeparture: hoursForm.newDeparture, employeeId: hoursForm.mode === 'employee' ? hoursForm.employeeId : undefined });
+              setHoursForm({ mode: 'full', day: 'ראשון', shift: 'בוקר', newArrival: '', newDeparture: '', employeeId: '' });
+            } else if (addingConstraintType === 'min') {
+              addConstraint({ type: 'min', id, day: minForm.day, shift: minForm.shift, minCount: minForm.minCount });
+              setMinForm({ day: 'ראשון', shift: 'בוקר', minCount: 2 });
+            }
+          };
+
+          return (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 10002, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setAddingConstraintType(null)}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 12, padding: 20, width: '90%', maxWidth: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)', direction: 'rtl' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, background: meta.bg, color: meta.color }}>{meta.label}</span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: '#1a4a2e' }}>{title}</span>
+                </div>
+                {body}
+                <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setAddingConstraintType(null)} style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>ביטול</button>
+                  <button onClick={handleAdd} disabled={!canAdd} style={{ padding: '7px 16px', fontSize: 13, fontWeight: 700, background: canAdd ? meta.color : '#d1cdc6', color: 'white', border: 'none', borderRadius: 6, cursor: canAdd ? 'pointer' : 'not-allowed' }}>הוסף</button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        const weekLabel = (() => {
+          const s = getWeekStart(weekOffset);
+          const e = new Date(s); e.setDate(s.getDate() + 5);
+          return `${s.getDate()}.${s.getMonth() + 1} – ${e.getDate()}.${e.getMonth() + 1}`;
+        })();
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => { setShowConstraintsModal(false); setAddingConstraintType(null); }}>
+            <div onClick={e => e.stopPropagation()} dir="rtl" style={{ background: 'white', borderRadius: 14, padding: 24, width: '92%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1a4a2e' }}>הנחיות לשיבוץ</h2>
+                <button onClick={() => { setShowConstraintsModal(false); setAddingConstraintType(null); }} style={{ width: 28, height: 28, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>✕</button>
+              </div>
+
+              {/* Week range */}
+              <div style={{ background: '#f8f7f4', borderRadius: 8, padding: '10px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, color: '#64748b' }}>שבוע:</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#1a4a2e' }}>{weekLabel}</span>
+              </div>
+
+              {/* Constraints list grouped by type */}
+              {schedulingConstraints.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '20px 0', color: '#9ca3af', fontSize: 13 }}>
+                  לא הוגדרו הנחיות. לחצי על כפתור למטה כדי להוסיף.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+                  {(['block', 'limit', 'fix', 'hours', 'min'] as const).map(type => {
+                    const items = grouped[type];
+                    if (items.length === 0) return null;
+                    const meta = CONSTRAINT_META[type];
+                    return (
+                      <div key={type}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: meta.color, marginBottom: 6 }}>{meta.labelPlural}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {items.map(c => (
+                            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: meta.bg, borderRadius: 8, padding: '7px 12px' }}>
+                              <span style={{ flex: 1, fontSize: 13, color: '#1a1a1a' }}>{describeConstraint(c)}</span>
+                              <button onClick={() => removeConstraint(c.id)} style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(0,0,0,0.08)', border: 'none', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', flexShrink: 0 }}>✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Add buttons */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+                {(['block', 'limit', 'fix', 'hours', 'min'] as const).map(type => {
+                  const meta = CONSTRAINT_META[type];
+                  return (
+                    <button key={type} onClick={() => setAddingConstraintType(type)} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33`, borderRadius: 6, cursor: 'pointer' }}>
+                      + {meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid #e8e0d4', paddingTop: 14 }}>
+                <button onClick={() => { setShowConstraintsModal(false); setAddingConstraintType(null); }} style={{ padding: '8px 18px', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+                  ביטול
+                </button>
+                <button
+                  onClick={() => {
+                    setShowConstraintsModal(false);
+                    setAddingConstraintType(null);
+                    autoSchedule();
+                  }}
+                  style={{ padding: '8px 22px', fontSize: 14, fontWeight: 700, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                >
+                  שבץ אוטומטית &larr;
+                </button>
+              </div>
+            </div>
+
+            {/* Mini modal overlay */}
+            {renderMiniModal()}
+          </div>
+        );
+      })()}
 
       {/* Custom shift modal */}
       {showCustomShiftModal && (() => {
