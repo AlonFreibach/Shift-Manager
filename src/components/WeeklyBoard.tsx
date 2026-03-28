@@ -2538,10 +2538,27 @@ ${pages}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <button
-          onClick={() => setShowConstraintsModal(true)}
+          onClick={() => autoSchedule()}
           style={{ padding: '8px 16px', background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
         >
           שבץ אוטומטית
+        </button>
+        <button
+          onClick={() => setShowConstraintsModal(true)}
+          style={{ position: 'relative', padding: '8px 16px', background: 'white', color: '#1a4a2e', border: '2px solid #1a4a2e', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
+        >
+          הנחיות שיבוץ
+          {schedulingConstraints.length > 0 && (
+            <span style={{
+              position: 'absolute', top: -8, left: -8,
+              background: '#c17f3b', color: 'white',
+              borderRadius: '50%', width: 20, height: 20,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 700, lineHeight: 1,
+            }}>
+              {schedulingConstraints.length}
+            </span>
+          )}
         </button>
         <button
           onClick={resetSchedule}
