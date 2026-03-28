@@ -86,12 +86,12 @@ const SLOT_DEFAULTS: Record<string, Record<string, SlotDefault[]>> = {
     'ערב':  [{ arrival: '14:00', departure: '21:00' }, { arrival: '15:00', departure: '21:00' }, { arrival: '16:00', departure: '21:00' }],
   },
   'חמישי':  {
-    'בוקר': [{ arrival: '06:30', departure: '14:00' }, { arrival: '07:00', departure: '14:30' }, { arrival: '07:00', departure: '15:00' }],
+    'בוקר': [{ arrival: '06:30', departure: '14:00' }, { arrival: '06:45', departure: '14:30' }, { arrival: '07:00', departure: '15:00' }],
     'ערב':  [{ arrival: '14:00', departure: '21:00' }, { arrival: '14:30', departure: '21:00' }, { arrival: '15:00', departure: '21:00' }],
   },
   'שישי':   {
     'בוקר': [
-      { arrival: '06:30', departure: '15:00' }, { arrival: '06:45', departure: '15:30' },
+      { arrival: '06:30', departure: '15:30' }, { arrival: '06:45', departure: '15:45' },
       { arrival: '07:00', departure: '16:00' }, { arrival: '07:15', departure: '16:00' },
       { arrival: '08:00', departure: '16:00' },
     ],
