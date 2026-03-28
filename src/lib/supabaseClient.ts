@@ -24,4 +24,5 @@ export type SupabaseEmployee = {
   role: 'admin' | 'employee'
   created_at: string
   vacation_periods?: { from: string; to: string }[] | null
+  birthday?: string | null
 }

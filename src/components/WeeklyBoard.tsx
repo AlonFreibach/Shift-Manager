@@ -19,6 +19,16 @@ interface WeeklyBoardProps {
 const MIYA_NAME = 'מיה';
 
 /** Check if employee is on vacation during any part of the week (Sun–Fri) */
+// Check if a DD/MM birthday matches a specific date
+function isBirthdayOnDate(birthday: string | undefined, date: Date): boolean {
+  if (!birthday) return false;
+  const parts = birthday.split('/');
+  if (parts.length !== 2) return false;
+  const bd = parseInt(parts[0], 10);
+  const bm = parseInt(parts[1], 10);
+  return date.getDate() === bd && (date.getMonth() + 1) === bm;
+}
+
 function isOnVacation(emp: Employee, weekStartStr: string): boolean {
   if (!emp.vacationPeriods || emp.vacationPeriods.length === 0) return false;
   const weekStart = new Date(weekStartStr + 'T00:00:00');
@@ -772,7 +782,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const weekDays = WEEK_STRUCTURE.map((d, i) => {
     const date = new Date(weekStart);
     date.setDate(weekStart.getDate() + i);
-    return { ...d, dateStr: formatDate(date) };
+    return { ...d, dateStr: formatDate(date), date: new Date(date) };
   });
 
   function saveSchedule(newSchedule: Schedule) {
@@ -1913,6 +1923,15 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
               }
             }
 
+            // Birthday banners (morning shift only — shown regardless of scheduling)
+            if (isMorning) {
+              const dayDateObj = new Date(sunday.getTime() + di * 86400000);
+              const birthdayEmps = employees.filter(e => isBirthdayOnDate(e.birthday, dayDateObj));
+              for (const be of birthdayEmps) {
+                cellContent += `<div style="margin-top:3px;padding:2px 6px;background:#FEF3E2;border-radius:4px;font-size:10px;color:#c17f3b;font-weight:600;text-align:center">🎂 יום הולדת ${be.name}</div>`;
+              }
+            }
+
             tbody += `<td style="background:${cellBg};vertical-align:top;padding:4px;border-top:1px solid ${borderTopColor}${smallFont ? ';font-size:10px' : ''}">${cellContent}</td>`;
           }
           tbody += '</tr>';
@@ -1990,7 +2009,10 @@ ${pages}
     const isTraineeSlot = slot.station === 'התלמדות';
     const isFixedSlot = slot.isFixed === true;
     const isEmpty = slot.employeeId === null;
-    const empName = isMiyaFixed ? 'מיה' : employees.find(e => e.id === slot.employeeId)?.name || null;
+    const slotEmp = slot.employeeId !== null ? employees.find(e => e.id === slot.employeeId) : null;
+    const empName = isMiyaFixed ? 'מיה' : slotEmp?.name || null;
+    const dayDate = weekDays.find(wd => wd.day === day)?.date;
+    const isBirthday = !isEmpty && slotEmp && dayDate ? isBirthdayOnDate(slotEmp.birthday, dayDate) : false;
     const isEditing = editingSlot?.day === day && editingSlot?.shift === shift && editingSlot?.slotIdx === slotIdx;
     const slotKey = `${day}_${shift}_${slotIdx}`;
     const isHovered = hoveredSlot === slotKey;
@@ -2072,8 +2094,11 @@ ${pages}
           ) : (
             <>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#1a4a2e', lineHeight: 1.3 }}>
-                {empName}
+                {isBirthday && <span>🎂 </span>}{empName}
               </div>
+              {isBirthday && (
+                <div style={{ fontSize: 10, color: '#c17f3b', fontWeight: 600, lineHeight: 1.2 }}>יום הולדת!</div>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 }}>
                 <span style={{ fontSize: 11, color: '#64748b' }}>
                   {slot.arrivalTime && slot.arrivalTime !== '0' ? slot.arrivalTime : '—'} → {slot.departureTime && slot.departureTime !== '0' ? slot.departureTime : '—'}
@@ -2737,6 +2762,37 @@ ${pages}
                         >
                           + הוסף
                         </button>
+
+                        {/* Birthday banners for unscheduled employees (morning shift only) */}
+                        {shift === 'בוקר' && (() => {
+                          const dayDate = d.date;
+                          const scheduledIds = new Set<string>();
+                          // Collect all employee IDs assigned to any shift on this day
+                          for (const shiftName of d.shifts) {
+                            for (const s of (schedule[`${d.day}_${shiftName}`] || [])) {
+                              if (s.employeeId) scheduledIds.add(s.employeeId);
+                            }
+                          }
+                          // Also check custom shifts
+                          for (const cs of (customShifts[d.day] || [])) {
+                            for (const s of (schedule[`${d.day}_${cs.name}`] || [])) {
+                              if (s.employeeId) scheduledIds.add(s.employeeId);
+                            }
+                          }
+                          const birthdayEmps = employees.filter(e =>
+                            isBirthdayOnDate(e.birthday, dayDate) && !scheduledIds.has(e.id)
+                          );
+                          if (birthdayEmps.length === 0) return null;
+                          return birthdayEmps.map(e => (
+                            <div key={e.id} style={{
+                              marginTop: 4, padding: '3px 6px', background: '#FEF3E2',
+                              borderRadius: 4, fontSize: 10, color: '#c17f3b', fontWeight: 600,
+                              textAlign: 'center',
+                            }}>
+                              🎂 יום הולדת {e.name}
+                            </div>
+                          ));
+                        })()}
                       </td>
                     );
                   })}

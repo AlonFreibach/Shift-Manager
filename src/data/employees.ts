@@ -25,6 +25,7 @@ export interface Employee {
   flexibilityHistory: { weekStart: string; submitted: number; committed: number }[];
   fixedShifts?: FixedShift[];
   vacationPeriods: VacationPeriod[];
+  birthday?: string; // DD/MM
 }
 
 // Legacy hardcoded employee names for migrating old localStorage schedule data

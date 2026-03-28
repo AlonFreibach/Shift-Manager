@@ -41,6 +41,7 @@ interface AddFormData {
   name: string;
   phone: string;
   email: string;
+  birthday: string;
   seniority: number;
   shiftsPerWeek: number;
   shiftType: 'all' | 'morning' | 'evening';
@@ -53,6 +54,7 @@ const INITIAL_FORM: AddFormData = {
   name: '',
   phone: '',
   email: '',
+  birthday: '',
   seniority: 0,
   shiftsPerWeek: 3,
   shiftType: 'all',
@@ -134,6 +136,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
         friday: formData.friday,
         active_from: formData.activeFrom || null,
         active_until: formData.activeUntil || null,
+        birthday: formData.birthday.trim() || null,
         role: 'employee',
       })
       .select()
@@ -237,6 +240,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
       availableToDate: emp.availableToDate,
       fixedShifts: emp.fixedShifts ? emp.fixedShifts.map(fs => ({ ...fs })) : [],
       vacationPeriods: emp.vacationPeriods.map(vp => ({ ...vp })),
+      birthday: emp.birthday || '',
     });
   };
 
@@ -262,6 +266,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     if (draftEmployee.availableFromDate !== undefined) updateData.active_from = draftEmployee.availableFromDate || null;
     if (draftEmployee.availableToDate !== undefined) updateData.active_until = draftEmployee.availableToDate || null;
     if (draftEmployee.vacationPeriods !== undefined) updateData.vacation_periods = draftEmployee.vacationPeriods;
+    if (draftEmployee.birthday !== undefined) updateData.birthday = (draftEmployee.birthday as string)?.trim() || null;
 
     const { error } = await supabase
       .from('employees')
@@ -618,6 +623,19 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <label style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>מתלמדת (בהכשרה)</label>
                     </div>
 
+                    {/* Birthday */}
+                    <div>
+                      <label style={labelStyle}>יום הולדת (DD/MM):</label>
+                      <input
+                        type="text"
+                        value={(draft.birthday as string) || ''}
+                        onChange={(e) => setDraftEmployee({ ...draft, birthday: e.target.value })}
+                        placeholder="DD/MM"
+                        dir="ltr"
+                        style={inputStyle}
+                      />
+                    </div>
+
                     {/* Shift Type */}
                     <div>
                       <label style={labelStyle}>סוג משמרת:</label>
@@ -799,6 +817,15 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <span style={{ fontSize: 13, color: '#9ca3af' }}>לא</span>
                     )}
                   </div>
+
+                  {/* Row 4b — Birthday (conditional) */}
+                  {employee.birthday && (
+                    <div style={infoRowStyle}>
+                      <span style={iconWrapStyle}>🎂</span>
+                      <span style={infoLabelStyle}>יום הולדת</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: '#c17f3b' }}>{employee.birthday}</span>
+                    </div>
+                  )}
 
                   {/* Row 5 — Availability dates (conditional) */}
                   {(employee.availableFromDate || employee.availableToDate) && (
@@ -1029,6 +1056,17 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       value={formData.email}
                       onChange={e => setFormData({ ...formData, email: e.target.value })}
                       placeholder="example@email.com"
+                      dir="ltr"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>יום הולדת</label>
+                    <input
+                      type="text"
+                      value={formData.birthday}
+                      onChange={e => setFormData({ ...formData, birthday: e.target.value })}
+                      placeholder="DD/MM"
                       dir="ltr"
                       style={inputStyle}
                     />
