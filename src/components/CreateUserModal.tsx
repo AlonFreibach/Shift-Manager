@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import type { SupabaseEmployee } from '../lib/supabaseClient'
 
@@ -7,80 +7,121 @@ interface CreateUserModalProps {
   onClose: () => void
 }
 
-function generatePassword(length = 8): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-  let result = ''
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return result
+function generatePin(): string {
+  return String(Math.floor(1000 + Math.random() * 9000))
 }
 
 const APP_URL = 'shift-manager-nu-pink.vercel.app'
 
 export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
-  const [email, setEmail] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [email, setEmail] = useState(employee.email || '')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null)
+  const [existingPin, setExistingPin] = useState<string | null>(null)
+  const [existingEmail, setExistingEmail] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const [resetLoading, setResetLoading] = useState(false)
-  const [resetDone, setResetDone] = useState(false)
+  const [justCreated, setJustCreated] = useState(false)
 
-  const hasExistingUser = !!employee.email
+  // Check for existing PIN on mount
+  useEffect(() => {
+    const checkExisting = async () => {
+      const { data } = await supabase
+        .from('employee_tokens')
+        .select('pin, email')
+        .eq('employee_id', employee.id)
+        .eq('is_active', true)
+        .not('pin', 'is', null)
+        .single()
 
-  const handleCreateUser = async () => {
+      if (data?.pin) {
+        setExistingPin(data.pin)
+        setExistingEmail(data.email || employee.email || null)
+      }
+      setLoading(false)
+    }
+    checkExisting()
+  }, [employee.id, employee.email])
+
+  const handleCreatePin = async () => {
     setError('')
     if (!email.trim() || !email.includes('@')) {
-      setError('אנא הזן/י כתובת אימייל תקינה')
+      setError('אנא הזיני כתובת אימייל תקינה')
       return
     }
-
-    setLoading(true)
-    const password = generatePassword()
+    setSaving(true)
+    const pin = generatePin()
 
     try {
-      // Save email + temp_password + role in employees table
-      const { error: updateError } = await supabase
-        .from('employees')
-        .update({ email, temp_password: password, role: 'employee' })
-        .eq('id', employee.id)
+      // Check if there's already an active token for this employee
+      const { data: existingToken } = await supabase
+        .from('employee_tokens')
+        .select('id')
+        .eq('employee_id', employee.id)
+        .eq('is_active', true)
+        .single()
 
-      if (updateError) {
-        setError('שגיאה בשמירת הפרטים: ' + updateError.message)
-        setLoading(false)
-        return
+      if (existingToken) {
+        // Update existing token with PIN + email
+        const { error: updateError } = await supabase
+          .from('employee_tokens')
+          .update({ pin, email: email.trim() })
+          .eq('id', existingToken.id)
+
+        if (updateError) {
+          setError('שגיאה בשמירה: ' + updateError.message)
+          setSaving(false)
+          return
+        }
+      } else {
+        // Create new token with PIN + email
+        const { error: insertError } = await supabase
+          .from('employee_tokens')
+          .insert({ employee_id: employee.id, pin, email: email.trim(), is_active: true })
+
+        if (insertError) {
+          setError('שגיאה בשמירה: ' + insertError.message)
+          setSaving(false)
+          return
+        }
       }
 
-      setCreatedCredentials({ email, password })
+      // Also update email in employees table if different
+      if (email.trim() !== employee.email) {
+        await supabase.from('employees').update({ email: email.trim() }).eq('id', employee.id)
+      }
+
+      setExistingPin(pin)
+      setExistingEmail(email.trim())
+      setJustCreated(true)
     } catch (err: any) {
       setError('שגיאה: ' + (err.message || 'משהו השתבש'))
     }
-    setLoading(false)
+    setSaving(false)
   }
 
-  const handleResetPassword = async () => {
-    if (!employee.email) return
-    setResetLoading(true)
-    const newPassword = generatePassword()
+  const handleResetPin = async () => {
+    setSaving(true)
+    setError('')
+    const newPin = generatePin()
 
     const { error: updateError } = await supabase
-      .from('employees')
-      .update({ temp_password: newPassword })
-      .eq('id', employee.id)
+      .from('employee_tokens')
+      .update({ pin: newPin })
+      .eq('employee_id', employee.id)
+      .eq('is_active', true)
 
-    setResetLoading(false)
     if (updateError) {
-      setError('שגיאה באיפוס סיסמא: ' + updateError.message)
+      setError('שגיאה באיפוס: ' + updateError.message)
     } else {
-      setCreatedCredentials({ email: employee.email, password: newPassword })
-      setResetDone(true)
+      setExistingPin(newPin)
+      setJustCreated(true)
     }
+    setSaving(false)
   }
 
   const handleCopy = () => {
-    if (!createdCredentials) return
-    const text = `שלח לעובדת:\nאתר: ${APP_URL}\nאימייל: ${createdCredentials.email}\nסיסמא: ${createdCredentials.password}`
+    const text = `שלח/י לעובדת:\nאתר: ${APP_URL}\nאימייל: ${existingEmail}\nPIN: ${existingPin}`
     navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -116,36 +157,62 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
         </button>
 
         <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 700, color: '#1a4a2e' }}>
-          הגדר כניסה — {employee.name}
+          🔑 הגדר כניסה — {employee.name}
         </h3>
         <p style={{ margin: '0 0 20px', fontSize: 13, color: '#8b8b8b' }}>
-          ניהול פרטי כניסה למערכת
+          כניסה עם אימייל + PIN
         </p>
 
-        {/* ── Created Successfully ── */}
-        {createdCredentials ? (
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 16 }}>
-            <p style={{ fontWeight: 600, fontSize: 15, color: '#166534', marginTop: 0, marginBottom: 12 }}>
-              {resetDone ? 'סיסמא אופסה!' : 'משתמש נוצר!'}
-            </p>
-            <p style={{ fontSize: 13, color: '#1a4a2e', fontWeight: 500, marginTop: 0, marginBottom: 12 }}>
-              שלח/י לעובדת:
-            </p>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 20, color: '#8b8b8b', fontSize: 14 }}>
+            טוען...
+          </div>
+        ) : existingPin ? (
+          /* ── Mode B: PIN exists — show credentials ── */
+          <div>
             <div style={{
-              fontSize: 14, lineHeight: 1.8, color: '#1a1a1a',
-              background: '#ffffff', borderRadius: 6, padding: 12, border: '1px solid #e8e0d4',
+              background: justCreated ? '#f0fdf4' : '#f8f7f4',
+              border: `1px solid ${justCreated ? '#bbf7d0' : '#e8e0d4'}`,
+              borderRadius: 8,
+              padding: 16,
+              marginBottom: 16,
             }}>
-              <div><strong>אתר:</strong> <span dir="ltr">{APP_URL}</span></div>
-              <div><strong>אימייל:</strong> <span dir="ltr">{createdCredentials.email}</span></div>
-              <div><strong>סיסמא:</strong> <span dir="ltr" style={{ fontFamily: 'monospace' }}>{createdCredentials.password}</span></div>
+              {justCreated && (
+                <p style={{ fontWeight: 600, fontSize: 15, color: '#166534', marginTop: 0, marginBottom: 12 }}>
+                  PIN {existingPin.length === 4 && existingEmail ? 'נוצר!' : 'אופס!'}
+                </p>
+              )}
+              <p style={{ fontSize: 13, color: '#1a4a2e', fontWeight: 500, marginTop: 0, marginBottom: 12 }}>
+                פרטי כניסה לעובדת:
+              </p>
+              <div style={{
+                fontSize: 14, lineHeight: 1.8, color: '#1a1a1a',
+                background: '#ffffff', borderRadius: 6, padding: 12, border: '1px solid #e8e0d4',
+              }}>
+                <div><strong>אתר:</strong> <span dir="ltr">{APP_URL}</span></div>
+                <div><strong>אימייל:</strong> <span dir="ltr">{existingEmail}</span></div>
+                <div>
+                  <strong>PIN:</strong>{' '}
+                  <span dir="ltr" style={{
+                    fontFamily: 'monospace',
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: '#1a4a2e',
+                    letterSpacing: 4,
+                  }}>
+                    {existingPin}
+                  </span>
+                </div>
+              </div>
             </div>
-            <p style={{ fontSize: 12, color: '#6b7280', marginTop: 10, marginBottom: 0 }}>
-              לאחר שהעובדת נכנסת בפעם הראשונה, המערכת תבקש ממנה לשנות סיסמא.
-            </p>
+
+            {error && (
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#dc2626', fontWeight: 500 }}>{error}</p>
+            )}
+
             <button
               onClick={handleCopy}
               style={{
-                marginTop: 12,
                 padding: '8px 20px',
                 fontSize: 13,
                 fontWeight: 600,
@@ -155,25 +222,15 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
                 borderRadius: 6,
                 cursor: 'pointer',
                 width: '100%',
+                marginBottom: 8,
               }}
             >
-              {copied ? 'הועתק!' : 'העתק פרטים'}
+              {copied ? 'הועתק!' : 'העתק פרטי כניסה'}
             </button>
-          </div>
-        ) : hasExistingUser ? (
-          /* ── Existing User ── */
-          <div>
-            <div style={{ background: '#f8f7f4', borderRadius: 8, padding: 14, marginBottom: 16 }}>
-              <p style={{ margin: 0, fontSize: 14, color: '#475569' }}>
-                <strong>משתמש קיים:</strong> {employee.email}
-              </p>
-            </div>
-            {error && (
-              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#dc2626', fontWeight: 500 }}>{error}</p>
-            )}
+
             <button
-              onClick={handleResetPassword}
-              disabled={resetLoading}
+              onClick={handleResetPin}
+              disabled={saving}
               style={{
                 padding: '8px 20px',
                 fontSize: 13,
@@ -183,15 +240,15 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
                 border: 'none',
                 borderRadius: 6,
                 cursor: 'pointer',
-                opacity: resetLoading ? 0.5 : 1,
+                opacity: saving ? 0.5 : 1,
                 width: '100%',
               }}
             >
-              {resetLoading ? 'מאפס...' : 'אפס סיסמא'}
+              {saving ? 'מאפס...' : 'אפס PIN'}
             </button>
           </div>
         ) : (
-          /* ── Create New User ── */
+          /* ── Mode A: No PIN — create one ── */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#64748b', marginBottom: 4 }}>
@@ -217,8 +274,8 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
               <p style={{ margin: 0, fontSize: 13, color: '#dc2626', fontWeight: 500 }}>{error}</p>
             )}
             <button
-              onClick={handleCreateUser}
-              disabled={loading}
+              onClick={handleCreatePin}
+              disabled={saving}
               style={{
                 padding: '8px 20px',
                 fontSize: 14,
@@ -228,10 +285,10 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
                 border: 'none',
                 borderRadius: 6,
                 cursor: 'pointer',
-                opacity: loading ? 0.5 : 1,
+                opacity: saving ? 0.5 : 1,
               }}
             >
-              {loading ? 'יוצר משתמש...' : 'צור משתמש'}
+              {saving ? 'יוצר PIN...' : 'צור PIN'}
             </button>
           </div>
         )}

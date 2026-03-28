@@ -369,7 +369,9 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const toSupabaseEmployee = (emp: Employee): SupabaseEmployee => ({
     id: emp.id,
     name: emp.name,
-    seniority: 0,
+    email: emp.email || undefined,
+    phone: emp.phone || undefined,
+    seniority: emp.seniority ?? 0,
     friday: emp.fridayAvailability,
     shift_type: emp.shiftType,
     active_from: emp.availableFromDate || undefined,
