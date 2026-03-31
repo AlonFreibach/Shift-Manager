@@ -320,6 +320,9 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [minForm, setMinForm] = useState<{ day: string; shift: string; minCount: number }>({ day: 'ראשון', shift: 'בוקר', minCount: 2 });
   const [stationHoursForm, setStationHoursForm] = useState<{ day: string; shift: string; station: string; newArrival: string; newDeparture: string }>({ day: 'ראשון', shift: 'בוקר', station: 'קופה 1', newArrival: '', newDeparture: '' });
 
+  // Volt conflict modal
+  const [voltConflictModal, setVoltConflictModal] = useState<{ day: string; shift: string; slots: { idx: number; empName: string; station: string; checked: boolean }[] } | null>(null);
+
   // Unsaved changes tracking
   const [slotDirty, setSlotDirty] = useState(false);
   const slotDirtyRef = useRef(false);
@@ -522,8 +525,15 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
         }
       }
 
+      // Fetch closed shifts for this week from Supabase
+      const weekClosedShifts: Record<string, boolean> = {};
+      try {
+        const { data: closedData } = await supabase.from('closed_shifts').select('day, shift').eq('week_start', wk);
+        if (closedData) closedData.forEach((r: any) => { weekClosedShifts[`${r.day}_${r.shift}`] = true; });
+      } catch {}
+
       // Run auto-schedule for this week
-      const result = runAutoScheduleForWeek(wk, weekSchedule, weekCustomShifts, weekPrefs, weekVoltFlags);
+      const result = runAutoScheduleForWeek(wk, weekSchedule, weekCustomShifts, weekPrefs, weekVoltFlags, [], weekClosedShifts);
       const finalSchedule = { ...result.schedule };
 
       // Auto-resolve ties (pick first candidate — no interactive modal for multi-week)
@@ -844,35 +854,43 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   }
 
 
-  function toggleClosedShift(cellKey: string) {
+  async function toggleClosedShift(cellKey: string) {
     const [day, shift] = cellKey.split('_');
     const isClosed = !!closedShifts[cellKey];
     const updated = { ...closedShifts };
     if (isClosed) {
       delete updated[cellKey];
-      supabase.from('closed_shifts').delete().eq('week_start', weekKey).eq('day', day).eq('shift', shift);
+      const { error } = await supabase.from('closed_shifts').delete().eq('week_start', weekKey).eq('day', day).eq('shift', shift);
+      if (error) console.error('Failed to open shift:', error.message);
     } else {
       updated[cellKey] = true;
-      supabase.from('closed_shifts').upsert({ week_start: weekKey, day, shift }, { onConflict: 'week_start,day,shift' });
+      const { error } = await supabase.from('closed_shifts').upsert({ week_start: weekKey, day, shift }, { onConflict: 'week_start,day,shift' });
+      if (error) console.error('Failed to close shift:', error.message);
     }
     setClosedShifts(updated);
   }
 
-  function closeDay(day: string) {
+  async function closeDay(day: string) {
     const updated = { ...closedShifts };
     const dayShifts = WEEK_STRUCTURE.find(d => d.day === day)?.shifts || [];
-    const rows = dayShifts.map(shift => ({ week_start: weekKey, day, shift }));
     for (const shift of dayShifts) updated[`${day}_${shift}`] = true;
     setClosedShifts(updated);
-    supabase.from('closed_shifts').upsert(rows, { onConflict: 'week_start,day,shift' });
+    // Save each shift separately to ensure all are saved
+    for (const shift of dayShifts) {
+      const { error } = await supabase.from('closed_shifts').upsert({ week_start: weekKey, day, shift }, { onConflict: 'week_start,day,shift' });
+      if (error) console.error('Failed to close shift:', error.message);
+    }
   }
 
-  function openDay(day: string) {
+  async function openDay(day: string) {
     const updated = { ...closedShifts };
     const dayShifts = WEEK_STRUCTURE.find(d => d.day === day)?.shifts || [];
     for (const shift of dayShifts) delete updated[`${day}_${shift}`];
     setClosedShifts(updated);
-    supabase.from('closed_shifts').delete().eq('week_start', weekKey).eq('day', day);
+    for (const shift of dayShifts) {
+      const { error } = await supabase.from('closed_shifts').delete().eq('week_start', weekKey).eq('day', day).eq('shift', shift);
+      if (error) console.error('Failed to open shift:', error.message);
+    }
   }
 
   function saveCustomShifts(newCustomShifts: Record<string, CustomShiftDef[]>) {
@@ -1083,6 +1101,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     targetPrefs: Record<string, EmployeePrefs>,
     targetVoltFlags: VoltFlags,
     constraints: SchedulingConstraint[] = [],
+    targetClosedShifts: Record<string, boolean> = {},
   ): { schedule: Schedule; shortages: ShortageItem[]; ties: TieItem[]; emptySlots: { day: string; shift: string }[]; traineeResults: TraineeResult[] } {
     // Shadow component state with parameters for reusability across weeks
     const weekKey = targetWeekKey;
@@ -1139,13 +1158,20 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       }
     }
 
-    // ── Apply close constraints: clear non-locked slots in closed shifts ──
+    // ── Apply closed shifts from Supabase: clear ALL slots in closed shifts ──
+    for (const [cellKey, isClosed] of Object.entries(targetClosedShifts)) {
+      if (!isClosed) continue;
+      if (!workingSlots[cellKey]) continue;
+      workingSlots[cellKey] = [];
+    }
+
+    // ── Apply close constraints: clear ALL slots (including Miya) in closed shifts ──
     for (const cc of constraints.filter((c): c is CloseConstraint => c.type === 'close')) {
       const shiftsToClose = cc.shift ? [cc.shift] : ['בוקר', 'ערב'];
       for (const shift of shiftsToClose) {
         const key = `${cc.day}_${shift}`;
         if (!workingSlots[key]) continue;
-        workingSlots[key] = workingSlots[key].filter(s => s.locked);
+        workingSlots[key] = [];
       }
     }
 
@@ -1534,7 +1560,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       setTimeout(() => setNoPrefsToast(false), 4000);
       return;
     }
-    const result = runAutoScheduleForWeek(weekKey, schedule, customShifts, prefs, voltFlags, schedulingConstraints);
+    const result = runAutoScheduleForWeek(weekKey, schedule, customShifts, prefs, voltFlags, schedulingConstraints, closedShifts);
     setAutoResultModal({
       isOpen: true,
       shortages: result.shortages,
@@ -2417,7 +2443,32 @@ ${pages}
 
                     {/* Volt responsibility */}
                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#7c3aed', cursor: 'pointer', marginBottom: 4, marginTop: 2 }}>
-                      <input type="checkbox" checked={tempSlotData.voltResponsible ?? (tempSlotData.station === 'קופה 1')} onChange={e => { setTempSlotData(prev => ({ ...prev, voltResponsible: e.target.checked })); setSlotDirtyBoth(true); }} style={{ width: 13, height: 13, accentColor: '#7c3aed' }} />
+                      <input type="checkbox" checked={tempSlotData.voltResponsible ?? (tempSlotData.station === 'קופה 1')} onChange={e => {
+                        const newVal = e.target.checked;
+                        if (newVal) {
+                          // Check if there's already a volt responsible slot in this shift
+                          const shiftSlots = getOrInitializeSlots(day, shift);
+                          const existingVolt = shiftSlots
+                            .map((s, i) => ({ s, i }))
+                            .filter(({ s, i }) => i !== slotIdx && (s.voltResponsible || (!s.locked && s.station === 'קופה 1' && s.voltResponsible !== false)));
+                          if (existingVolt.length > 0) {
+                            // Build conflict list
+                            const voltSlots = [
+                              ...existingVolt.map(({ s, i }) => ({
+                                idx: i,
+                                empName: s.locked ? 'מיה' : employees.find(emp => emp.id === s.employeeId)?.name || '?',
+                                station: s.station,
+                                checked: true,
+                              })),
+                              { idx: slotIdx, empName: employees.find(emp => emp.id === tempSlotData.employeeId)?.name || '?', station: tempSlotData.station, checked: true },
+                            ];
+                            setVoltConflictModal({ day, shift, slots: voltSlots });
+                            return;
+                          }
+                        }
+                        setTempSlotData(prev => ({ ...prev, voltResponsible: newVal }));
+                        setSlotDirtyBoth(true);
+                      }} style={{ width: 13, height: 13, accentColor: '#7c3aed' }} />
                       אחראית וולט
                     </label>
 
@@ -4391,6 +4442,50 @@ ${pages}
           </div>
         );
       })()}
+      {/* Volt conflict modal */}
+      {voltConflictModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 99998, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div dir="rtl" style={{ background: 'white', borderRadius: 10, padding: 24, maxWidth: 380, width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: '#7c3aed' }}>כבר יש אחראית וולט במשמרת זו</h3>
+            <p style={{ fontSize: 13, color: '#475569', margin: '0 0 12px' }}>בחרי מי תהיה אחראית וולט:</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+              {voltConflictModal.slots.map((vs, i) => (
+                <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', padding: '6px 10px', background: vs.checked ? '#f3e8ff' : '#f5f5f5', borderRadius: 6, border: `1px solid ${vs.checked ? '#c4b5fd' : '#e8e0d4'}` }}>
+                  <input type="checkbox" checked={vs.checked} onChange={() => {
+                    setVoltConflictModal(prev => prev ? {
+                      ...prev,
+                      slots: prev.slots.map((s, j) => j === i ? { ...s, checked: !s.checked } : s),
+                    } : null);
+                  }} style={{ width: 14, height: 14, accentColor: '#7c3aed' }} />
+                  <span style={{ fontWeight: 600, color: '#1a4a2e' }}>{vs.empName}</span>
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>({vs.station})</span>
+                </label>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setVoltConflictModal(null)} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>ביטול</button>
+              <button onClick={() => {
+                const { day, shift, slots: voltSlots } = voltConflictModal;
+                const key = `${day}_${shift}`;
+                const currentSlots = getOrInitializeSlots(day, shift);
+                const newSlots = currentSlots.map((s, i) => {
+                  const vs = voltSlots.find(v => v.idx === i);
+                  if (vs) return { ...s, voltResponsible: vs.checked };
+                  // Remove volt from slots not in the modal
+                  if (s.voltResponsible) return { ...s, voltResponsible: false };
+                  return s;
+                });
+                // Also update tempSlotData for the current editing slot
+                const currentVs = voltSlots.find(v => v.idx === (editingSlot?.slotIdx ?? -1));
+                if (currentVs) setTempSlotData(prev => ({ ...prev, voltResponsible: currentVs.checked }));
+                saveSchedule({ ...schedule, [key]: newSlots });
+                setVoltConflictModal(null);
+                setSlotDirtyBoth(true);
+              }} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, background: '#7c3aed', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}>שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Unsaved changes dialog */}
       {unsavedTarget && (
         <UnsavedChangesDialog
