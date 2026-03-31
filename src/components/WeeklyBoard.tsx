@@ -51,6 +51,7 @@ interface Slot {
   station: string;
   locked?: boolean;
   isFixed?: boolean;
+  voltResponsible?: boolean;
 }
 
 type Schedule = Record<string, Slot[]>;
@@ -205,7 +206,8 @@ interface LimitConstraint { type: 'limit'; id: string; employeeId: string; shift
 interface FixConstraint { type: 'fix'; id: string; employeeId: string; day: string; shift: string; arrivalTime?: string; departureTime?: string; }
 interface HoursConstraint { type: 'hours'; id: string; day: string; shift: string; newArrival: string; newDeparture: string; employeeId?: string; }
 interface MinConstraint { type: 'min'; id: string; day: string; shift: string; minCount: number; }
-type SchedulingConstraint = BlockConstraint | LimitConstraint | FixConstraint | HoursConstraint | MinConstraint;
+interface StationHoursConstraint { type: 'stationHours'; id: string; day: string; shift: string; station: string; newArrival: string; newDeparture: string; }
+type SchedulingConstraint = BlockConstraint | LimitConstraint | FixConstraint | HoursConstraint | MinConstraint | StationHoursConstraint;
 
 function calculateCompositeScore(emp: Employee): number {
   const stability = calculateStabilityScore(emp) / 10;
@@ -235,6 +237,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [weekOffset, setWeekOffset] = useState(0);
   const [schedule, setSchedule] = useState<Schedule>({});
   const [voltFlags, setVoltFlags] = useState<VoltFlags>({});
+  const [closedShifts, setClosedShifts] = useState<Record<string, boolean>>({});
   const [whatsappToast, setWhatsappToast] = useState(false);
   const [whatsappFallback, setWhatsappFallback] = useState('');
 
@@ -270,7 +273,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [slotSaveToast, setSlotSaveToast] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const [tempSlotData, setTempSlotData] = useState<{ employeeId: string | null; arrivalTime: string; departureTime: string; station: string }>({ employeeId: null, arrivalTime: '', departureTime: '', station: '' });
+  const [tempSlotData, setTempSlotData] = useState<{ employeeId: string | null; arrivalTime: string; departureTime: string; station: string; voltResponsible?: boolean }>({ employeeId: null, arrivalTime: '', departureTime: '', station: '' });
 
   interface SyncIssue {
     station: string;
@@ -303,12 +306,13 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   // Constraints modal state
   const [showConstraintsModal, setShowConstraintsModal] = useState(false);
   const [schedulingConstraints, setSchedulingConstraints] = useState<SchedulingConstraint[]>([]);
-  const [addingConstraintType, setAddingConstraintType] = useState<'block'|'limit'|'fix'|'hours'|'min'|null>(null);
+  const [addingConstraintType, setAddingConstraintType] = useState<'block'|'limit'|'fix'|'hours'|'min'|'stationHours'|null>(null);
   const [blockForm, setBlockForm] = useState<{ employeeId: string; day: string; shift: string }>({ employeeId: '', day: 'ראשון', shift: '' });
   const [limitForm, setLimitForm] = useState<{ employeeId: string; shiftType: 'בוקר'|'ערב' }>({ employeeId: '', shiftType: 'בוקר' });
   const [fixForm, setFixForm] = useState<{ employeeId: string; day: string; shift: string; arrivalTime: string; departureTime: string }>({ employeeId: '', day: 'ראשון', shift: 'בוקר', arrivalTime: '', departureTime: '' });
   const [hoursForm, setHoursForm] = useState<{ mode: 'full'|'employee'; day: string; shift: string; newArrival: string; newDeparture: string; employeeId: string }>({ mode: 'full', day: 'ראשון', shift: 'בוקר', newArrival: '', newDeparture: '', employeeId: '' });
   const [minForm, setMinForm] = useState<{ day: string; shift: string; minCount: number }>({ day: 'ראשון', shift: 'בוקר', minCount: 2 });
+  const [stationHoursForm, setStationHoursForm] = useState<{ day: string; shift: string; station: string; newArrival: string; newDeparture: string }>({ day: 'ראשון', shift: 'בוקר', station: 'קופה 1', newArrival: '', newDeparture: '' });
 
   // Unsaved changes tracking
   const [slotDirty, setSlotDirty] = useState(false);
@@ -684,6 +688,9 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     const savedCustomShifts = localStorage.getItem(`customShifts_${weekKey}`);
     setCustomShifts(savedCustomShifts ? JSON.parse(savedCustomShifts) : {});
 
+    const savedClosed = localStorage.getItem(`closedShifts_${weekKey}`);
+    setClosedShifts(savedClosed ? JSON.parse(savedClosed) : {});
+
     const prefForWeek: Record<string, EmployeePrefs> = {};
     employees.forEach(emp => {
       const raw = localStorage.getItem(`preferences_${emp.id}_${weekKey}`);
@@ -822,6 +829,29 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   function saveVoltFlags(newFlags: VoltFlags) {
     setVoltFlags(newFlags);
     localStorage.setItem(`voltFlags_${weekKey}`, JSON.stringify(newFlags));
+  }
+
+  function toggleClosedShift(cellKey: string) {
+    const updated = { ...closedShifts, [cellKey]: !closedShifts[cellKey] };
+    if (!updated[cellKey]) delete updated[cellKey];
+    setClosedShifts(updated);
+    localStorage.setItem(`closedShifts_${weekKey}`, JSON.stringify(updated));
+  }
+
+  function closeDay(day: string) {
+    const updated = { ...closedShifts };
+    const dayShifts = WEEK_STRUCTURE.find(d => d.day === day)?.shifts || [];
+    for (const shift of dayShifts) updated[`${day}_${shift}`] = true;
+    setClosedShifts(updated);
+    localStorage.setItem(`closedShifts_${weekKey}`, JSON.stringify(updated));
+  }
+
+  function openDay(day: string) {
+    const updated = { ...closedShifts };
+    const dayShifts = WEEK_STRUCTURE.find(d => d.day === day)?.shifts || [];
+    for (const shift of dayShifts) delete updated[`${day}_${shift}`];
+    setClosedShifts(updated);
+    localStorage.setItem(`closedShifts_${weekKey}`, JSON.stringify(updated));
   }
 
   function saveCustomShifts(newCustomShifts: Record<string, CustomShiftDef[]>) {
@@ -1447,6 +1477,19 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       }
     }
 
+    // ── Apply station hours constraints (override times for specific stations) ──
+    for (const shc of constraints.filter((c): c is StationHoursConstraint => c.type === 'stationHours')) {
+      const key = `${shc.day}_${shc.shift}`;
+      const slots = workingSlots[key];
+      if (!slots) continue;
+      for (let i = 0; i < slots.length; i++) {
+        if (slots[i].locked) continue;
+        if (slots[i].station === shc.station) {
+          slots[i] = { ...slots[i], arrivalTime: shc.newArrival, departureTime: shc.newDeparture };
+        }
+      }
+    }
+
     return { schedule: { ...workingSlots }, shortages, ties, emptySlots, traineeResults };
   }
 
@@ -1838,6 +1881,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
           <div style="font-size:15px;font-weight:700;color:${textColor}">${s.arrivalTime || '—'}–${s.departureTime || '—'}</div>
           <div style="font-size:12px;font-weight:600;color:${textColor}">${name}</div>
           ${badge ? `<div>${badge}</div>` : ''}
+          ${(s.voltResponsible || (!s.locked && s.station === 'קופה 1' && s.voltResponsible !== false)) ? '<div style="font-size:9px;font-weight:700;color:#7c3aed;background:#f3e8ff;padding:1px 5px;border-radius:4px;display:inline-block;margin-top:2px">וולט</div>' : ''}
         </div>`;
       };
 
@@ -2056,7 +2100,7 @@ ${pages}
       if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
       setPopoverPos({ top, left });
       setEditingSlot({ day, shift, slotIdx, isNew: isEmpty });
-      setTempSlotData({ employeeId: slot.employeeId, arrivalTime: slot.arrivalTime, departureTime: slot.departureTime, station: slot.station });
+      setTempSlotData({ employeeId: slot.employeeId, arrivalTime: slot.arrivalTime, departureTime: slot.departureTime, station: slot.station, voltResponsible: slot.voltResponsible });
       setSlotDirtyBoth(false);
       setPopoverValidationError(false);
     }
@@ -2117,6 +2161,9 @@ ${pages}
                     <span style={{ fontSize: 10, background: '#f1f5f9', color: '#475569', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>
                       {stationLabel}
                     </span>
+                  )}
+                  {(slot.voltResponsible || (!slot.locked && slot.station === 'קופה 1' && slot.voltResponsible !== false)) && (
+                    <span style={{ fontSize: 9, background: '#7c3aed', color: 'white', padding: '1px 5px', borderRadius: 4, fontWeight: 600, whiteSpace: 'nowrap' }}>וולט</span>
                   )}
                 </span>
               </div>
@@ -2205,7 +2252,7 @@ ${pages}
                       onClick={() => {
                         const key = `${day}_${shift}`;
                         const slots = getOrInitializeSlots(day, shift);
-                        const newSlots = slots.map((s, i) => i === slotIdx ? { ...s, arrivalTime: tempSlotData.arrivalTime, departureTime: tempSlotData.departureTime, station: tempSlotData.station } : s);
+                        const newSlots = slots.map((s, i) => i === slotIdx ? { ...s, arrivalTime: tempSlotData.arrivalTime, departureTime: tempSlotData.departureTime, station: tempSlotData.station, voltResponsible: tempSlotData.voltResponsible } : s);
                         const updatedSchedule = { ...schedule, [key]: newSlots };
                         saveSchedule(updatedSchedule);
                         closePopover(false);
@@ -2243,21 +2290,46 @@ ${pages}
                 const tempIsIncomplete = tempEmpId === null || !tempSlotData.arrivalTime || !tempSlotData.departureTime || !tempSlotData.station;
                 return (
                   <>
-                    {/* Employee */}
+                    {/* Employee — grouped by preference */}
                     <label style={popoverLabelStyle}>עובדת:</label>
-                    <select
-                      value={tempEmpId ?? ''}
-                      onChange={e => {
-                        const newId = e.target.value !== '' ? e.target.value : null;
-                        setTempSlotData(prev => ({ ...prev, employeeId: newId }));
-                        setPopoverValidationError(false);
-                        setSlotDirtyBoth(true);
-                      }}
-                      style={{ ...popoverSelectStyle, marginBottom: 4, ...(tempIsDuplicate || (popoverValidationError && tempEmpId === null) ? { borderColor: '#ef4444' } : {}) }}
-                    >
-                      <option value="">— ריק —</option>
-                      {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                    </select>
+                    {(() => {
+                      const requested: typeof employees = [];
+                      const others: typeof employees = [];
+                      for (const e of employees) {
+                        if (e.id === miyaId) continue;
+                        const raw = localStorage.getItem(`preferences_${e.id}_${weekKey}`);
+                        if (raw) {
+                          try {
+                            const p = JSON.parse(raw);
+                            const dayPrefs = p[day] || [];
+                            if (dayPrefs.some((pr: any) => (typeof pr === 'string' ? pr : pr.shift) === shift)) {
+                              requested.push(e); continue;
+                            }
+                          } catch {}
+                        }
+                        others.push(e);
+                      }
+                      return (
+                        <select
+                          value={tempEmpId ?? ''}
+                          onChange={e => {
+                            const newId = e.target.value !== '' ? e.target.value : null;
+                            setTempSlotData(prev => ({ ...prev, employeeId: newId }));
+                            setPopoverValidationError(false);
+                            setSlotDirtyBoth(true);
+                          }}
+                          style={{ ...popoverSelectStyle, marginBottom: 4, ...(tempIsDuplicate || (popoverValidationError && tempEmpId === null) ? { borderColor: '#ef4444' } : {}) }}
+                        >
+                          <option value="">— ריק —</option>
+                          {requested.length > 0 && <optgroup label="ביקשו משמרת זו">
+                            {requested.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                          </optgroup>}
+                          <optgroup label="שאר העובדות">
+                            {others.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                          </optgroup>
+                        </select>
+                      );
+                    })()}
                     {tempIsDuplicate && (
                       <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, fontWeight: 600 }}>
                         ⚠️ {tempDuplicateName} כבר משובצת ביום זה
@@ -2319,6 +2391,12 @@ ${pages}
                       </div>
                     )}
 
+                    {/* Volt responsibility */}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#7c3aed', cursor: 'pointer', marginBottom: 4, marginTop: 2 }}>
+                      <input type="checkbox" checked={tempSlotData.voltResponsible ?? (tempSlotData.station === 'קופה 1')} onChange={e => { setTempSlotData(prev => ({ ...prev, voltResponsible: e.target.checked })); setSlotDirtyBoth(true); }} style={{ width: 13, height: 13, accentColor: '#7c3aed' }} />
+                      אחראית וולט
+                    </label>
+
                     {/* Actions */}
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                       <button
@@ -2329,7 +2407,7 @@ ${pages}
                           }
                           const key = `${day}_${shift}`;
                           const slots = getOrInitializeSlots(day, shift);
-                          const newSlots = slots.map((s, i) => i === slotIdx ? { ...s, employeeId: tempSlotData.employeeId, arrivalTime: tempSlotData.arrivalTime, departureTime: tempSlotData.departureTime, station: tempSlotData.station } : s);
+                          const newSlots = slots.map((s, i) => i === slotIdx ? { ...s, employeeId: tempSlotData.employeeId, arrivalTime: tempSlotData.arrivalTime, departureTime: tempSlotData.departureTime, station: tempSlotData.station, voltResponsible: tempSlotData.voltResponsible } : s);
                           const updatedSchedule = { ...schedule, [key]: newSlots };
                           saveSchedule(updatedSchedule);
                           const addedName = employees.find(e => e.id === tempSlotData.employeeId)?.name || '';
@@ -2656,15 +2734,22 @@ ${pages}
               <th style={{ padding: '8px 6px', background: '#1a4a2e', color: 'white', fontWeight: 700, borderTopRightRadius: 8 }}>
                 משמרת
               </th>
-              {visibleDays.map((d, i) => (
+              {visibleDays.map((d, i) => {
+                const allShiftsClosed = (WEEK_STRUCTURE.find(ws => ws.day === d.day)?.shifts || []).every(s => !!closedShifts[`${d.day}_${s}`]);
+                return (
                 <th
                   key={d.day}
                   style={{ padding: '8px 6px', background: '#faf7f2', textAlign: 'center', borderBottom: '2px solid #e8e0d4', ...(i === visibleDays.length - 1 ? { borderTopLeftRadius: 8 } : {}) }}
                 >
                   <div style={{ fontWeight: 700, fontSize: 14, color: '#1a4a2e' }}>{d.day}</div>
                   <div style={{ fontWeight: 400, fontSize: 12, color: '#94a3b8' }}>{d.dateStr}</div>
+                  <button
+                    onClick={() => allShiftsClosed ? openDay(d.day) : closeDay(d.day)}
+                    style={{ fontSize: 9, fontWeight: 600, color: allShiftsClosed ? '#1a4a2e' : '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', marginTop: 2 }}
+                  >{allShiftsClosed ? 'פתח יום' : 'סגור יום'}</button>
                 </th>
-              ))}
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -2701,7 +2786,7 @@ ${pages}
                     const defaultSlots = isCustom ? (cs?.requiredCount || 0) : (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
                     const requiredCount = isCustom ? defaultSlots : defaultSlots + (shift === 'בוקר' && MIYA_SCHEDULE[d.day] ? 1 : 0);
                     const filledCount = slots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
-                    const shiftBg = isCustom ? (filledCount >= requiredCount ? '#FFF8ED' : '#FEF2F2') : (filledCount >= requiredCount ? '#f0fdf4' : '#fef2f2');
+                    const shiftBg = closedShifts[cellKey] ? '#f3f4f6' : isCustom ? (filledCount >= requiredCount ? '#FFF8ED' : '#FEF2F2') : (filledCount >= requiredCount ? '#f0fdf4' : '#fef2f2');
                     const borderRight = filledCount >= requiredCount ? (isCustom ? '4px solid #EF9F27' : '4px solid #16a34a') : '4px solid #ef4444';
 
                     return (
@@ -2710,7 +2795,7 @@ ${pages}
                         style={{ padding: 6, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px ${isCustom ? 'dashed' : 'solid'} ${shiftColor}`, overflow: 'hidden', position: 'relative', ...(borderRight ? { borderRight } : {}) }}
                       >
                         {/* Volt toggle — not for שישי, not for custom */}
-                        {!isCustom && d.day !== 'שישי' && (
+                        {!isCustom && d.day !== 'שישי' && !closedShifts[cellKey] && (
                           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, marginBottom: 5, color: '#64748b', cursor: 'pointer', ...(isMobile ? { width: '100%', padding: '4px 0' } : {}) }}>
                             <input
                               type="checkbox"
@@ -2734,6 +2819,17 @@ ${pages}
                           </button>
                         )}
 
+                        {closedShifts[cellKey] ? (
+                          /* Closed shift overlay */
+                          <div style={{ textAlign: 'center', padding: '16px 8px' }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8', marginBottom: 8 }}>🚫 סגור</div>
+                            <button
+                              onClick={() => toggleClosedShift(cellKey)}
+                              style={{ fontSize: 11, fontWeight: 600, padding: '4px 12px', borderRadius: 6, border: '1px solid #C8DBA0', background: '#EBF3D8', color: '#1a4a2e', cursor: 'pointer' }}
+                            >פתח</button>
+                          </div>
+                        ) : (
+                        <>
                         {/* Slot rows — sorted by station order */}
                         {(() => {
                           const STATION_ORDER: Record<string, number> = { 'קופה 1': 1, 'קופה 2': 2, 'קופה 3': 3, 'קופה 4': 4, 'וולט': 5, 'התלמדות': 6, 'אחר': 7 };
@@ -2776,6 +2872,14 @@ ${pages}
                         >
                           + הוסף
                         </button>
+
+                        {/* Close shift button */}
+                        <button
+                          onClick={() => toggleClosedShift(cellKey)}
+                          style={{ fontSize: 9, color: '#94a3b8', background: 'transparent', border: '1px dashed #d1d5db', borderRadius: 4, cursor: 'pointer', padding: '2px 6px', marginTop: 4, width: '100%' }}
+                        >סגור משמרת</button>
+                        </>
+                        )}
 
                         {/* Birthday banners for unscheduled employees (morning shift only) */}
                         {shift === 'בוקר' && (() => {
@@ -3648,6 +3752,7 @@ ${pages}
           fix:   { label: 'קיבוע', labelPlural: 'קיבועים', color: '#c2410c', bg: '#fff7ed' },
           hours: { label: 'שעות מותאמות', labelPlural: 'שעות מותאמות', color: '#7c3aed', bg: '#f3e8ff' },
           min:   { label: 'מינימום', labelPlural: 'מינימום', color: '#15803d', bg: '#dcfce7' },
+          stationHours: { label: 'שעות עמדה', labelPlural: 'שעות עמדה', color: '#0e7490', bg: '#e0f2fe' },
         };
 
         const removeConstraint = (id: string) => { setSchedulingConstraints(prev => prev.filter(c => c.id !== id)); setConstraintsDirty(true); };
@@ -3666,6 +3771,7 @@ ${pages}
             case 'fix': return `${empName(c.employeeId)} → ${c.day} ${c.shift}${c.arrivalTime ? ` (${c.arrivalTime}–${c.departureTime})` : ''}`;
             case 'hours': return `${c.day} ${c.shift} → ${c.newArrival}–${c.newDeparture}${c.employeeId ? ` (${empName(c.employeeId)})` : ''}`;
             case 'min': return `${c.day} ${c.shift} — מינימום ${c.minCount} עובדות`;
+            case 'stationHours': return `${c.day} ${c.shift} — ${c.station}: ${c.newArrival}–${c.newDeparture}`;
           }
         };
 
@@ -3675,6 +3781,7 @@ ${pages}
           fix: schedulingConstraints.filter(c => c.type === 'fix'),
           hours: schedulingConstraints.filter(c => c.type === 'hours'),
           min: schedulingConstraints.filter(c => c.type === 'min'),
+          stationHours: schedulingConstraints.filter(c => c.type === 'stationHours'),
         };
 
         const modalSelectStyle: React.CSSProperties = { width: '100%', padding: '7px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4', background: 'white' };
@@ -3852,6 +3959,43 @@ ${pages}
                 </div>
               </div>
             );
+          } else if (addingConstraintType === 'stationHours') {
+            title = 'הוסף שעות עמדה';
+            canAdd = !!stationHoursForm.day && !!stationHoursForm.shift && !!stationHoursForm.station && !!stationHoursForm.newArrival && !!stationHoursForm.newDeparture;
+            body = (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={modalLabelStyle}>יום *</label>
+                    <select value={stationHoursForm.day} onChange={e => setStationHoursForm(f => ({ ...f, day: e.target.value }))} style={modalSelectStyle}>
+                      {DAY_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={modalLabelStyle}>משמרת *</label>
+                    <select value={stationHoursForm.shift} onChange={e => setStationHoursForm(f => ({ ...f, shift: e.target.value }))} style={modalSelectStyle}>
+                      {(stationHoursForm.day === 'שישי' ? ['בוקר'] : SHIFT_OPTIONS).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={modalLabelStyle}>עמדה *</label>
+                  <select value={stationHoursForm.station} onChange={e => setStationHoursForm(f => ({ ...f, station: e.target.value }))} style={modalSelectStyle}>
+                    {['קופה 1', 'קופה 2', 'קופה 3', 'קופה 4', 'וולט'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={modalLabelStyle}>שעת התחלה *</label>
+                    <input type="time" value={stationHoursForm.newArrival} onChange={e => setStationHoursForm(f => ({ ...f, newArrival: e.target.value }))} style={modalInputStyle} />
+                  </div>
+                  <div>
+                    <label style={modalLabelStyle}>שעת סיום *</label>
+                    <input type="time" value={stationHoursForm.newDeparture} onChange={e => setStationHoursForm(f => ({ ...f, newDeparture: e.target.value }))} style={modalInputStyle} />
+                  </div>
+                </div>
+              </div>
+            );
           }
 
           const handleAdd = () => {
@@ -3871,6 +4015,9 @@ ${pages}
             } else if (addingConstraintType === 'min') {
               addConstraint({ type: 'min', id, day: minForm.day, shift: minForm.shift, minCount: minForm.minCount });
               setMinForm({ day: 'ראשון', shift: 'בוקר', minCount: 2 });
+            } else if (addingConstraintType === 'stationHours') {
+              addConstraint({ type: 'stationHours', id, day: stationHoursForm.day, shift: stationHoursForm.shift, station: stationHoursForm.station, newArrival: stationHoursForm.newArrival, newDeparture: stationHoursForm.newDeparture });
+              setStationHoursForm({ day: 'ראשון', shift: 'בוקר', station: 'קופה 1', newArrival: '', newDeparture: '' });
             }
           };
 
@@ -3919,7 +4066,7 @@ ${pages}
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-                  {(['block', 'limit', 'fix', 'hours', 'min'] as const).map(type => {
+                  {(['block', 'limit', 'fix', 'hours', 'min', 'stationHours'] as const).map(type => {
                     const items = grouped[type];
                     if (items.length === 0) return null;
                     const meta = CONSTRAINT_META[type];
@@ -3942,7 +4089,7 @@ ${pages}
 
               {/* Add buttons */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
-                {(['block', 'limit', 'fix', 'hours', 'min'] as const).map(type => {
+                {(['block', 'limit', 'fix', 'hours', 'min', 'stationHours'] as const).map(type => {
                   const meta = CONSTRAINT_META[type];
                   return (
                     <button key={type} onClick={() => setAddingConstraintType(type)} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33`, borderRadius: 6, cursor: 'pointer' }}>
