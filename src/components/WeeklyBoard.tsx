@@ -210,7 +210,7 @@ function calculateCompositeScore(emp: Employee): number {
   const stability = calculateStabilityScore(emp) / 10;
   const flexibility = (calculateFlexibilityScore(emp) ?? 0) / 100;
   const fairness = calculateFairnessScore(emp);
-  return 0.5 * stability + 0.4 * flexibility + 0.1 / (1 + fairness);
+  return 0.5 * flexibility + 0.4 * stability + 0.1 / (1 + fairness);
 }
 
 // Migrate old schedule data: convert numeric employeeIds to Supabase string IDs

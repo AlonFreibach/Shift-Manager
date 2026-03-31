@@ -24,7 +24,7 @@ export function FairnessTab({ employees }: FairnessTabProps) {
     const flexibility = calculateFlexibilityScore(enriched);
     const stability = calculateStabilityScore(enriched);
     const flexVal = flexibility ?? 0;
-    const composite = (fairness * 0.4) + ((flexVal / 100) * 0.25) + ((stability / 10) * 0.35);
+    const composite = ((flexVal / 100) * 0.5) + ((stability / 10) * 0.4) + (fairness * 0.1);
     const hasFairnessHistory = enriched.fairnessHistory.length > 0;
     const hasAnyHistory = hasFairnessHistory || flexibility !== null;
     return { emp, fairness, flexibility, stability, composite, hasFairnessHistory, hasAnyHistory };
