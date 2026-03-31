@@ -331,29 +331,38 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [constraintsDirty, setConstraintsDirty] = useState(false);
   const [unsavedTarget, setUnsavedTarget] = useState<'slot' | 'constraints' | null>(null);
 
-  // ── Undo system ──
+  // ── Undo system (per-week stacks) ──
   interface UndoSnapshot { schedule: Schedule; constraints: SchedulingConstraint[]; closedShifts: Record<string, boolean>; }
-  const undoStackRef = useRef<UndoSnapshot[]>([]);
+  const undoStacksRef = useRef<Record<string, UndoSnapshot[]>>({});
   const [undoCount, setUndoCount] = useState(0);
+  const weekKeyRef = useRef('');
+
+  function getUndoStack(): UndoSnapshot[] {
+    const wk = weekKeyRef.current;
+    if (!undoStacksRef.current[wk]) undoStacksRef.current[wk] = [];
+    return undoStacksRef.current[wk];
+  }
 
   function pushUndo() {
-    undoStackRef.current.push({
+    const stack = getUndoStack();
+    stack.push({
       schedule: JSON.parse(JSON.stringify(schedule)),
       constraints: JSON.parse(JSON.stringify(schedulingConstraints)),
       closedShifts: { ...closedShifts },
     });
-    if (undoStackRef.current.length > 20) undoStackRef.current.shift();
-    setUndoCount(undoStackRef.current.length);
+    if (stack.length > 20) stack.shift();
+    setUndoCount(stack.length);
   }
 
   function undo() {
-    const snapshot = undoStackRef.current.pop();
+    const stack = getUndoStack();
+    const snapshot = stack.pop();
     if (!snapshot) return;
     setSchedule(snapshot.schedule);
-    localStorage.setItem(`schedule_${weekKey}`, JSON.stringify(snapshot.schedule));
+    localStorage.setItem(`schedule_${weekKeyRef.current}`, JSON.stringify(snapshot.schedule));
     setSchedulingConstraints(snapshot.constraints);
     setClosedShifts(snapshot.closedShifts);
-    setUndoCount(undoStackRef.current.length);
+    setUndoCount(stack.length);
   }
 
   // Ctrl+Z global shortcut
@@ -367,12 +376,6 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   });
-
-  // Clear undo stack on week change
-  useEffect(() => {
-    undoStackRef.current = [];
-    setUndoCount(0);
-  }, [weekOffset]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -442,6 +445,14 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
 
   const weekStart = getWeekStart(weekOffset);
   const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+
+  // Sync undo stack with current week
+  if (weekKeyRef.current !== weekKey) {
+    weekKeyRef.current = weekKey;
+    const stack = undoStacksRef.current[weekKey] || [];
+    // Use setTimeout to avoid setState during render
+    setTimeout(() => setUndoCount(stack.length), 0);
+  }
 
   function formatWeekKey(d: Date): string {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
