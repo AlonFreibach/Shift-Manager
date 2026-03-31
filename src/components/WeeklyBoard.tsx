@@ -331,6 +331,49 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [constraintsDirty, setConstraintsDirty] = useState(false);
   const [unsavedTarget, setUnsavedTarget] = useState<'slot' | 'constraints' | null>(null);
 
+  // ── Undo system ──
+  interface UndoSnapshot { schedule: Schedule; constraints: SchedulingConstraint[]; closedShifts: Record<string, boolean>; }
+  const undoStackRef = useRef<UndoSnapshot[]>([]);
+  const [undoCount, setUndoCount] = useState(0);
+
+  function pushUndo() {
+    undoStackRef.current.push({
+      schedule: JSON.parse(JSON.stringify(schedule)),
+      constraints: JSON.parse(JSON.stringify(schedulingConstraints)),
+      closedShifts: { ...closedShifts },
+    });
+    if (undoStackRef.current.length > 20) undoStackRef.current.shift();
+    setUndoCount(undoStackRef.current.length);
+  }
+
+  function undo() {
+    const snapshot = undoStackRef.current.pop();
+    if (!snapshot) return;
+    setSchedule(snapshot.schedule);
+    localStorage.setItem(`schedule_${weekKey}`, JSON.stringify(snapshot.schedule));
+    setSchedulingConstraints(snapshot.constraints);
+    setClosedShifts(snapshot.closedShifts);
+    setUndoCount(undoStackRef.current.length);
+  }
+
+  // Ctrl+Z global shortcut
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  });
+
+  // Clear undo stack on week change
+  useEffect(() => {
+    undoStackRef.current = [];
+    setUndoCount(0);
+  }, [weekOffset]);
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
@@ -832,7 +875,8 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     return { ...d, dateStr: formatDate(date), date: new Date(date) };
   });
 
-  function saveSchedule(newSchedule: Schedule) {
+  function saveSchedule(newSchedule: Schedule, skipUndo = false) {
+    if (!skipUndo) pushUndo();
     setSchedule(newSchedule);
     localStorage.setItem(`schedule_${weekKey}`, JSON.stringify(newSchedule));
   }
@@ -870,6 +914,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
 
 
   async function toggleClosedShift(cellKey: string) {
+    pushUndo();
     const [day, shift] = cellKey.split('_');
     const isClosed = !!closedShifts[cellKey];
     const updated = { ...closedShifts };
@@ -886,6 +931,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   }
 
   async function closeDay(day: string) {
+    pushUndo();
     const updated = { ...closedShifts };
     const dayShifts = WEEK_STRUCTURE.find(d => d.day === day)?.shifts || [];
     for (const shift of dayShifts) updated[`${day}_${shift}`] = true;
@@ -898,6 +944,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   }
 
   async function openDay(day: string) {
+    pushUndo();
     const updated = { ...closedShifts };
     const dayShifts = WEEK_STRUCTURE.find(d => d.day === day)?.shifts || [];
     for (const shift of dayShifts) delete updated[`${day}_${shift}`];
@@ -2722,12 +2769,30 @@ ${pages}
 
       {/* Week navigation */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-        <button
-          onClick={() => setWeekOffset(w => w - 1)}
-          style={{ padding: '6px 14px', cursor: 'pointer', background: 'white', border: '1px solid #e8e0d4', borderRadius: 6, fontSize: 13, fontWeight: 500, color: '#475569' }}
-        >
-          ← שבוע קודם
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={() => setWeekOffset(w => w - 1)}
+            style={{ padding: '6px 14px', cursor: 'pointer', background: 'white', border: '1px solid #e8e0d4', borderRadius: 6, fontSize: 13, fontWeight: 500, color: '#475569' }}
+          >
+            ← שבוע קודם
+          </button>
+          <button
+            onClick={undo}
+            disabled={undoCount === 0}
+            title="Ctrl+Z"
+            style={{
+              padding: '6px 12px', cursor: undoCount === 0 ? 'default' : 'pointer',
+              background: undoCount === 0 ? '#f5f0e8' : '#1a4a2e',
+              color: undoCount === 0 ? '#94a3b8' : 'white',
+              border: '1px solid #e8e0d4', borderRadius: 6,
+              fontSize: 13, fontWeight: 600,
+              opacity: undoCount === 0 ? 0.5 : 1,
+              transition: 'opacity 0.15s',
+            }}
+          >
+            ↩ בטל
+          </button>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 16, color: '#1a4a2e' }}>
             לוח שיבוץ שבועי — {formatDate(weekStart)}–{formatDate(new Date(weekStart.getTime() + 5 * 86400000))}.{weekStart.getFullYear()}
@@ -4014,9 +4079,10 @@ ${pages}
           close: { label: 'סגירה', labelPlural: 'סגירות', color: '#dc2626', bg: '#fee2e2' },
         };
 
-        const removeConstraint = (id: string) => { setSchedulingConstraints(prev => prev.filter(c => c.id !== id)); setConstraintsDirty(true); };
+        const removeConstraint = (id: string) => { pushUndo(); setSchedulingConstraints(prev => prev.filter(c => c.id !== id)); setConstraintsDirty(true); };
 
         const addConstraint = (c: SchedulingConstraint) => {
+          pushUndo();
           setSchedulingConstraints(prev => [...prev, c]);
           setAddingConstraintType(null);
           setConstraintsDirty(true);
