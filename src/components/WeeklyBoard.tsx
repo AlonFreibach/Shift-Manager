@@ -435,6 +435,18 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     setPlanAheadNoPrefsWarning(false);
     setEditingHolidayId(null);
     setEditingDraft(null);
+    setPlanAheadClosures([]);
+    // Reload closed shifts from Supabase for current week
+    void (async () => {
+      try {
+        const { data } = await supabase.from('closed_shifts').select('day, shift').eq('week_start', weekKey);
+        if (data) {
+          const map: Record<string, boolean> = {};
+          data.forEach((r: any) => { map[`${r.day}_${r.shift}`] = true; });
+          setClosedShifts(map);
+        }
+      } catch {}
+    })();
   }
 
   async function runPlanAheadAutoSchedule() {
@@ -1831,6 +1843,29 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     }
     saveSchedule(finalSchedule);
     addFairnessEvents(finalSchedule, weekKey);
+
+    // Save close constraints to Supabase closed_shifts + update visual state
+    const closeConstraints = schedulingConstraints.filter((c): c is CloseConstraint => c.type === 'close');
+    if (closeConstraints.length > 0 || Object.keys(closedShifts).length > 0) {
+      const updatedClosed = { ...closedShifts };
+      for (const cc of closeConstraints) {
+        const shiftsToClose = cc.shift ? [cc.shift] : ['בוקר', 'ערב'];
+        for (const s of shiftsToClose) {
+          updatedClosed[`${cc.day}_${s}`] = true;
+        }
+      }
+      setClosedShifts(updatedClosed);
+      // Persist new closures to Supabase
+      const newRows = closeConstraints.flatMap(cc => {
+        const shifts = cc.shift ? [cc.shift] : ['בוקר', 'ערב'];
+        return shifts.map(s => ({ week_start: weekKey, day: cc.day, shift: s }));
+      });
+      if (newRows.length > 0) {
+        for (const row of newRows) {
+          supabase.from('closed_shifts').upsert(row, { onConflict: 'week_start,day,shift' });
+        }
+      }
+    }
 
     // Track biweekly Friday assignments in localStorage
     const fridayDate = (() => {
