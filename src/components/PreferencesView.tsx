@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { isWeekLocked, toggleWeekUnlock } from '../utils/submissionWindow'
+import { isWeekLocked, toggleWeekUnlock, fetchUnlockedWeeks } from '../utils/submissionWindow'
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
 const SHIFT_TYPES = ['morning', 'evening'] as const
@@ -443,6 +443,12 @@ export function PreferencesView({ onAutoSchedule }: Props) {
   const [deleteConfirm, setDeleteConfirm] = useState<GroupedEmployee | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [unlockTrigger, setUnlockTrigger] = useState(0)
+  const [unlockedWeeks, setUnlockedWeeks] = useState<string[]>([])
+
+  // Fetch unlocked weeks from Supabase
+  useEffect(() => {
+    fetchUnlockedWeeks().then(setUnlockedWeeks)
+  }, [unlockTrigger])
 
   const baseNextSunday = useMemo(() => getBaseNextSunday(), [])
 
@@ -459,7 +465,7 @@ export function PreferencesView({ onAutoSchedule }: Props) {
   }, [selectedSunday])
 
   const weekStart = toISO(selectedSunday)
-  const weekLocked = useMemo(() => isWeekLocked(weekStart), [weekStart, unlockTrigger])
+  const weekLocked = useMemo(() => isWeekLocked(weekStart, unlockedWeeks), [weekStart, unlockedWeeks])
 
   const fetchPreferences = useCallback(async () => {
     setLoading(true)
@@ -559,9 +565,9 @@ export function PreferencesView({ onAutoSchedule }: Props) {
 
   // ─── Actions ───
 
-  function handleUnlockWeek() {
+  async function handleUnlockWeek() {
     if (!confirm(`לפתוח את ההגשה לשבוע ${fmtDate(selectedSunday)} — ${fmtDate(selectedFriday)} מחדש?`)) return
-    toggleWeekUnlock(weekStart, true)
+    await toggleWeekUnlock(weekStart, true)
     setUnlockTrigger(n => n + 1)
     setToast('השבוע נפתח מחדש')
   }

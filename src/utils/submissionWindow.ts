@@ -10,6 +10,8 @@
  *   - Active week for submission: 5.4–11.4
  */
 
+import { supabase } from '../lib/supabaseClient'
+
 export function getSubmissionWindow() {
   const now = new Date()
   const day = now.getDay()
@@ -47,9 +49,12 @@ export function getSubmissionWindow() {
   }
 }
 
-export function isWeekLocked(weekStartISO: string): boolean {
-  const unlocked = getUnlockedWeeks()
-  if (unlocked.includes(weekStartISO)) return false
+/**
+ * Check if a week is locked, given a pre-fetched list of unlocked weeks.
+ * Use fetchUnlockedWeeks() to get the list from Supabase first.
+ */
+export function isWeekLocked(weekStartISO: string, unlockedWeeks: string[] = []): boolean {
+  if (unlockedWeeks.includes(weekStartISO)) return false
 
   // Deadline for week W = W - 7 days at 20:00
   const targetDate = new Date(weekStartISO + 'T00:00:00')
@@ -64,7 +69,58 @@ export function formatWeekStart(date: Date): string {
   return date.toISOString().split('T')[0] // YYYY-MM-DD
 }
 
-export function getUnlockedWeeks(): string[] {
+/**
+ * Fetch unlocked weeks from Supabase (single source of truth).
+ */
+export async function fetchUnlockedWeeks(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from('unlocked_weeks')
+      .select('week_start')
+
+    if (error) {
+      console.error('Failed to fetch unlocked weeks:', error.message)
+      // Fallback to localStorage for backwards compatibility
+      return getUnlockedWeeksLocal()
+    }
+
+    return (data || []).map(row => row.week_start)
+  } catch {
+    return getUnlockedWeeksLocal()
+  }
+}
+
+/**
+ * Toggle week unlock status in Supabase.
+ */
+export async function toggleWeekUnlock(weekStartISO: string, unlock: boolean): Promise<void> {
+  if (unlock) {
+    // Insert (ignore duplicate)
+    const { error } = await supabase
+      .from('unlocked_weeks')
+      .upsert({ week_start: weekStartISO }, { onConflict: 'week_start' })
+
+    if (error) {
+      console.error('Failed to unlock week:', error.message)
+      // Fallback to localStorage
+      toggleWeekUnlockLocal(weekStartISO, true)
+    }
+  } else {
+    const { error } = await supabase
+      .from('unlocked_weeks')
+      .delete()
+      .eq('week_start', weekStartISO)
+
+    if (error) {
+      console.error('Failed to lock week:', error.message)
+      toggleWeekUnlockLocal(weekStartISO, false)
+    }
+  }
+}
+
+// ── localStorage fallbacks (legacy, used only if Supabase fails) ──
+
+function getUnlockedWeeksLocal(): string[] {
   try {
     const raw = localStorage.getItem('unlocked_weeks')
     return raw ? JSON.parse(raw) : []
@@ -73,8 +129,8 @@ export function getUnlockedWeeks(): string[] {
   }
 }
 
-export function toggleWeekUnlock(weekStartISO: string, unlock: boolean): void {
-  const current = getUnlockedWeeks()
+function toggleWeekUnlockLocal(weekStartISO: string, unlock: boolean): void {
+  const current = getUnlockedWeeksLocal()
   if (unlock) {
     if (!current.includes(weekStartISO)) {
       current.push(weekStartISO)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase, type SupabaseEmployee } from '../lib/supabaseClient'
-import { getSubmissionWindow, isWeekLocked } from '../utils/submissionWindow'
+import { getSubmissionWindow, isWeekLocked, fetchUnlockedWeeks } from '../utils/submissionWindow'
 
 interface EmployeeDashboardProps {
   employee: SupabaseEmployee
@@ -56,6 +56,12 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
   const [loadingData, setLoadingData] = useState(true)
   const [existingWeeks, setExistingWeeks] = useState<Set<string>>(new Set())
   const firstLoadDone = useRef(false)
+  const [unlockedWeeks, setUnlockedWeeks] = useState<string[]>([])
+
+  // Fetch unlocked weeks from Supabase on mount
+  useEffect(() => {
+    fetchUnlockedWeeks().then(setUnlockedWeeks)
+  }, [])
 
   // Compute 5 tabs from submission window
   const { tabs, deadline } = useMemo(() => {
@@ -67,7 +73,7 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
       weekStart: new Date(sw.lockedWeekStart),
       weekStartISO: toISO(sw.lockedWeekStart),
       type: 'locked',
-      locked: true,
+      locked: isWeekLocked(toISO(sw.lockedWeekStart), unlockedWeeks),
     })
 
     // Tab 1: active week
@@ -75,7 +81,7 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
       weekStart: new Date(sw.activeWeekStart),
       weekStartISO: toISO(sw.activeWeekStart),
       type: 'active',
-      locked: isWeekLocked(toISO(sw.activeWeekStart)),
+      locked: isWeekLocked(toISO(sw.activeWeekStart), unlockedWeeks),
     })
 
     // Tabs 2-4: early weeks
@@ -87,12 +93,12 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
         weekStart: ws,
         weekStartISO: wsISO,
         type: 'early',
-        locked: isWeekLocked(wsISO),
+        locked: isWeekLocked(wsISO, unlockedWeeks),
       })
     }
 
     return { tabs: result, deadline: sw.deadline }
-  }, [])
+  }, [unlockedWeeks])
 
   const currentTab = tabs[activeTab]
   const isCurrentLocked = currentTab.locked
