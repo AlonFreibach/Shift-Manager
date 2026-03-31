@@ -207,7 +207,8 @@ interface FixConstraint { type: 'fix'; id: string; employeeId: string; day: stri
 interface HoursConstraint { type: 'hours'; id: string; day: string; shift: string; newArrival: string; newDeparture: string; employeeId?: string; }
 interface MinConstraint { type: 'min'; id: string; day: string; shift: string; minCount: number; }
 interface StationHoursConstraint { type: 'stationHours'; id: string; day: string; shift: string; station: string; newArrival: string; newDeparture: string; }
-type SchedulingConstraint = BlockConstraint | LimitConstraint | FixConstraint | HoursConstraint | MinConstraint | StationHoursConstraint;
+interface CloseConstraint { type: 'close'; id: string; day: string; shift: string; } // shift='' means entire day
+type SchedulingConstraint = BlockConstraint | LimitConstraint | FixConstraint | HoursConstraint | MinConstraint | StationHoursConstraint | CloseConstraint;
 
 function calculateCompositeScore(emp: Employee): number {
   const stability = calculateStabilityScore(emp) / 10;
@@ -260,6 +261,10 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [planAheadSummary, setPlanAheadSummary] = useState<PlanAheadSummary | null>(null);
   const [editingHolidayId, setEditingHolidayId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState<SpecialShiftEntry | null>(null);
+  const [planAheadClosures, setPlanAheadClosures] = useState<{ weekKey: string; day: string; shift: string }[]>([]);
+  const [paCloseWeek, setPaCloseWeek] = useState('');
+  const [paCloseDay, setPaCloseDay] = useState('ראשון');
+  const [paCloseShift, setPaCloseShift] = useState('');
   const [noPrefsToast, setNoPrefsToast] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [mobileDayIndex, setMobileDayIndex] = useState(0);
@@ -306,7 +311,8 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   // Constraints modal state
   const [showConstraintsModal, setShowConstraintsModal] = useState(false);
   const [schedulingConstraints, setSchedulingConstraints] = useState<SchedulingConstraint[]>([]);
-  const [addingConstraintType, setAddingConstraintType] = useState<'block'|'limit'|'fix'|'hours'|'min'|'stationHours'|null>(null);
+  const [addingConstraintType, setAddingConstraintType] = useState<'block'|'limit'|'fix'|'hours'|'min'|'stationHours'|'close'|null>(null);
+  const [closeForm, setCloseForm] = useState<{ day: string; shift: string }>({ day: 'ראשון', shift: '' });
   const [blockForm, setBlockForm] = useState<{ employeeId: string; day: string; shift: string }>({ employeeId: '', day: 'ראשון', shift: '' });
   const [limitForm, setLimitForm] = useState<{ employeeId: string; shiftType: 'בוקר'|'ערב' }>({ employeeId: '', shiftType: 'בוקר' });
   const [fixForm, setFixForm] = useState<{ employeeId: string; day: string; shift: string; arrivalTime: string; departureTime: string }>({ employeeId: '', day: 'ראשון', shift: 'בוקר', arrivalTime: '', departureTime: '' });
@@ -837,10 +843,6 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     setTimeout(() => setResetToast(false), 3000);
   }
 
-  function saveVoltFlags(newFlags: VoltFlags) {
-    setVoltFlags(newFlags);
-    localStorage.setItem(`voltFlags_${weekKey}`, JSON.stringify(newFlags));
-  }
 
   function toggleClosedShift(cellKey: string) {
     const [day, shift] = cellKey.split('_');
@@ -1018,9 +1020,6 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     saveSchedule({ ...schedule, [key]: slots.filter((_, i) => i !== slotIdx) });
   }
 
-  function toggleVolt(cellKey: string) {
-    saveVoltFlags({ ...voltFlags, [cellKey]: !voltFlags[cellKey] });
-  }
 
   function timeToMinutes(t: string): number {
     const [h, m] = t.split(':').map(Number);
@@ -1137,6 +1136,16 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       const dep = csDef?.endTime || (mc.shift === 'בוקר' ? '14:00' : '21:00');
       for (let i = nonLockedCount; i < mc.minCount; i++) {
         workingSlots[key].push({ employeeId: null, arrivalTime: arr, departureTime: dep, station: '' });
+      }
+    }
+
+    // ── Apply close constraints: clear non-locked slots in closed shifts ──
+    for (const cc of constraints.filter((c): c is CloseConstraint => c.type === 'close')) {
+      const shiftsToClose = cc.shift ? [cc.shift] : ['בוקר', 'ערב'];
+      for (const shift of shiftsToClose) {
+        const key = `${cc.day}_${shift}`;
+        if (!workingSlots[key]) continue;
+        workingSlots[key] = workingSlots[key].filter(s => s.locked);
       }
     }
 
@@ -1407,7 +1416,8 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
         let stIdx = 0;
         for (let i = 0; i < slots.length; i++) {
           if (slots[i].locked || slots[i].employeeId === null) continue;
-          slots[i] = { ...slots[i], station: stIdx < availableStations.length ? availableStations[stIdx++] : '' };
+          const assignedStation = stIdx < availableStations.length ? availableStations[stIdx++] : '';
+          slots[i] = { ...slots[i], station: assignedStation, voltResponsible: assignedStation === 'קופה 1' };
         }
       }
     }
@@ -2753,14 +2763,26 @@ ${pages}
                 return (
                 <th
                   key={d.day}
-                  style={{ padding: '8px 6px', background: '#faf7f2', textAlign: 'center', borderBottom: '2px solid #e8e0d4', ...(i === visibleDays.length - 1 ? { borderTopLeftRadius: 8 } : {}) }}
+                  style={{ padding: '8px 6px', background: allShiftsClosed ? '#fee2e2' : '#faf7f2', textAlign: 'center', borderBottom: '2px solid #e8e0d4', ...(i === visibleDays.length - 1 ? { borderTopLeftRadius: 8 } : {}) }}
                 >
-                  <div style={{ fontWeight: 700, fontSize: 14, color: '#1a4a2e' }}>{d.day}</div>
-                  <div style={{ fontWeight: 400, fontSize: 12, color: '#94a3b8' }}>{d.dateStr}</div>
-                  <button
-                    onClick={() => allShiftsClosed ? openDay(d.day) : closeDay(d.day)}
-                    style={{ fontSize: 9, fontWeight: 600, color: allShiftsClosed ? '#1a4a2e' : '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', marginTop: 2 }}
-                  >{allShiftsClosed ? 'פתח יום' : 'סגור יום'}</button>
+                  {allShiftsClosed ? (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#dc2626' }}>{d.day} — סגור</div>
+                      <button
+                        onClick={() => openDay(d.day)}
+                        style={{ fontSize: 10, fontWeight: 600, color: '#1a4a2e', background: '#EBF3D8', border: '1px solid #C8DBA0', borderRadius: 4, cursor: 'pointer', padding: '2px 10px', marginTop: 4 }}
+                      >פתח יום</button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#1a4a2e' }}>{d.day}</div>
+                      <div style={{ fontWeight: 400, fontSize: 12, color: '#94a3b8' }}>{d.dateStr}</div>
+                      <button
+                        onClick={() => closeDay(d.day)}
+                        style={{ fontSize: 9, fontWeight: 600, color: '#dc2626', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 4, cursor: 'pointer', padding: '1px 8px', marginTop: 3 }}
+                      >סגור יום</button>
+                    </>
+                  )}
                 </th>
                 );
               })}
@@ -2800,7 +2822,7 @@ ${pages}
                     const defaultSlots = isCustom ? (cs?.requiredCount || 0) : (SLOT_DEFAULTS[d.day]?.[shift] || []).length;
                     const requiredCount = isCustom ? defaultSlots : defaultSlots + (shift === 'בוקר' && MIYA_SCHEDULE[d.day] ? 1 : 0);
                     const filledCount = slots.filter(s => s.employeeId !== null && s.station !== 'התלמדות').length;
-                    const shiftBg = closedShifts[cellKey] ? '#f3f4f6' : isCustom ? (filledCount >= requiredCount ? '#FFF8ED' : '#FEF2F2') : (filledCount >= requiredCount ? '#f0fdf4' : '#fef2f2');
+                    const shiftBg = closedShifts[cellKey] ? '#f0f0f0' : isCustom ? (filledCount >= requiredCount ? '#FFF8ED' : '#FEF2F2') : (filledCount >= requiredCount ? '#f0fdf4' : '#fef2f2');
                     const borderRight = filledCount >= requiredCount ? (isCustom ? '4px solid #EF9F27' : '4px solid #16a34a') : '4px solid #ef4444';
 
                     return (
@@ -2808,19 +2830,6 @@ ${pages}
                         key={d.day}
                         style={{ padding: 6, background: shiftBg, verticalAlign: 'top', borderBottom: '1px solid #e8e0d4', borderTop: `3px ${isCustom ? 'dashed' : 'solid'} ${shiftColor}`, overflow: 'hidden', position: 'relative', ...(borderRight ? { borderRight } : {}) }}
                       >
-                        {/* Volt toggle — not for שישי, not for custom */}
-                        {!isCustom && d.day !== 'שישי' && !closedShifts[cellKey] && (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, marginBottom: 5, color: '#64748b', cursor: 'pointer', ...(isMobile ? { width: '100%', padding: '4px 0' } : {}) }}>
-                            <input
-                              type="checkbox"
-                              checked={!!voltFlags[cellKey]}
-                              onChange={() => toggleVolt(cellKey)}
-                              style={{ width: 14, height: 14, accentColor: '#4a7c59' }}
-                            />
-                            יש וולט?
-                          </label>
-                        )}
-
                         {/* Delete custom shift button (per-day) */}
                         {isCustom && (
                           <button
@@ -2835,11 +2844,11 @@ ${pages}
 
                         {closedShifts[cellKey] ? (
                           /* Closed shift overlay */
-                          <div style={{ textAlign: 'center', padding: '16px 8px' }}>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8', marginBottom: 8 }}>🚫 סגור</div>
+                          <div style={{ textAlign: 'center', padding: '20px 8px' }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#6b7280', marginBottom: 10 }}>🚫 משמרת סגורה</div>
                             <button
                               onClick={() => toggleClosedShift(cellKey)}
-                              style={{ fontSize: 11, fontWeight: 600, padding: '4px 12px', borderRadius: 6, border: '1px solid #C8DBA0', background: '#EBF3D8', color: '#1a4a2e', cursor: 'pointer' }}
+                              style={{ fontSize: 11, fontWeight: 600, padding: '4px 14px', borderRadius: 6, border: '1px solid #C8DBA0', background: '#EBF3D8', color: '#1a4a2e', cursor: 'pointer' }}
                             >פתח</button>
                           </div>
                         ) : (
@@ -2890,7 +2899,7 @@ ${pages}
                         {/* Close shift button */}
                         <button
                           onClick={() => toggleClosedShift(cellKey)}
-                          style={{ fontSize: 9, color: '#94a3b8', background: 'transparent', border: '1px dashed #d1d5db', borderRadius: 4, cursor: 'pointer', padding: '2px 6px', marginTop: 4, width: '100%' }}
+                          style={{ fontSize: 9, fontWeight: 600, color: 'white', background: '#1a4a2e', border: 'none', borderRadius: 4, cursor: 'pointer', padding: '3px 8px', marginTop: 5, width: '100%', opacity: 0.7 }}
                         >סגור משמרת</button>
                         </>
                         )}
@@ -3505,6 +3514,57 @@ ${pages}
             })()}
 
             {/* Action buttons */}
+            {/* Close shifts in advance */}
+            <div style={{ borderTop: '1px solid #e8e0d4', paddingTop: 14, marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#dc2626' }}>סגירת משמרות מראש:</div>
+              {(() => {
+                const sundays = getWeekSundaysInRange(planAheadFrom, planAheadTo);
+                return (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                    <select value={paCloseWeek} onChange={e => setPaCloseWeek(e.target.value)} style={{ padding: '5px 8px', fontSize: 12, borderRadius: 6, border: '1px solid #e8e0d4' }}>
+                      <option value="">שבוע</option>
+                      {sundays.map(s => { const k = formatWeekKey(s); return <option key={k} value={k}>{formatDate(s)}</option>; })}
+                    </select>
+                    <select value={paCloseDay} onChange={e => setPaCloseDay(e.target.value)} style={{ padding: '5px 8px', fontSize: 12, borderRadius: 6, border: '1px solid #e8e0d4' }}>
+                      {DAY_NAMES.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                    <select value={paCloseShift} onChange={e => setPaCloseShift(e.target.value)} style={{ padding: '5px 8px', fontSize: 12, borderRadius: 6, border: '1px solid #e8e0d4' }}>
+                      <option value="">כל היום</option>
+                      <option value="בוקר">בוקר</option>
+                      <option value="ערב">ערב</option>
+                    </select>
+                    <button
+                      disabled={!paCloseWeek}
+                      onClick={() => {
+                        if (!paCloseWeek) return;
+                        const shifts = paCloseShift ? [paCloseShift] : ['בוקר', 'ערב'];
+                        const newEntries = shifts.map(s => ({ weekKey: paCloseWeek, day: paCloseDay, shift: s }));
+                        setPlanAheadClosures(prev => [...prev, ...newEntries.filter(ne => !prev.some(p => p.weekKey === ne.weekKey && p.day === ne.day && p.shift === ne.shift))]);
+                        // Save to Supabase immediately
+                        const rows = newEntries.map(e => ({ week_start: e.weekKey, day: e.day, shift: e.shift }));
+                        supabase.from('closed_shifts').upsert(rows, { onConflict: 'week_start,day,shift' });
+                      }}
+                      style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: 'none', cursor: paCloseWeek ? 'pointer' : 'not-allowed', background: paCloseWeek ? '#dc2626' : '#d1d5db', color: 'white' }}
+                    >סגור</button>
+                  </div>
+                );
+              })()}
+              {planAheadClosures.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {planAheadClosures.map((c, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, background: '#fee2e2', borderRadius: 4, padding: '3px 8px', color: '#dc2626' }}>
+                      <span style={{ fontWeight: 600 }}>{c.day} {c.shift}</span>
+                      <span style={{ color: '#94a3b8' }}>({c.weekKey})</span>
+                      <button onClick={() => {
+                        setPlanAheadClosures(prev => prev.filter((_, j) => j !== i));
+                        supabase.from('closed_shifts').delete().eq('week_start', c.weekKey).eq('day', c.day).eq('shift', c.shift);
+                      }} style={{ marginRight: 'auto', fontSize: 10, background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontWeight: 700 }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
                 onClick={closePlanAheadFlow}
@@ -3767,6 +3827,7 @@ ${pages}
           hours: { label: 'שעות מותאמות', labelPlural: 'שעות מותאמות', color: '#7c3aed', bg: '#f3e8ff' },
           min:   { label: 'מינימום', labelPlural: 'מינימום', color: '#15803d', bg: '#dcfce7' },
           stationHours: { label: 'שעות עמדה', labelPlural: 'שעות עמדה', color: '#0e7490', bg: '#e0f2fe' },
+          close: { label: 'סגירה', labelPlural: 'סגירות', color: '#dc2626', bg: '#fee2e2' },
         };
 
         const removeConstraint = (id: string) => { setSchedulingConstraints(prev => prev.filter(c => c.id !== id)); setConstraintsDirty(true); };
@@ -3786,6 +3847,7 @@ ${pages}
             case 'hours': return `${c.day} ${c.shift} → ${c.newArrival}–${c.newDeparture}${c.employeeId ? ` (${empName(c.employeeId)})` : ''}`;
             case 'min': return `${c.day} ${c.shift} — מינימום ${c.minCount} עובדות`;
             case 'stationHours': return `${c.day} ${c.shift} — ${c.station}: ${c.newArrival}–${c.newDeparture}`;
+            case 'close': return `${c.day}${c.shift ? ` ${c.shift}` : ' (כל היום)'} — סגור`;
           }
         };
 
@@ -3796,6 +3858,7 @@ ${pages}
           hours: schedulingConstraints.filter(c => c.type === 'hours'),
           min: schedulingConstraints.filter(c => c.type === 'min'),
           stationHours: schedulingConstraints.filter(c => c.type === 'stationHours'),
+          close: schedulingConstraints.filter(c => c.type === 'close'),
         };
 
         const modalSelectStyle: React.CSSProperties = { width: '100%', padding: '7px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4', background: 'white' };
@@ -4010,6 +4073,26 @@ ${pages}
                 </div>
               </div>
             );
+          } else if (addingConstraintType === 'close') {
+            title = 'הוסף סגירה';
+            canAdd = !!closeForm.day;
+            body = (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <label style={modalLabelStyle}>יום *</label>
+                  <select value={closeForm.day} onChange={e => setCloseForm(f => ({ ...f, day: e.target.value }))} style={modalSelectStyle}>
+                    {DAY_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={modalLabelStyle}>משמרת (ריק = כל היום)</label>
+                  <select value={closeForm.shift} onChange={e => setCloseForm(f => ({ ...f, shift: e.target.value }))} style={modalSelectStyle}>
+                    <option value="">כל היום</option>
+                    {(closeForm.day === 'שישי' ? ['בוקר'] : SHIFT_OPTIONS).map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            );
           }
 
           const handleAdd = () => {
@@ -4032,6 +4115,9 @@ ${pages}
             } else if (addingConstraintType === 'stationHours') {
               addConstraint({ type: 'stationHours', id, day: stationHoursForm.day, shift: stationHoursForm.shift, station: stationHoursForm.station, newArrival: stationHoursForm.newArrival, newDeparture: stationHoursForm.newDeparture });
               setStationHoursForm({ day: 'ראשון', shift: 'בוקר', station: 'קופה 1', newArrival: '', newDeparture: '' });
+            } else if (addingConstraintType === 'close') {
+              addConstraint({ type: 'close', id, day: closeForm.day, shift: closeForm.shift });
+              setCloseForm({ day: 'ראשון', shift: '' });
             }
           };
 
@@ -4080,7 +4166,7 @@ ${pages}
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-                  {(['block', 'limit', 'fix', 'hours', 'min', 'stationHours'] as const).map(type => {
+                  {(['block', 'limit', 'fix', 'hours', 'min', 'stationHours', 'close'] as const).map(type => {
                     const items = grouped[type];
                     if (items.length === 0) return null;
                     const meta = CONSTRAINT_META[type];
@@ -4103,7 +4189,7 @@ ${pages}
 
               {/* Add buttons */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
-                {(['block', 'limit', 'fix', 'hours', 'min', 'stationHours'] as const).map(type => {
+                {(['block', 'limit', 'fix', 'hours', 'min', 'stationHours', 'close'] as const).map(type => {
                   const meta = CONSTRAINT_META[type];
                   return (
                     <button key={type} onClick={() => setAddingConstraintType(type)} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33`, borderRadius: 6, cursor: 'pointer' }}>
