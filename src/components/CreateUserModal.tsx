@@ -12,7 +12,7 @@ function generatePin(): string {
   return String(Math.floor(1000 + Math.random() * 9000))
 }
 
-const APP_URL = 'shift-manager-nu-pink.vercel.app'
+const APP_URL = 'https://shift-manager-nu-pink.vercel.app'
 
 export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
   const [email, setEmail] = useState(employee.email || '')
