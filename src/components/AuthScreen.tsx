@@ -226,7 +226,7 @@ export function AuthScreen() {
                   dir="ltr"
                   style={{
                     width: '100%',
-                    padding: '10px 36px 10px 12px',
+                    padding: '10px 12px 10px 36px',
                     borderRadius: 8,
                     border: '1px solid #C8DBA0',
                     fontSize: 14,
