@@ -1769,6 +1769,81 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     return availableStations.find(st => !usedStations.has(st)) || '';
   }
 
+  // ── Auto-assign: find best candidate for a specific slot ──
+  function findBestCandidate(day: string, shift: string, currentSlots: Slot[]): Employee | null {
+    const assignedInShift = new Set(currentSlots.filter(s => s.employeeId).map(s => s.employeeId!));
+    // All shifts for this day
+    const daySlotKeys = WEEK_STRUCTURE.find(w => w.day === day)?.shifts.map(s => `${day}_${s}`) || [];
+    const assignedInDay = new Set<string>();
+    for (const k of daySlotKeys) {
+      for (const s of (schedule[k] || [])) {
+        if (s.employeeId) assignedInDay.add(s.employeeId);
+      }
+    }
+
+    // Candidates: requested this shift, not already in this shift, not Miya
+    const candidates = employees.filter(e => {
+      if (e.id === miyaId) return false;
+      if (assignedInShift.has(e.id)) return false;
+      const empPrefs = preferences[e.id];
+      const dayPrefs = empPrefs?.[day] || [];
+      return dayPrefs.some((p: any) => (typeof p === 'string' ? p : p.shift) === shift);
+    });
+    if (candidates.length === 0) return null;
+
+    // Sort: not-in-day first, then by composite score descending
+    candidates.sort((a, b) => {
+      const aInDay = assignedInDay.has(a.id) ? 1 : 0;
+      const bInDay = assignedInDay.has(b.id) ? 1 : 0;
+      if (aInDay !== bInDay) return aInDay - bInDay;
+      return calculateCompositeScore(b) - calculateCompositeScore(a);
+    });
+    return candidates[0];
+  }
+
+  function autoAssignSingleSlot(day: string, shift: string, slotIdx: number) {
+    const key = `${day}_${shift}`;
+    const slots = [...(schedule[key] || [])];
+    if (slots[slotIdx]?.employeeId) return; // Not empty
+    const best = findBestCandidate(day, shift, slots);
+    if (!best) return;
+    const station = findFreeStation(slots, day, key);
+    const prefEntry = (preferences[best.id]?.[day] || []).find((p: any) => p.shift === shift);
+    slots[slotIdx] = {
+      ...slots[slotIdx],
+      employeeId: best.id,
+      station,
+      voltResponsible: station === 'קופה 1',
+      ...(prefEntry?.customArrival ? { arrivalTime: prefEntry.customArrival } : {}),
+      ...(prefEntry?.customDeparture ? { departureTime: prefEntry.customDeparture } : {}),
+    };
+    saveSchedule({ ...schedule, [key]: slots });
+  }
+
+  function autoAssignShift(day: string, shift: string) {
+    const key = `${day}_${shift}`;
+    let slots = [...(schedule[key] || [])];
+    let changed = false;
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i].employeeId !== null) continue;
+      if (slots[i].locked) continue;
+      const best = findBestCandidate(day, shift, slots);
+      if (!best) break;
+      const station = findFreeStation(slots, day, key);
+      const prefEntry = (preferences[best.id]?.[day] || []).find((p: any) => p.shift === shift);
+      slots[i] = {
+        ...slots[i],
+        employeeId: best.id,
+        station,
+        voltResponsible: station === 'קופה 1',
+        ...(prefEntry?.customArrival ? { arrivalTime: prefEntry.customArrival } : {}),
+        ...(prefEntry?.customDeparture ? { departureTime: prefEntry.customDeparture } : {}),
+      };
+      changed = true;
+    }
+    if (changed) saveSchedule({ ...schedule, [key]: slots });
+  }
+
   function boardAssignSlot(shortage: ShortageItem, day: string, shift: string, slotIdx: number) {
     const emp = shortage.emp;
     const key = `${day}_${shift}`;
@@ -2227,7 +2302,13 @@ ${pages}
           }}
         >
           {isEmpty ? (
-            <span style={{ color: '#94a3b8', fontSize: 12 }}>ריק</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94a3b8', fontSize: 12 }}>ריק</span>
+              <button
+                onClick={e => { e.stopPropagation(); autoAssignSingleSlot(day, shift, slotIdx); }}
+                style={{ fontSize: 9, fontWeight: 600, color: '#1a4a2e', background: '#e8f5e9', border: '1px solid #a7d5b8', borderRadius: 4, cursor: 'pointer', padding: '1px 6px', lineHeight: 1.4 }}
+              >✦ שבץ</button>
+            </div>
           ) : (
             <>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#1a4a2e', lineHeight: 1.3 }}>
@@ -2982,10 +3063,15 @@ ${pages}
                           + הוסף
                         </button>
 
+                        {/* Auto-assign shift button */}
+                        <button
+                          onClick={() => autoAssignShift(d.day, shift)}
+                          style={{ fontSize: 9, fontWeight: 600, color: '#1a4a2e', background: '#f0f7f2', border: '1px solid #C8DBA0', borderRadius: 4, cursor: 'pointer', padding: '3px 8px', marginTop: 5, width: '100%' }}
+                        >✦ שבץ משמרת אוטומטית</button>
                         {/* Close shift button */}
                         <button
                           onClick={() => toggleClosedShift(cellKey)}
-                          style={{ fontSize: 9, fontWeight: 600, color: 'white', background: '#1a4a2e', border: 'none', borderRadius: 4, cursor: 'pointer', padding: '3px 8px', marginTop: 5, width: '100%', opacity: 0.7 }}
+                          style={{ fontSize: 9, fontWeight: 600, color: 'white', background: '#1a4a2e', border: 'none', borderRadius: 4, cursor: 'pointer', padding: '3px 8px', marginTop: 3, width: '100%', opacity: 0.7 }}
                         >סגור משמרת</button>
                         </>
                         )}
