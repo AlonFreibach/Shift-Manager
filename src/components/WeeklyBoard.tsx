@@ -1827,7 +1827,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
         const textColor = isMorning ? '#2D5016' : '#854F0B';
         const badge = stBadge(s.station);
         return `<div style="background:#fff;border-radius:6px;padding:4px 6px;margin-bottom:3px;border:0.5px solid #C8D8A0;border-right:3px solid ${borderColor}">
-          <div style="font-size:15px;font-weight:700;color:${textColor}">${s.arrivalTime || '—'}</div>
+          <div style="font-size:15px;font-weight:700;color:${textColor}">${s.arrivalTime || '—'}–${s.departureTime || '—'}</div>
           <div style="font-size:12px;font-weight:600;color:${textColor}">${name}</div>
           ${badge ? `<div>${badge}</div>` : ''}
         </div>`;
@@ -2726,10 +2726,20 @@ ${pages}
                           </button>
                         )}
 
-                        {/* Slot rows */}
-                        {slots.map((slot, idx) =>
-                          renderSlotRow(d.day, shift, slot, idx, stations)
-                        )}
+                        {/* Slot rows — sorted by station order */}
+                        {(() => {
+                          const STATION_ORDER: Record<string, number> = { 'קופה 1': 1, 'קופה 2': 2, 'קופה 3': 3, 'קופה 4': 4, 'וולט': 5, 'התלמדות': 6, 'אחר': 7 };
+                          const indexed = slots.map((slot, idx) => ({ slot, idx }));
+                          indexed.sort((a, b) => {
+                            // Locked (Miya) always first
+                            if (a.slot.locked && !b.slot.locked) return -1;
+                            if (!a.slot.locked && b.slot.locked) return 1;
+                            const oa = STATION_ORDER[a.slot.station] ?? 8;
+                            const ob = STATION_ORDER[b.slot.station] ?? 8;
+                            return oa - ob;
+                          });
+                          return indexed.map(({ slot, idx }) => renderSlotRow(d.day, shift, slot, idx, stations));
+                        })()}
 
                         {/* Add slot button */}
                         <button

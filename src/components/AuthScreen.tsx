@@ -13,6 +13,7 @@ export function AuthScreen() {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleLogin = async () => {
     setError('')
@@ -215,26 +216,39 @@ export function AuthScreen() {
               <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1A3008', marginBottom: 4 }}>
                 סיסמא
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="••••••••"
-                dir="ltr"
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: 8,
-                  border: '1px solid #C8DBA0',
-                  fontSize: 14,
-                  background: '#ffffff',
-                  boxSizing: 'border-box',
-                  outline: 'none',
-                }}
-                onFocus={e => (e.currentTarget.style.borderColor = '#5A8A1F')}
-                onBlur={e => (e.currentTarget.style.borderColor = '#C8DBA0')}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="••••••••"
+                  dir="ltr"
+                  style={{
+                    width: '100%',
+                    padding: '10px 36px 10px 12px',
+                    borderRadius: 8,
+                    border: '1px solid #C8DBA0',
+                    fontSize: 14,
+                    background: '#ffffff',
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                  }}
+                  onFocus={e => (e.currentTarget.style.borderColor = '#5A8A1F')}
+                  onBlur={e => (e.currentTarget.style.borderColor = '#C8DBA0')}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  style={{
+                    position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 16, padding: 0, color: '#5A8A1F', lineHeight: 1,
+                  }}
+                >
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
             </div>
 
             {/* Error */}

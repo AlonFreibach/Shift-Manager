@@ -97,6 +97,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
 
   // Fixed shift modal state
   const [fixedShiftModal, setFixedShiftModal] = useState(false);
+  const [editingFsIdx, setEditingFsIdx] = useState<number | null>(null);
   const [fsDay, setFsDay] = useState('ראשון');
   const [fsShift, setFsShift] = useState('בוקר');
   const [fsArrival, setFsArrival] = useState('');
@@ -366,9 +367,18 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
       arrivalTime: fsArrival || defaultArrival,
       departureTime: fsDeparture || defaultDeparture,
     };
-    updateDraft({ fixedShifts: [...((draftEmployee.fixedShifts as FixedShift[]) || []), newFs] });
+    const current = (draftEmployee.fixedShifts as FixedShift[]) || [];
+    if (editingFsIdx !== null) {
+      // Edit mode: replace the existing fixed shift
+      const updated = current.map((fs, i) => i === editingFsIdx ? newFs : fs);
+      updateDraft({ fixedShifts: updated });
+    } else {
+      // Add mode: append new fixed shift
+      updateDraft({ fixedShifts: [...current, newFs] });
+    }
     setFixedShiftModal(false);
     setFixedShiftDirty(false);
+    setEditingFsIdx(null);
     setFsDay('ראשון');
     setFsShift('בוקר');
     setFsArrival('');
@@ -753,14 +763,22 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', borderRadius: 6, padding: '6px 10px', fontSize: 13, marginBottom: 4 }}>
                         <span style={{ fontWeight: 500, color: '#1a4a2e' }}>{fs.day} — {fs.shift}</span>
                         <span style={{ color: '#6b7280' }}>({fs.arrivalTime}–{fs.departureTime})</span>
-                        <button onClick={() => {
-                          const arr = ((draft.fixedShifts as FixedShift[]) || []).filter((_, i) => i !== idx);
-                          updateDraft({ fixedShifts: arr });
-                        }} style={{ marginRight: 'auto', fontSize: 12, background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '0 4px', fontWeight: 700 }}>✕</button>
+                        <span style={{ marginRight: 'auto', display: 'flex', gap: 4 }}>
+                          <button onClick={() => {
+                            setEditingFsIdx(idx);
+                            setFsDay(fs.day); setFsShift(fs.shift);
+                            setFsArrival(fs.arrivalTime); setFsDeparture(fs.departureTime);
+                            setFixedShiftModal(true); setFixedShiftDirty(false);
+                          }} style={{ fontSize: 12, background: 'none', border: 'none', color: '#1a4a2e', cursor: 'pointer', padding: '0 4px' }}>✏️</button>
+                          <button onClick={() => {
+                            const arr = ((draft.fixedShifts as FixedShift[]) || []).filter((_, i) => i !== idx);
+                            updateDraft({ fixedShifts: arr });
+                          }} style={{ fontSize: 12, background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '0 4px', fontWeight: 700 }}>✕</button>
+                        </span>
                       </div>
                     ))}
                     <button
-                      onClick={() => { setFixedShiftModal(true); setFsDay('ראשון'); setFsShift('בוקר'); setFsArrival(''); setFsDeparture(''); }}
+                      onClick={() => { setEditingFsIdx(null); setFixedShiftModal(true); setFsDay('ראשון'); setFsShift('בוקר'); setFsArrival(''); setFsDeparture(''); setFixedShiftDirty(false); }}
                       style={{ width: '100%', marginTop: 4, padding: '6px 0', fontSize: 12, fontWeight: 600, background: 'transparent', color: '#1a4a2e', border: '1px solid #4a7c59', borderRadius: 6, cursor: 'pointer' }}
                     >
                       + הוסף משמרת קבועה
@@ -1484,7 +1502,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => { if (fixedShiftDirty) { setUnsavedTarget('fixedShift'); } else { setFixedShiftModal(false); } }}>
           <div style={{ background: 'white', borderRadius: 12, padding: 24, minWidth: 320, maxWidth: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1a4a2e', marginBottom: 16 }}>
-              הוסף משמרת קבועה
+              {editingFsIdx !== null ? 'ערוך משמרת קבועה' : 'הוסף משמרת קבועה'}
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div>
