@@ -312,6 +312,8 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
 
   // Unsaved changes tracking
   const [slotDirty, setSlotDirty] = useState(false);
+  const slotDirtyRef = useRef(false);
+  const setSlotDirtyBoth = (v: boolean) => { setSlotDirty(v); slotDirtyRef.current = v; };
   const [constraintsDirty, setConstraintsDirty] = useState(false);
   const [unsavedTarget, setUnsavedTarget] = useState<'slot' | 'constraints' | null>(null);
 
@@ -358,7 +360,13 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     if (!editingSlot) return;
     function handleClickOutside(e: MouseEvent) {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        closePopover(true);
+        if (slotDirtyRef.current) {
+          e.stopPropagation();
+          e.preventDefault();
+          setUnsavedTarget('slot');
+        } else {
+          closePopover(true);
+        }
       }
     }
     function recalcPos() {
@@ -2041,7 +2049,7 @@ ${pages}
       setPopoverPos({ top, left });
       setEditingSlot({ day, shift, slotIdx, isNew: isEmpty });
       setTempSlotData({ employeeId: slot.employeeId, arrivalTime: slot.arrivalTime, departureTime: slot.departureTime, station: slot.station });
-      setSlotDirty(false);
+      setSlotDirtyBoth(false);
       setPopoverValidationError(false);
     }
 
@@ -2151,19 +2159,19 @@ ${pages}
                     <div style={{ flex: 1 }}>
                       <label style={popoverLabelStyle}>התחלה:</label>
                       <input type="time" value={tempSlotData.arrivalTime}
-                        onChange={e => { setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value })); setSlotDirty(true); }}
+                        onChange={e => { setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value })); setSlotDirtyBoth(true); }}
                         style={popoverInputStyle} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={popoverLabelStyle}>סיום:</label>
                       <input type="time" value={tempSlotData.departureTime}
-                        onChange={e => { setTempSlotData(prev => ({ ...prev, departureTime: e.target.value })); setSlotDirty(true); }}
+                        onChange={e => { setTempSlotData(prev => ({ ...prev, departureTime: e.target.value })); setSlotDirtyBoth(true); }}
                         style={popoverInputStyle} />
                     </div>
                   </div>
                   <label style={popoverLabelStyle}>עמדה:</label>
                   <select value={tempSlotData.station}
-                    onChange={e => { setTempSlotData(prev => ({ ...prev, station: e.target.value })); setSlotDirty(true); }}
+                    onChange={e => { setTempSlotData(prev => ({ ...prev, station: e.target.value })); setSlotDirtyBoth(true); }}
                     style={{ ...popoverSelectStyle, marginBottom: 4 }}>
                     <option value="">— בחר —</option>
                     {stations.map(s => <option key={s} value={s}>{s}</option>)}
@@ -2235,7 +2243,7 @@ ${pages}
                         const newId = e.target.value !== '' ? e.target.value : null;
                         setTempSlotData(prev => ({ ...prev, employeeId: newId }));
                         setPopoverValidationError(false);
-                        setSlotDirty(true);
+                        setSlotDirtyBoth(true);
                       }}
                       style={{ ...popoverSelectStyle, marginBottom: 4, ...(tempIsDuplicate || (popoverValidationError && tempEmpId === null) ? { borderColor: '#ef4444' } : {}) }}
                     >
@@ -2263,7 +2271,7 @@ ${pages}
                         <input
                           type="time"
                           value={tempSlotData.arrivalTime}
-                          onChange={e => { setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value })); setPopoverValidationError(false); setSlotDirty(true); }}
+                          onChange={e => { setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value })); setPopoverValidationError(false); setSlotDirtyBoth(true); }}
                           style={{ ...popoverInputStyle, ...(popoverValidationError && !tempSlotData.arrivalTime ? { borderColor: '#ef4444' } : {}) }}
                         />
                         {popoverValidationError && !tempSlotData.arrivalTime && (
@@ -2275,7 +2283,7 @@ ${pages}
                         <input
                           type="time"
                           value={tempSlotData.departureTime}
-                          onChange={e => { setTempSlotData(prev => ({ ...prev, departureTime: e.target.value })); setPopoverValidationError(false); setSlotDirty(true); }}
+                          onChange={e => { setTempSlotData(prev => ({ ...prev, departureTime: e.target.value })); setPopoverValidationError(false); setSlotDirtyBoth(true); }}
                           style={{ ...popoverInputStyle, ...(popoverValidationError && !tempSlotData.departureTime ? { borderColor: '#ef4444' } : {}) }}
                         />
                         {popoverValidationError && !tempSlotData.departureTime && (
@@ -2288,7 +2296,7 @@ ${pages}
                     <label style={popoverLabelStyle}>עמדה:</label>
                     <select
                       value={tempSlotData.station}
-                      onChange={e => { setTempSlotData(prev => ({ ...prev, station: e.target.value })); setPopoverValidationError(false); setSlotDirty(true); }}
+                      onChange={e => { setTempSlotData(prev => ({ ...prev, station: e.target.value })); setPopoverValidationError(false); setSlotDirtyBoth(true); }}
                       style={{ ...popoverSelectStyle, marginBottom: 4, ...((popoverValidationError && !tempSlotData.station) || tempStationTaken ? { borderColor: '#ef4444' } : {}) }}
                     >
                       <option value="">— בחר —</option>
@@ -2740,6 +2748,7 @@ ${pages}
                             if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
                             setPopoverPos({ top, left });
                             setEditingSlot({ day: d.day, shift, slotIdx: slots.length, isNew: true });
+                            setSlotDirtyBoth(false);
                           }}
                           style={{
                             fontSize: isMobile ? 12 : 10, color: isCustom ? '#EF9F27' : '#4a7c59', background: 'transparent',
