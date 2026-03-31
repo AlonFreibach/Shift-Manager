@@ -7,6 +7,7 @@ import { LEGACY_ID_NAMES } from '../data/employees';
 import type { EmployeePrefs } from '../types';
 import { ISRAELI_HOLIDAYS } from '../data/holidays';
 import { supabase } from '../lib/supabaseClient';
+import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 
 interface WeeklyBoardProps {
   employees: Employee[];
@@ -308,6 +309,11 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   const [fixForm, setFixForm] = useState<{ employeeId: string; day: string; shift: string; arrivalTime: string; departureTime: string }>({ employeeId: '', day: 'ראשון', shift: 'בוקר', arrivalTime: '', departureTime: '' });
   const [hoursForm, setHoursForm] = useState<{ mode: 'full'|'employee'; day: string; shift: string; newArrival: string; newDeparture: string; employeeId: string }>({ mode: 'full', day: 'ראשון', shift: 'בוקר', newArrival: '', newDeparture: '', employeeId: '' });
   const [minForm, setMinForm] = useState<{ day: string; shift: string; minCount: number }>({ day: 'ראשון', shift: 'בוקר', minCount: 2 });
+
+  // Unsaved changes tracking
+  const [slotDirty, setSlotDirty] = useState(false);
+  const [constraintsDirty, setConstraintsDirty] = useState(false);
+  const [unsavedTarget, setUnsavedTarget] = useState<'slot' | 'constraints' | null>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -2035,6 +2041,7 @@ ${pages}
       setPopoverPos({ top, left });
       setEditingSlot({ day, shift, slotIdx, isNew: isEmpty });
       setTempSlotData({ employeeId: slot.employeeId, arrivalTime: slot.arrivalTime, departureTime: slot.departureTime, station: slot.station });
+      setSlotDirty(false);
       setPopoverValidationError(false);
     }
 
@@ -2107,7 +2114,7 @@ ${pages}
             {/* Backdrop (mobile: dim overlay, desktop: transparent click catcher) */}
             <div
               style={{ position: 'fixed', inset: 0, zIndex: 9998, background: isMobile ? 'rgba(0,0,0,0.3)' : 'transparent' }}
-              onClick={() => closePopover(true)}
+              onClick={() => { if (slotDirty) { setUnsavedTarget('slot'); } else { closePopover(true); } }}
             />
             <div
               ref={popoverRef}
@@ -2129,7 +2136,7 @@ ${pages}
             >
               {/* X close button — closes without saving */}
               <button
-                onClick={() => closePopover(true)}
+                onClick={() => { if (slotDirty) { setUnsavedTarget('slot'); } else { closePopover(true); } }}
                 style={{ float: 'left', width: 22, height: 22, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', padding: 0, marginBottom: 4 }}
               >✕</button>
 
@@ -2144,19 +2151,19 @@ ${pages}
                     <div style={{ flex: 1 }}>
                       <label style={popoverLabelStyle}>התחלה:</label>
                       <input type="time" value={tempSlotData.arrivalTime}
-                        onChange={e => setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value }))}
+                        onChange={e => { setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value })); setSlotDirty(true); }}
                         style={popoverInputStyle} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={popoverLabelStyle}>סיום:</label>
                       <input type="time" value={tempSlotData.departureTime}
-                        onChange={e => setTempSlotData(prev => ({ ...prev, departureTime: e.target.value }))}
+                        onChange={e => { setTempSlotData(prev => ({ ...prev, departureTime: e.target.value })); setSlotDirty(true); }}
                         style={popoverInputStyle} />
                     </div>
                   </div>
                   <label style={popoverLabelStyle}>עמדה:</label>
                   <select value={tempSlotData.station}
-                    onChange={e => setTempSlotData(prev => ({ ...prev, station: e.target.value }))}
+                    onChange={e => { setTempSlotData(prev => ({ ...prev, station: e.target.value })); setSlotDirty(true); }}
                     style={{ ...popoverSelectStyle, marginBottom: 4 }}>
                     <option value="">— בחר —</option>
                     {stations.map(s => <option key={s} value={s}>{s}</option>)}
@@ -2175,7 +2182,7 @@ ${pages}
                       >שבץ מיה חזרה</button>
                     )}
                     <button
-                      onClick={() => closePopover(false)}
+                      onClick={() => { if (slotDirty) { setUnsavedTarget('slot'); } else { closePopover(false); } }}
                       style={{ width: '100%', padding: '6px 10px', fontSize: 12, fontWeight: 600, background: 'white', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 5, cursor: 'pointer' }}
                     >ביטול</button>
                     <button
@@ -2228,6 +2235,7 @@ ${pages}
                         const newId = e.target.value !== '' ? e.target.value : null;
                         setTempSlotData(prev => ({ ...prev, employeeId: newId }));
                         setPopoverValidationError(false);
+                        setSlotDirty(true);
                       }}
                       style={{ ...popoverSelectStyle, marginBottom: 4, ...(tempIsDuplicate || (popoverValidationError && tempEmpId === null) ? { borderColor: '#ef4444' } : {}) }}
                     >
@@ -2255,7 +2263,7 @@ ${pages}
                         <input
                           type="time"
                           value={tempSlotData.arrivalTime}
-                          onChange={e => { setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value })); setPopoverValidationError(false); }}
+                          onChange={e => { setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value })); setPopoverValidationError(false); setSlotDirty(true); }}
                           style={{ ...popoverInputStyle, ...(popoverValidationError && !tempSlotData.arrivalTime ? { borderColor: '#ef4444' } : {}) }}
                         />
                         {popoverValidationError && !tempSlotData.arrivalTime && (
@@ -2267,7 +2275,7 @@ ${pages}
                         <input
                           type="time"
                           value={tempSlotData.departureTime}
-                          onChange={e => { setTempSlotData(prev => ({ ...prev, departureTime: e.target.value })); setPopoverValidationError(false); }}
+                          onChange={e => { setTempSlotData(prev => ({ ...prev, departureTime: e.target.value })); setPopoverValidationError(false); setSlotDirty(true); }}
                           style={{ ...popoverInputStyle, ...(popoverValidationError && !tempSlotData.departureTime ? { borderColor: '#ef4444' } : {}) }}
                         />
                         {popoverValidationError && !tempSlotData.departureTime && (
@@ -2280,7 +2288,7 @@ ${pages}
                     <label style={popoverLabelStyle}>עמדה:</label>
                     <select
                       value={tempSlotData.station}
-                      onChange={e => { setTempSlotData(prev => ({ ...prev, station: e.target.value })); setPopoverValidationError(false); }}
+                      onChange={e => { setTempSlotData(prev => ({ ...prev, station: e.target.value })); setPopoverValidationError(false); setSlotDirty(true); }}
                       style={{ ...popoverSelectStyle, marginBottom: 4, ...((popoverValidationError && !tempSlotData.station) || tempStationTaken ? { borderColor: '#ef4444' } : {}) }}
                     >
                       <option value="">— בחר —</option>
@@ -3615,11 +3623,12 @@ ${pages}
           min:   { label: 'מינימום', labelPlural: 'מינימום', color: '#15803d', bg: '#dcfce7' },
         };
 
-        const removeConstraint = (id: string) => setSchedulingConstraints(prev => prev.filter(c => c.id !== id));
+        const removeConstraint = (id: string) => { setSchedulingConstraints(prev => prev.filter(c => c.id !== id)); setConstraintsDirty(true); };
 
         const addConstraint = (c: SchedulingConstraint) => {
           setSchedulingConstraints(prev => [...prev, c]);
           setAddingConstraintType(null);
+          setConstraintsDirty(true);
         };
 
         const describeConstraint = (c: SchedulingConstraint): string => {
@@ -3862,12 +3871,12 @@ ${pages}
         })();
 
         return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => { setShowConstraintsModal(false); setAddingConstraintType(null); }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => { if (constraintsDirty) { setUnsavedTarget('constraints'); } else { setShowConstraintsModal(false); setAddingConstraintType(null); } }}>
             <div onClick={e => e.stopPropagation()} dir="rtl" style={{ background: 'white', borderRadius: 14, padding: 24, width: '92%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1a4a2e' }}>הנחיות לשיבוץ</h2>
-                <button onClick={() => { setShowConstraintsModal(false); setAddingConstraintType(null); }} style={{ width: 28, height: 28, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>✕</button>
+                <button onClick={() => { if (constraintsDirty) { setUnsavedTarget('constraints'); } else { setShowConstraintsModal(false); setAddingConstraintType(null); } }} style={{ width: 28, height: 28, borderRadius: '50%', background: '#f5f0e8', border: 'none', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>✕</button>
               </div>
 
               {/* Week range */}
@@ -3918,13 +3927,14 @@ ${pages}
 
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid #e8e0d4', paddingTop: 14 }}>
-                <button onClick={() => { setShowConstraintsModal(false); setAddingConstraintType(null); }} style={{ padding: '8px 18px', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+                <button onClick={() => { if (constraintsDirty) { setUnsavedTarget('constraints'); } else { setShowConstraintsModal(false); setAddingConstraintType(null); } }} style={{ padding: '8px 18px', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
                   ביטול
                 </button>
                 <button
                   onClick={() => {
                     setShowConstraintsModal(false);
                     setAddingConstraintType(null);
+                    setConstraintsDirty(false);
                   }}
                   style={{ padding: '8px 22px', fontSize: 14, fontWeight: 700, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
                 >
@@ -4107,6 +4117,17 @@ ${pages}
           </div>
         );
       })()}
+      {/* Unsaved changes dialog */}
+      {unsavedTarget && (
+        <UnsavedChangesDialog
+          onDiscard={() => {
+            if (unsavedTarget === 'slot') { closePopover(true); }
+            else if (unsavedTarget === 'constraints') { setShowConstraintsModal(false); setAddingConstraintType(null); setConstraintsDirty(false); }
+            setUnsavedTarget(null);
+          }}
+          onCancel={() => setUnsavedTarget(null)}
+        />
+      )}
     </div>
   );
 }

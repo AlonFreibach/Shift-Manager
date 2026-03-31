@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import type { SupabaseEmployee } from '../lib/supabaseClient'
+import { UnsavedChangesDialog } from './UnsavedChangesDialog'
 
 interface CreateUserModalProps {
   employee: SupabaseEmployee
@@ -22,6 +23,10 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
   const [existingEmail, setExistingEmail] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [justCreated, setJustCreated] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [showUnsaved, setShowUnsaved] = useState(false)
+
+  const tryClose = () => { if (dirty && !existingPin) { setShowUnsaved(true); } else { onClose(); } }
 
   // Check for existing PIN on mount
   useEffect(() => {
@@ -128,6 +133,7 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
   }
 
   return (
+    <>
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.5)',
@@ -145,7 +151,7 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
       }}>
         {/* Close button */}
         <button
-          onClick={onClose}
+          onClick={tryClose}
           style={{
             position: 'absolute', left: 12, top: 12,
             width: 28, height: 28, borderRadius: '50%', background: '#f5f0e8',
@@ -257,7 +263,7 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
               <input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={e => { setEmail(e.target.value); setDirty(true); }}
                 placeholder="example@email.com"
                 dir="ltr"
                 style={{
@@ -294,5 +300,13 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
         )}
       </div>
     </div>
+    {showUnsaved && (
+      <UnsavedChangesDialog
+        onSave={() => { handleCreatePin(); setShowUnsaved(false); }}
+        onDiscard={() => { setShowUnsaved(false); onClose(); }}
+        onCancel={() => setShowUnsaved(false)}
+      />
+    )}
+    </>
   )
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Employee, FixedShift } from '../data/employees';
 import { CreateUserModal } from './CreateUserModal';
+import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 import { supabase } from '../lib/supabaseClient';
 import type { SupabaseEmployee } from '../lib/supabaseClient';
 
@@ -101,6 +102,13 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const [fsArrival, setFsArrival] = useState('');
   const [fsDeparture, setFsDeparture] = useState('');
 
+  // Unsaved changes tracking
+  const [wizardDirty, setWizardDirty] = useState(false);
+  const [cardEditDirty, setCardEditDirty] = useState(false);
+  const [vacationDirty, setVacationDirty] = useState(false);
+  const [fixedShiftDirty, setFixedShiftDirty] = useState(false);
+  const [unsavedTarget, setUnsavedTarget] = useState<'wizard' | 'cardEdit' | 'vacation' | 'fixedShift' | null>(null);
+
   const shiftOptions = Array.from({ length: 13 }, (_, i) => i); // 0..12
   const dayOptions = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
   const shiftTypeOptions = ['בוקר', 'ערב'];
@@ -111,6 +119,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     setWizardStep(1);
     setMagicLink('');
     setCopyFeedback('');
+    setWizardDirty(false);
     setShowModal(true);
   };
 
@@ -118,6 +127,22 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     setShowModal(false);
     setWizardStep(1);
     setMagicLink('');
+    setWizardDirty(false);
+  };
+
+  const tryCloseWizard = () => {
+    if (wizardDirty && wizardStep < 3) { setUnsavedTarget('wizard'); return; }
+    closeModal();
+  };
+
+  const updateFormData = (updates: Partial<AddFormData>) => {
+    setFormData(prev => ({ ...prev, ...updates }));
+    setWizardDirty(true);
+  };
+
+  const updateDraft = (updates: Partial<Employee>) => {
+    setDraftEmployee(prev => prev ? { ...prev, ...updates } : prev);
+    setCardEditDirty(true);
   };
 
   const handleSaveToSupabase = async () => {
@@ -245,6 +270,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
       vacationPeriods: emp.vacationPeriods.map(vp => ({ ...vp })),
       birthday: emp.birthday || '',
     });
+    setCardEditDirty(false);
   };
 
   const saveCardEdit = async () => {
@@ -293,6 +319,12 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const cancelCardEdit = () => {
     setEditingCardId(null);
     setDraftEmployee(null);
+    setCardEditDirty(false);
+  };
+
+  const tryCancelCardEdit = () => {
+    if (cardEditDirty) { setUnsavedTarget('cardEdit'); return; }
+    cancelCardEdit();
   };
 
   // ── Split active / former ──
@@ -311,8 +343,9 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const addVacationToDraft = () => {
     if (!vacationFrom || !vacationTo || !draftEmployee) return;
     const current = (draftEmployee.vacationPeriods || []) as { from: string; to: string }[];
-    setDraftEmployee({ ...draftEmployee, vacationPeriods: [...current, { from: vacationFrom, to: vacationTo }] });
+    updateDraft({ vacationPeriods: [...current, { from: vacationFrom, to: vacationTo }] });
     setVacationModal(null);
+    setVacationDirty(false);
     setVacationFrom('');
     setVacationTo('');
   };
@@ -320,7 +353,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const removeDraftVacation = (idx: number) => {
     if (!draftEmployee) return;
     const current = (draftEmployee.vacationPeriods || []) as { from: string; to: string }[];
-    setDraftEmployee({ ...draftEmployee, vacationPeriods: current.filter((_, i) => i !== idx) });
+    updateDraft({ vacationPeriods: current.filter((_, i) => i !== idx) });
   };
 
   const addFixedShiftToDraft = () => {
@@ -333,8 +366,9 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
       arrivalTime: fsArrival || defaultArrival,
       departureTime: fsDeparture || defaultDeparture,
     };
-    setDraftEmployee({ ...draftEmployee, fixedShifts: [...((draftEmployee.fixedShifts as FixedShift[]) || []), newFs] });
+    updateDraft({ fixedShifts: [...((draftEmployee.fixedShifts as FixedShift[]) || []), newFs] });
     setFixedShiftModal(false);
+    setFixedShiftDirty(false);
     setFsDay('ראשון');
     setFsShift('בוקר');
     setFsArrival('');
@@ -579,7 +613,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <input
                         type="text"
                         value={draft.name || ''}
-                        onChange={(e) => setDraftEmployee({ ...draft, name: e.target.value })}
+                        onChange={(e) => { updateDraft({ name: e.target.value }); }}
                         style={inputStyle}
                       />
                     </div>
@@ -591,7 +625,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                         <input
                           type="tel"
                           value={(draft.phone as string) || ''}
-                          onChange={(e) => setDraftEmployee({ ...draft, phone: e.target.value })}
+                          onChange={(e) => { updateDraft({ phone: e.target.value }); }}
                           placeholder="050-1234567"
                           dir="ltr"
                           style={inputStyle}
@@ -602,7 +636,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                         <input
                           type="email"
                           value={(draft.email as string) || ''}
-                          onChange={(e) => setDraftEmployee({ ...draft, email: e.target.value })}
+                          onChange={(e) => { updateDraft({ email: e.target.value }); }}
                           placeholder="example@email.com"
                           dir="ltr"
                           style={inputStyle}
@@ -616,7 +650,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                         <label style={labelStyle}>משמרות בשבוע:</label>
                         <select
                           value={draft.shiftsPerWeek ?? 3}
-                          onChange={(e) => setDraftEmployee({ ...draft, shiftsPerWeek: parseInt(e.target.value) })}
+                          onChange={(e) => { updateDraft({ shiftsPerWeek: parseInt(e.target.value) }); }}
                           style={selectStyle}
                         >
                           {shiftOptions.map(num => <option key={num} value={num}>{num}</option>)}
@@ -628,7 +662,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                           type="number"
                           min={0}
                           value={draft.seniority ?? 0}
-                          onChange={(e) => setDraftEmployee({ ...draft, seniority: parseInt(e.target.value) || 0 })}
+                          onChange={(e) => { updateDraft({ seniority: parseInt(e.target.value) || 0 }); }}
                           style={inputStyle}
                         />
                       </div>
@@ -641,19 +675,19 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                         <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                           <input type="radio" name={`friday_${employee.id}`} value="always"
                             checked={draft.fridayAvailability === 'always'}
-                            onChange={() => setDraftEmployee({ ...draft, fridayAvailability: 'always' })}
+                            onChange={() => { updateDraft({ fridayAvailability: 'always' }); }}
                           /> כל שישי
                         </label>
                         <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                           <input type="radio" name={`friday_${employee.id}`} value="never"
                             checked={draft.fridayAvailability === 'never'}
-                            onChange={() => setDraftEmployee({ ...draft, fridayAvailability: 'never' })}
+                            onChange={() => { updateDraft({ fridayAvailability: 'never' }); }}
                           /> לא
                         </label>
                         <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                           <input type="radio" name={`friday_${employee.id}`} value="biweekly"
                             checked={draft.fridayAvailability === 'biweekly'}
-                            onChange={() => setDraftEmployee({ ...draft, fridayAvailability: 'biweekly' })}
+                            onChange={() => { updateDraft({ fridayAvailability: 'biweekly' }); }}
                           /> אחת לשבועיים
                         </label>
                       </div>
@@ -664,7 +698,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <input
                         type="checkbox"
                         checked={draft.isTrainee || false}
-                        onChange={(e) => setDraftEmployee({ ...draft, isTrainee: e.target.checked })}
+                        onChange={(e) => { updateDraft({ isTrainee: e.target.checked }); }}
                         style={{ width: 16, height: 16, accentColor: '#c17f3b' }}
                       />
                       <label style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>מתלמדת (בהכשרה)</label>
@@ -676,7 +710,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <input
                         type="text"
                         value={(draft.birthday as string) || ''}
-                        onChange={(e) => setDraftEmployee({ ...draft, birthday: e.target.value })}
+                        onChange={(e) => { updateDraft({ birthday: e.target.value }); }}
                         placeholder="DD/MM"
                         dir="ltr"
                         style={inputStyle}
@@ -688,7 +722,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <label style={labelStyle}>סוג משמרת:</label>
                       <select
                         value={draft.shiftType || 'הכל'}
-                        onChange={(e) => setDraftEmployee({ ...draft, shiftType: e.target.value as any })}
+                        onChange={(e) => { updateDraft({ shiftType: e.target.value as any }); }}
                         style={selectStyle}
                       >
                         <option>הכל</option>
@@ -701,11 +735,11 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div>
                         <label style={labelStyle}>זמין מ:</label>
-                        <input type="date" value={draft.availableFromDate || ''} onChange={(e) => setDraftEmployee({ ...draft, availableFromDate: e.target.value })} style={{ ...inputStyle, fontSize: 11 }} />
+                        <input type="date" value={draft.availableFromDate || ''} onChange={(e) => { updateDraft({ availableFromDate: e.target.value }); }} style={{ ...inputStyle, fontSize: 11 }} />
                       </div>
                       <div>
                         <label style={labelStyle}>זמין עד:</label>
-                        <input type="date" value={draft.availableToDate || ''} onChange={(e) => setDraftEmployee({ ...draft, availableToDate: e.target.value })} style={{ ...inputStyle, fontSize: 11 }} />
+                        <input type="date" value={draft.availableToDate || ''} onChange={(e) => { updateDraft({ availableToDate: e.target.value }); }} style={{ ...inputStyle, fontSize: 11 }} />
                       </div>
                     </div>
                   </div>
@@ -721,7 +755,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                         <span style={{ color: '#6b7280' }}>({fs.arrivalTime}–{fs.departureTime})</span>
                         <button onClick={() => {
                           const arr = ((draft.fixedShifts as FixedShift[]) || []).filter((_, i) => i !== idx);
-                          setDraftEmployee({ ...draft, fixedShifts: arr });
+                          updateDraft({ fixedShifts: arr });
                         }} style={{ marginRight: 'auto', fontSize: 12, background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '0 4px', fontWeight: 700 }}>✕</button>
                       </div>
                     ))}
@@ -771,7 +805,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       שמור
                     </button>
                     <button
-                      onClick={cancelCardEdit}
+                      onClick={tryCancelCardEdit}
                       style={{ padding: '6px 14px', fontSize: 12, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
                     >
                       בטל
@@ -1065,7 +1099,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
             direction: 'rtl',
           }}>
             <button
-              onClick={closeModal}
+              onClick={tryCloseWizard}
               style={{
                 position: 'absolute', right: 12, top: 12,
                 width: 28, height: 28, borderRadius: '50%', background: '#f5f0e8',
@@ -1106,7 +1140,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     <input
                       type="text"
                       value={formData.name}
-                      onChange={e => setFormData({ ...formData, name: e.target.value })}
+                      onChange={e => updateFormData({ name: e.target.value })}
                       placeholder="הזן שם עובדת"
                       style={inputStyle}
                     />
@@ -1116,7 +1150,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     <input
                       type="tel"
                       value={formData.phone}
-                      onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                      onChange={e => updateFormData({ phone: e.target.value })}
                       placeholder="050-1234567"
                       dir="ltr"
                       style={inputStyle}
@@ -1127,7 +1161,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     <input
                       type="email"
                       value={formData.email}
-                      onChange={e => setFormData({ ...formData, email: e.target.value })}
+                      onChange={e => updateFormData({ email: e.target.value })}
                       placeholder="example@email.com"
                       dir="ltr"
                       style={inputStyle}
@@ -1138,7 +1172,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     <input
                       type="text"
                       value={formData.birthday}
-                      onChange={e => setFormData({ ...formData, birthday: e.target.value })}
+                      onChange={e => updateFormData({ birthday: e.target.value })}
                       placeholder="DD/MM"
                       dir="ltr"
                       style={inputStyle}
@@ -1146,7 +1180,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
-                  <button onClick={closeModal} style={{ padding: '8px 16px', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+                  <button onClick={tryCloseWizard} style={{ padding: '8px 16px', fontSize: 14, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
                     ביטול
                   </button>
                   <button
@@ -1178,7 +1212,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                         min={0}
                         max={12}
                         value={formData.shiftsPerWeek}
-                        onChange={e => setFormData({ ...formData, shiftsPerWeek: parseInt(e.target.value) || 0 })}
+                        onChange={e => updateFormData({ shiftsPerWeek: parseInt(e.target.value) || 0 })}
                         style={inputStyle}
                       />
                       <span style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, display: 'block' }}>
@@ -1191,7 +1225,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                         type="number"
                         min={0}
                         value={formData.seniority}
-                        onChange={e => setFormData({ ...formData, seniority: parseInt(e.target.value) || 0 })}
+                        onChange={e => updateFormData({ seniority: parseInt(e.target.value) || 0 })}
                         style={inputStyle}
                       />
                       <span style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, display: 'block' }}>
@@ -1204,9 +1238,9 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                   <div>
                     <label style={labelStyle}>סוג משמרת</label>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      {toggleBtn('הכל', formData.shiftType === 'all', () => setFormData({ ...formData, shiftType: 'all' }))}
-                      {toggleBtn('בוקר בלבד', formData.shiftType === 'morning', () => setFormData({ ...formData, shiftType: 'morning' }))}
-                      {toggleBtn('ערב בלבד', formData.shiftType === 'evening', () => setFormData({ ...formData, shiftType: 'evening' }))}
+                      {toggleBtn('הכל', formData.shiftType === 'all', () => updateFormData({ shiftType: 'all' }))}
+                      {toggleBtn('בוקר בלבד', formData.shiftType === 'morning', () => updateFormData({ shiftType: 'morning' }))}
+                      {toggleBtn('ערב בלבד', formData.shiftType === 'evening', () => updateFormData({ shiftType: 'evening' }))}
                     </div>
                   </div>
 
@@ -1214,9 +1248,9 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                   <div>
                     <label style={labelStyle}>עובדת בשישי</label>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      {toggleBtn('כל שישי', formData.friday === 'yes', () => setFormData({ ...formData, friday: 'yes' }))}
-                      {toggleBtn('אחת לשבועיים', formData.friday === 'biweekly', () => setFormData({ ...formData, friday: 'biweekly' }))}
-                      {toggleBtn('בכלל לא', formData.friday === 'no', () => setFormData({ ...formData, friday: 'no' }))}
+                      {toggleBtn('כל שישי', formData.friday === 'yes', () => updateFormData({ friday: 'yes' }))}
+                      {toggleBtn('אחת לשבועיים', formData.friday === 'biweekly', () => updateFormData({ friday: 'biweekly' }))}
+                      {toggleBtn('בכלל לא', formData.friday === 'no', () => updateFormData({ friday: 'no' }))}
                     </div>
                   </div>
 
@@ -1227,7 +1261,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <input
                         type="date"
                         value={formData.activeFrom}
-                        onChange={e => setFormData({ ...formData, activeFrom: e.target.value })}
+                        onChange={e => updateFormData({ activeFrom: e.target.value })}
                         style={inputStyle}
                       />
                     </div>
@@ -1236,7 +1270,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <input
                         type="date"
                         value={formData.activeUntil}
-                        onChange={e => setFormData({ ...formData, activeUntil: e.target.value })}
+                        onChange={e => updateFormData({ activeUntil: e.target.value })}
                         style={inputStyle}
                       />
                     </div>
@@ -1411,7 +1445,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
       )}
       {/* Vacation mini modal */}
       {vacationModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setVacationModal(null)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => { if (vacationDirty) { setUnsavedTarget('vacation'); } else { setVacationModal(null); } }}>
           <div style={{ background: 'white', borderRadius: 12, padding: 24, minWidth: 320, maxWidth: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1a4a2e', marginBottom: 16 }}>
               הוסף חופש — {employees.find(e => e.id === vacationModal.empId)?.name}
@@ -1419,15 +1453,15 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>מתאריך</label>
-                <input type="date" value={vacationFrom} onChange={e => setVacationFrom(e.target.value)} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                <input type="date" value={vacationFrom} onChange={e => { setVacationFrom(e.target.value); setVacationDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>עד תאריך</label>
-                <input type="date" value={vacationTo} onChange={e => setVacationTo(e.target.value)} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                <input type="date" value={vacationTo} onChange={e => { setVacationTo(e.target.value); setVacationDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <button onClick={() => setVacationModal(null)} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+              <button onClick={() => { if (vacationDirty) { setUnsavedTarget('vacation'); } else { setVacationModal(null); } }} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
                 ביטול
               </button>
               <button
@@ -1447,7 +1481,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
       )}
       {/* Fixed shift mini modal */}
       {fixedShiftModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setFixedShiftModal(false)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => { if (fixedShiftDirty) { setUnsavedTarget('fixedShift'); } else { setFixedShiftModal(false); } }}>
           <div style={{ background: 'white', borderRadius: 12, padding: 24, minWidth: 320, maxWidth: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1a4a2e', marginBottom: 16 }}>
               הוסף משמרת קבועה
@@ -1455,30 +1489,30 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>יום</label>
-                <select value={fsDay} onChange={e => setFsDay(e.target.value)} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6 }}>
+                <select value={fsDay} onChange={e => { setFsDay(e.target.value); setFixedShiftDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6 }}>
                   {dayOptions.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>משמרת</label>
-                <select value={fsShift} onChange={e => setFsShift(e.target.value)} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6 }}>
+                <select value={fsShift} onChange={e => { setFsShift(e.target.value); setFixedShiftDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6 }}>
                   {(fsDay === 'שישי' ? ['בוקר'] : shiftTypeOptions).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>התחלה</label>
-                  <input type="time" value={fsArrival} onChange={e => setFsArrival(e.target.value)} placeholder={fsShift === 'בוקר' ? '07:00' : '14:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                  <input type="time" value={fsArrival} onChange={e => { setFsArrival(e.target.value); setFixedShiftDirty(true); }} placeholder={fsShift === 'בוקר' ? '07:00' : '14:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>סיום</label>
-                  <input type="time" value={fsDeparture} onChange={e => setFsDeparture(e.target.value)} placeholder={fsShift === 'בוקר' ? '14:00' : '21:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                  <input type="time" value={fsDeparture} onChange={e => { setFsDeparture(e.target.value); setFixedShiftDirty(true); }} placeholder={fsShift === 'בוקר' ? '14:00' : '21:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
                 </div>
               </div>
               <div style={{ fontSize: 11, color: '#94a3b8' }}>אם לא מוזן — ישתמש בשעות ברירת המחדל</div>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <button onClick={() => setFixedShiftModal(false)} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
+              <button onClick={() => { if (fixedShiftDirty) { setUnsavedTarget('fixedShift'); } else { setFixedShiftModal(false); } }} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, background: '#f5f0e8', color: '#475569', border: '1px solid #e8e0d4', borderRadius: 6, cursor: 'pointer' }}>
                 ביטול
               </button>
               <button
@@ -1490,6 +1524,20 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
             </div>
           </div>
         </div>
+      )}
+      {/* Unsaved changes dialog */}
+      {unsavedTarget && (
+        <UnsavedChangesDialog
+          onSave={unsavedTarget === 'wizard' ? undefined : unsavedTarget === 'cardEdit' ? () => { saveCardEdit(); setUnsavedTarget(null); } : unsavedTarget === 'vacation' ? () => { addVacationToDraft(); setUnsavedTarget(null); } : () => { addFixedShiftToDraft(); setUnsavedTarget(null); }}
+          onDiscard={() => {
+            if (unsavedTarget === 'wizard') { closeModal(); }
+            else if (unsavedTarget === 'cardEdit') { cancelCardEdit(); }
+            else if (unsavedTarget === 'vacation') { setVacationModal(null); setVacationFrom(''); setVacationTo(''); setVacationDirty(false); }
+            else if (unsavedTarget === 'fixedShift') { setFixedShiftModal(false); setFixedShiftDirty(false); }
+            setUnsavedTarget(null);
+          }}
+          onCancel={() => setUnsavedTarget(null)}
+        />
       )}
     </div>
   );

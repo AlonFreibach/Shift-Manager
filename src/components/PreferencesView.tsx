@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { isWeekLocked, toggleWeekUnlock, fetchUnlockedWeeks } from '../utils/submissionWindow'
+import { UnsavedChangesDialog } from './UnsavedChangesDialog'
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
 const SHIFT_TYPES = ['morning', 'evening'] as const
@@ -69,16 +70,22 @@ function ShiftEditModal({
 }) {
   const [shifts, setShifts] = useState<EditShifts>(initialShifts)
   const [note, setNote] = useState(initialNote)
+  const [dirty, setDirty] = useState(false)
+  const [showUnsaved, setShowUnsaved] = useState(false)
 
   function toggle(key: string) {
     setShifts(prev => ({ ...prev, [key]: !prev[key] }))
+    setDirty(true)
   }
 
+  const tryClose = () => { if (dirty) { setShowUnsaved(true); } else { onClose(); } }
+
   return (
+    <>
     <div style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-    }} onClick={onClose}>
+    }} onClick={tryClose}>
       <div
         dir="rtl"
         onClick={e => e.stopPropagation()}
@@ -149,7 +156,7 @@ function ShiftEditModal({
           <label style={{ fontSize: 12, fontWeight: 600, color: '#1A3008', display: 'block', marginBottom: 4 }}>הערה:</label>
           <textarea
             value={note}
-            onChange={e => setNote(e.target.value)}
+            onChange={e => { setNote(e.target.value); setDirty(true); }}
             rows={2}
             style={{
               width: '100%', borderRadius: 8, border: '1px solid #e8e0d4',
@@ -173,7 +180,7 @@ function ShiftEditModal({
             {saving ? 'שומר...' : 'שמור'}
           </button>
           <button
-            onClick={onClose}
+            onClick={tryClose}
             style={{
               padding: '8px 20px', borderRadius: 8,
               border: '1px solid #e8e0d4', background: 'white',
@@ -185,6 +192,14 @@ function ShiftEditModal({
         </div>
       </div>
     </div>
+    {showUnsaved && (
+      <UnsavedChangesDialog
+        onSave={() => { onSave(shifts, note); setShowUnsaved(false); }}
+        onDiscard={() => { setShowUnsaved(false); onClose(); }}
+        onCancel={() => setShowUnsaved(false)}
+      />
+    )}
+    </>
   )
 }
 
