@@ -302,6 +302,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   interface SyncWarning {
     day: string;
     issues: SyncIssue[];
+    editedShift: 'בוקר' | 'ערב';
   }
   const [syncWarningModal, setSyncWarningModal] = useState<SyncWarning | null>(null);
 
@@ -980,13 +981,9 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     return h * 60 + m;
   }
 
-  function minutesToTime(mins: number): string {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  }
 
-  function checkShiftSync(day: string, savedSchedule?: Schedule) {
+
+  function checkShiftSync(day: string, savedSchedule?: Schedule, editedShift?: 'בוקר' | 'ערב') {
     const sched = savedSchedule ?? schedule;
     const morningSlots = sched[`${day}_בוקר`] || [];
     const eveningSlots = sched[`${day}_ערב`] || [];
@@ -1030,7 +1027,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       });
     }
     if (issues.length > 0) {
-      setSyncWarningModal({ day, issues });
+      setSyncWarningModal({ day, issues, editedShift: editedShift || 'בוקר' });
     }
   }
 
@@ -2208,7 +2205,7 @@ ${pages}
                         closePopover(false);
                         setSlotSaveToast(true);
                         setTimeout(() => setSlotSaveToast(false), 2000);
-                        checkShiftSync(day, updatedSchedule);
+                        checkShiftSync(day, updatedSchedule, shift as 'בוקר' | 'ערב');
                       }}
                       style={{ width: '100%', padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
                     >שמור שינויים</button>
@@ -2335,7 +2332,7 @@ ${pages}
                             setSlotAddToast(addedName);
                             setTimeout(() => setSlotAddToast(null), 2000);
                           }
-                          checkShiftSync(day, updatedSchedule);
+                          checkShiftSync(day, updatedSchedule, shift as 'בוקר' | 'ערב');
                         }}
                         style={{ flex: 1, padding: '6px 10px', fontSize: 12, fontWeight: 600, background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}
                       >
@@ -3134,19 +3131,21 @@ ${pages}
                 <button
                   onClick={() => {
                     let updatedSched = { ...schedule };
+                    const edited = syncWarningModal.editedShift;
                     for (const issue of issues) {
-                      const avg = Math.round((timeToMinutes(issue.morningDeparture) + timeToMinutes(issue.eveningArrival)) / 2);
-                      const avgTime = minutesToTime(avg);
-                      // Fix morning departure
-                      const morningKey = `${day}_בוקר`;
-                      const morningSlots = [...(updatedSched[morningKey] || [])];
-                      morningSlots[issue.morningShiftSlotIdx] = { ...morningSlots[issue.morningShiftSlotIdx], departureTime: avgTime };
-                      updatedSched = { ...updatedSched, [morningKey]: morningSlots };
-                      // Fix evening arrival
-                      const eveningKey = `${day}_ערב`;
-                      const eveningSlots = [...(updatedSched[eveningKey] || [])];
-                      eveningSlots[issue.eveningShiftSlotIdx] = { ...eveningSlots[issue.eveningShiftSlotIdx], arrivalTime: avgTime };
-                      updatedSched = { ...updatedSched, [eveningKey]: eveningSlots };
+                      if (edited === 'בוקר') {
+                        // Miya changed morning departure → evening arrival adapts to it
+                        const eveningKey = `${day}_ערב`;
+                        const eveningSlots = [...(updatedSched[eveningKey] || [])];
+                        eveningSlots[issue.eveningShiftSlotIdx] = { ...eveningSlots[issue.eveningShiftSlotIdx], arrivalTime: issue.morningDeparture };
+                        updatedSched = { ...updatedSched, [eveningKey]: eveningSlots };
+                      } else {
+                        // Miya changed evening arrival → morning departure adapts to it
+                        const morningKey = `${day}_בוקר`;
+                        const morningSlots = [...(updatedSched[morningKey] || [])];
+                        morningSlots[issue.morningShiftSlotIdx] = { ...morningSlots[issue.morningShiftSlotIdx], departureTime: issue.eveningArrival };
+                        updatedSched = { ...updatedSched, [morningKey]: morningSlots };
+                      }
                     }
                     saveSchedule(updatedSched);
                     setSyncWarningModal(null);
