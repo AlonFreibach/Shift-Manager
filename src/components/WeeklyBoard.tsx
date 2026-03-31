@@ -688,8 +688,19 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     const savedCustomShifts = localStorage.getItem(`customShifts_${weekKey}`);
     setCustomShifts(savedCustomShifts ? JSON.parse(savedCustomShifts) : {});
 
-    const savedClosed = localStorage.getItem(`closedShifts_${weekKey}`);
-    setClosedShifts(savedClosed ? JSON.parse(savedClosed) : {});
+    // Fetch closed shifts from Supabase
+    void (async () => {
+      try {
+        const { data } = await supabase.from('closed_shifts').select('day, shift').eq('week_start', weekKey);
+        if (data) {
+          const map: Record<string, boolean> = {};
+          data.forEach((r: any) => { map[`${r.day}_${r.shift}`] = true; });
+          setClosedShifts(map);
+        }
+      } catch {
+        setClosedShifts({});
+      }
+    })();
 
     const prefForWeek: Record<string, EmployeePrefs> = {};
     employees.forEach(emp => {
@@ -832,18 +843,26 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
   }
 
   function toggleClosedShift(cellKey: string) {
-    const updated = { ...closedShifts, [cellKey]: !closedShifts[cellKey] };
-    if (!updated[cellKey]) delete updated[cellKey];
+    const [day, shift] = cellKey.split('_');
+    const isClosed = !!closedShifts[cellKey];
+    const updated = { ...closedShifts };
+    if (isClosed) {
+      delete updated[cellKey];
+      supabase.from('closed_shifts').delete().eq('week_start', weekKey).eq('day', day).eq('shift', shift);
+    } else {
+      updated[cellKey] = true;
+      supabase.from('closed_shifts').upsert({ week_start: weekKey, day, shift }, { onConflict: 'week_start,day,shift' });
+    }
     setClosedShifts(updated);
-    localStorage.setItem(`closedShifts_${weekKey}`, JSON.stringify(updated));
   }
 
   function closeDay(day: string) {
     const updated = { ...closedShifts };
     const dayShifts = WEEK_STRUCTURE.find(d => d.day === day)?.shifts || [];
+    const rows = dayShifts.map(shift => ({ week_start: weekKey, day, shift }));
     for (const shift of dayShifts) updated[`${day}_${shift}`] = true;
     setClosedShifts(updated);
-    localStorage.setItem(`closedShifts_${weekKey}`, JSON.stringify(updated));
+    supabase.from('closed_shifts').upsert(rows, { onConflict: 'week_start,day,shift' });
   }
 
   function openDay(day: string) {
@@ -851,7 +870,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     const dayShifts = WEEK_STRUCTURE.find(d => d.day === day)?.shifts || [];
     for (const shift of dayShifts) delete updated[`${day}_${shift}`];
     setClosedShifts(updated);
-    localStorage.setItem(`closedShifts_${weekKey}`, JSON.stringify(updated));
+    supabase.from('closed_shifts').delete().eq('week_start', weekKey).eq('day', day);
   }
 
   function saveCustomShifts(newCustomShifts: Record<string, CustomShiftDef[]>) {
@@ -2297,15 +2316,10 @@ ${pages}
                       const others: typeof employees = [];
                       for (const e of employees) {
                         if (e.id === miyaId) continue;
-                        const raw = localStorage.getItem(`preferences_${e.id}_${weekKey}`);
-                        if (raw) {
-                          try {
-                            const p = JSON.parse(raw);
-                            const dayPrefs = p[day] || [];
-                            if (dayPrefs.some((pr: any) => (typeof pr === 'string' ? pr : pr.shift) === shift)) {
-                              requested.push(e); continue;
-                            }
-                          } catch {}
+                        const empPrefs = preferences[e.id];
+                        const dayPrefs = empPrefs?.[day] || [];
+                        if (dayPrefs.some((pr: any) => (typeof pr === 'string' ? pr : pr.shift) === shift)) {
+                          requested.push(e); continue;
                         }
                         others.push(e);
                       }
