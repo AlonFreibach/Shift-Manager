@@ -425,7 +425,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   });
 
   const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 500, color: '#64748b', marginBottom: 4 };
-  const inputStyle: React.CSSProperties = { width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6 };
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid #e8e0d4', borderRadius: 6, color: '#1a1a1a' };
   const selectStyle: React.CSSProperties = { ...inputStyle };
 
   const infoRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 14 };
@@ -1471,11 +1471,11 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>מתאריך</label>
-                <input type="date" value={vacationFrom} onChange={e => { setVacationFrom(e.target.value); setVacationDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                <input type="date" value={vacationFrom} onChange={e => { setVacationFrom(e.target.value); setVacationDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr', color: '#1a1a1a' }} />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>עד תאריך</label>
-                <input type="date" value={vacationTo} onChange={e => { setVacationTo(e.target.value); setVacationDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                <input type="date" value={vacationTo} onChange={e => { setVacationTo(e.target.value); setVacationDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr', color: '#1a1a1a' }} />
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
@@ -1507,24 +1507,24 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>יום</label>
-                <select value={fsDay} onChange={e => { setFsDay(e.target.value); setFixedShiftDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6 }}>
+                <select value={fsDay} onChange={e => { setFsDay(e.target.value); setFixedShiftDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, color: '#1a1a1a' }}>
                   {dayOptions.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>משמרת</label>
-                <select value={fsShift} onChange={e => { setFsShift(e.target.value); setFixedShiftDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6 }}>
+                <select value={fsShift} onChange={e => { setFsShift(e.target.value); setFixedShiftDirty(true); }} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, color: '#1a1a1a' }}>
                   {(fsDay === 'שישי' ? ['בוקר'] : shiftTypeOptions).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>התחלה</label>
-                  <input type="time" value={fsArrival} onChange={e => { setFsArrival(e.target.value); setFixedShiftDirty(true); }} placeholder={fsShift === 'בוקר' ? '07:00' : '14:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                  <input type="time" value={fsArrival} onChange={e => { setFsArrival(e.target.value); setFixedShiftDirty(true); }} placeholder={fsShift === 'בוקר' ? '07:00' : '14:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr', color: '#1a1a1a' }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>סיום</label>
-                  <input type="time" value={fsDeparture} onChange={e => { setFsDeparture(e.target.value); setFixedShiftDirty(true); }} placeholder={fsShift === 'בוקר' ? '14:00' : '21:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr' }} />
+                  <input type="time" value={fsDeparture} onChange={e => { setFsDeparture(e.target.value); setFixedShiftDirty(true); }} placeholder={fsShift === 'בוקר' ? '14:00' : '21:00'} style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr', color: '#1a1a1a' }} />
                 </div>
               </div>
               <div style={{ fontSize: 11, color: '#94a3b8' }}>אם לא מוזן — ישתמש בשעות ברירת המחדל</div>

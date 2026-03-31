@@ -2171,7 +2171,7 @@ ${pages}
       ? '1px solid #4a7c59'
       : '1px solid #e8e0d4';
 
-    const popoverInputStyle: React.CSSProperties = { width: '100%', padding: '4px 6px', fontSize: 12, border: '1px solid #e8e0d4', borderRadius: 4 };
+    const popoverInputStyle: React.CSSProperties = { width: '100%', padding: '4px 6px', fontSize: 12, border: '1px solid #e8e0d4', borderRadius: 4, color: '#1a1a1a' };
     const popoverSelectStyle: React.CSSProperties = { ...popoverInputStyle };
     const popoverLabelStyle: React.CSSProperties = { fontSize: 11, color: '#64748b', display: 'block', marginBottom: 2 };
 
@@ -3316,7 +3316,7 @@ ${pages}
               readOnly
               value={whatsappFallback}
               onFocus={(e) => e.target.select()}
-              style={{ width: '100%', height: 300, fontSize: 13, padding: 12, border: '1px solid #e8e0d4', borderRadius: 8, resize: 'none', fontFamily: 'inherit', direction: 'rtl' }}
+              style={{ width: '100%', height: 300, fontSize: 13, padding: 12, border: '1px solid #e8e0d4', borderRadius: 8, resize: 'none', fontFamily: 'inherit', direction: 'rtl', color: '#1a1a1a' }}
             />
             <button
               onClick={() => setWhatsappFallback('')}
@@ -3947,7 +3947,7 @@ ${pages}
           close: schedulingConstraints.filter(c => c.type === 'close'),
         };
 
-        const modalSelectStyle: React.CSSProperties = { width: '100%', padding: '7px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4', background: 'white' };
+        const modalSelectStyle: React.CSSProperties = { width: '100%', padding: '7px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4', background: 'white', color: '#1a1a1a' };
         const modalInputStyle: React.CSSProperties = { ...modalSelectStyle };
         const modalLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 500, color: '#64748b', marginBottom: 4 };
 

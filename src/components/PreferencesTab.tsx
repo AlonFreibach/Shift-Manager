@@ -362,7 +362,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
                 updateDateRange(sunday, friday);
               }
             }}
-            style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4' }}
+            style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4', color: '#1a1a1a' }}
           />
           <span style={{ fontSize: 13, color: '#64748b' }}>עד תאריך</span>
           <input
@@ -372,7 +372,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
               const d = new Date(e.target.value + 'T00:00:00');
               if (!isNaN(d.getTime())) updateDateRange(fromDate, d);
             }}
-            style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4' }}
+            style={{ padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid #e8e0d4', color: '#1a1a1a' }}
           />
         </div>
       </div>
@@ -523,7 +523,7 @@ ${weekDays[5].dateStr} שישי`}
                 style={{
                   width: '100%', padding: 10, boxSizing: 'border-box', fontSize: 13,
                   border: `1px solid ${validationErrors.length > 0 ? '#E24B4A' : '#e8e0d4'}`,
-                  borderRadius: 6, fontFamily: 'inherit',
+                  borderRadius: 6, fontFamily: 'inherit', color: '#1a1a1a',
                 }}
                 placeholder={`${weekDays[0].dateStr} בוקר\n${weekDays[1].dateStr} ערב\n${weekDays[2].dateStr} בוקר/ערב\n${weekDays[5].dateStr} שישי`}
                 autoFocus

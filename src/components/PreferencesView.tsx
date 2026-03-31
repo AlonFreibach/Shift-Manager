@@ -160,7 +160,7 @@ function ShiftEditModal({
             rows={2}
             style={{
               width: '100%', borderRadius: 8, border: '1px solid #e8e0d4',
-              padding: 8, fontSize: 13, resize: 'vertical', fontFamily: 'inherit',
+              padding: 8, fontSize: 13, resize: 'vertical', fontFamily: 'inherit', color: '#1a1a1a',
             }}
           />
         </div>
@@ -290,7 +290,7 @@ function ManualEntryModal({
               style={{
                 width: '100%', padding: '8px 10px', borderRadius: 8,
                 border: '1px solid #e8e0d4', fontSize: 13, fontFamily: 'inherit',
-                background: 'white',
+                background: 'white', color: '#1a1a1a',
               }}
             >
               <option value="">— בחרי —</option>

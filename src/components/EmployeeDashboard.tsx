@@ -499,7 +499,7 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
                 style={{
                   width: '100%', padding: 10, fontSize: 13,
                   border: '1px solid #C8DBA0', borderRadius: 8,
-                  resize: 'vertical', background: isCurrentLocked ? '#f0f0f0' : 'white', boxSizing: 'border-box',
+                  resize: 'vertical', background: isCurrentLocked ? '#f0f0f0' : 'white', color: '#1a1a1a', boxSizing: 'border-box',
                   opacity: isCurrentLocked ? 0.6 : 1,
                 }}
               />
