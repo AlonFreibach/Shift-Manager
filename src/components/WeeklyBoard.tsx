@@ -158,6 +158,7 @@ function getStationBadge(station: string): string | null {
   if (station === 'וולט') return 'וו';
   if (station === 'התלמדות') return null;
   if (station === 'אחר') return 'אחר';
+  if (station.startsWith('אקסטרה')) return station.replace('אקסטרה ', 'X');
   return station;
 }
 
@@ -576,9 +577,11 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
             ...(day !== 'שישי' && weekVoltFlags[key] ? ['וולט'] : []),
           ];
           let stIdx = 0;
+          let extraN = 1;
           finalSchedule[key] = slots.map(slot => {
             if (slot.locked || slot.employeeId === null) return slot;
-            return { ...slot, station: stIdx < availableStations.length ? availableStations[stIdx++] : '' };
+            const st = stIdx < availableStations.length ? availableStations[stIdx++] : `אקסטרה ${extraN++}`;
+            return { ...slot, station: st };
           });
         }
       }
@@ -1452,9 +1455,10 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
           ...(day !== 'שישי' && voltFlags[key] ? ['וולט'] : []),
         ];
         let stIdx = 0;
+        let extraN = 1;
         for (let i = 0; i < slots.length; i++) {
           if (slots[i].locked || slots[i].employeeId === null) continue;
-          const assignedStation = stIdx < availableStations.length ? availableStations[stIdx++] : '';
+          const assignedStation = stIdx < availableStations.length ? availableStations[stIdx++] : `אקסטרה ${extraN++}`;
           slots[i] = { ...slots[i], station: assignedStation, voltResponsible: assignedStation === 'קופה 1' };
         }
       }
@@ -1766,7 +1770,12 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       ...(day !== 'שישי' && voltFlags[key] ? ['וולט'] : []),
     ];
     const usedStations = new Set(slots.filter(s => s.employeeId !== null && s.station).map(s => s.station));
-    return availableStations.find(st => !usedStations.has(st)) || '';
+    const free = availableStations.find(st => !usedStations.has(st));
+    if (free) return free;
+    // All regular stations taken — generate "אקסטרה N"
+    let n = 1;
+    while (usedStations.has(`אקסטרה ${n}`)) n++;
+    return `אקסטרה ${n}`;
   }
 
   // ── Auto-assign: find best candidate for a specific slot ──
@@ -1910,9 +1919,11 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
           ...(day !== 'שישי' && voltFlags[key] ? ['וולט'] : []),
         ];
         let stIdx = 0;
+        let extraN = 1;
         finalSchedule[key] = slots.map(slot => {
           if (slot.locked || slot.employeeId === null) return slot;
-          return { ...slot, station: stIdx < availableStations.length ? availableStations[stIdx++] : '' };
+          const st = stIdx < availableStations.length ? availableStations[stIdx++] : `אקסטרה ${extraN++}`;
+          return { ...slot, station: st };
         });
       }
     }
@@ -2031,8 +2042,9 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
         if (station === 'וולט') { bg = '#E6F1FB'; color = '#185FA5'; }
         else if (station === 'התלמדות') { bg = '#EEEDFE'; color = '#534AB7'; }
         else if (station === 'אחר') { bg = '#F1EFE8'; color = '#5F5E5A'; }
+        else if (station.startsWith('אקסטרה')) { bg = '#FEF3E2'; color = '#92400E'; }
         else if (!station.startsWith('קופה')) { bg = '#F1EFE8'; color = '#5F5E5A'; }
-        const label = station === 'קופה 1' ? 'ק1' : station === 'קופה 2' ? 'ק2' : station === 'קופה 3' ? 'ק3' : station === 'קופה 4' ? 'ק4' : station === 'וולט' ? 'וולט' : station === 'התלמדות' ? 'התלמדות' : station === 'אחר' ? 'אחר' : station;
+        const label = station === 'קופה 1' ? 'ק1' : station === 'קופה 2' ? 'ק2' : station === 'קופה 3' ? 'ק3' : station === 'קופה 4' ? 'ק4' : station === 'וולט' ? 'וולט' : station === 'התלמדות' ? 'התלמדות' : station === 'אחר' ? 'אחר' : station.startsWith('אקסטרה') ? station.replace('אקסטרה ', 'X') : station;
         return `<span style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;background:${bg};color:${color};font-weight:500;margin-top:1px">${label}</span>`;
       };
 
