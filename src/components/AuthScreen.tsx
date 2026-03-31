@@ -203,6 +203,7 @@ export function AuthScreen() {
                   border: '1px solid #C8DBA0',
                   fontSize: 14,
                   background: '#ffffff',
+                  color: '#1a1a1a',
                   boxSizing: 'border-box',
                   outline: 'none',
                 }}
@@ -377,6 +378,7 @@ export function AuthScreen() {
                   border: '1px solid #C8DBA0',
                   fontSize: 14,
                   background: '#ffffff',
+                  color: '#1a1a1a',
                   boxSizing: 'border-box',
                   outline: 'none',
                 }}
