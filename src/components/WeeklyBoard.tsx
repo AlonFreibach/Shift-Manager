@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { calculateFairnessScore, calculateFlexibilityScore } from '../utils/fairnessScore';
+import { calculateFairnessScore, calculateFlexibilityScore, calculateStabilityScore } from '../utils/fairnessScore';
 import { addFairnessEvents } from '../utils/fairnessAccumulator';
 import type { Employee } from '../data/employees';
 import { LEGACY_ID_NAMES } from '../data/employees';
@@ -206,25 +206,8 @@ interface HoursConstraint { type: 'hours'; id: string; day: string; shift: strin
 interface MinConstraint { type: 'min'; id: string; day: string; shift: string; minCount: number; }
 type SchedulingConstraint = BlockConstraint | LimitConstraint | FixConstraint | HoursConstraint | MinConstraint;
 
-function calculateNewStabilityScore(emp: Employee): number {
-  const now = new Date();
-  let seniority = 0;
-  if (emp.availableFromDate) {
-    const fromDate = new Date(emp.availableFromDate);
-    const months = (now.getTime() - fromDate.getTime()) / (30 * 24 * 60 * 60 * 1000);
-    seniority = Math.min(Math.max(months / 12, 0), 1.0);
-  }
-  let bonus = 1.0;
-  if (emp.availableToDate) {
-    const toDate = new Date(emp.availableToDate);
-    const months = (toDate.getTime() - now.getTime()) / (30 * 24 * 60 * 60 * 1000);
-    bonus = Math.min(Math.max(months / 12, 0), 1.0);
-  }
-  return ((seniority + bonus) / 2) * 4;
-}
-
 function calculateCompositeScore(emp: Employee): number {
-  const stability = calculateNewStabilityScore(emp) / 4;
+  const stability = calculateStabilityScore(emp) / 10;
   const flexibility = (calculateFlexibilityScore(emp) ?? 0) / 100;
   const fairness = calculateFairnessScore(emp);
   return 0.5 * stability + 0.4 * flexibility + 0.1 / (1 + fairness);

@@ -45,22 +45,27 @@ export function calculateFlexibilityScore(employee: Employee): number | null {
 }
 
 export function calculateStabilityScore(employee: Employee): number {
-  let score = 0;
   const now = new Date();
+  // Base score by proximity to expiry date (0-10 scale)
+  let base: number;
   if (!employee.availableToDate) {
-    score += 2;
+    base = 10;
   } else {
     const toDate = new Date(employee.availableToDate);
-    const months = (toDate.getTime() - now.getTime()) / (30 * 24 * 60 * 60 * 1000);
-    if (months > 6) score += 1;
+    const days = (toDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
+    if (days > 180) base = 8;
+    else if (days > 90) base = 5;
+    else if (days > 30) base = 2;
+    else base = 0;
   }
+  // Seniority bonus: +2 if employed over a year
+  let seniorityBonus = 0;
   if (employee.availableFromDate) {
     const fromDate = new Date(employee.availableFromDate);
-    const months = (now.getTime() - fromDate.getTime()) / (30 * 24 * 60 * 60 * 1000);
-    if (months > 12) score += 2;
-    else if (months > 6) score += 1;
+    const days = (now.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000);
+    if (days > 365) seniorityBonus = 2;
   }
-  return Math.min(score, 4);
+  return Math.min(base + seniorityBonus, 10);
 }
 
 function isEmployeeAvailableForShift(emp: Employee, day: string, shift: string, weekStart: Date): boolean {

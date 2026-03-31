@@ -24,7 +24,7 @@ export function FairnessTab({ employees }: FairnessTabProps) {
     const flexibility = calculateFlexibilityScore(enriched);
     const stability = calculateStabilityScore(enriched);
     const flexVal = flexibility ?? 0;
-    const composite = (fairness * 0.5) + ((flexVal / 100) * 0.3) + (stability * 0.2);
+    const composite = (fairness * 0.4) + ((flexVal / 100) * 0.25) + ((stability / 10) * 0.35);
     const hasFairnessHistory = enriched.fairnessHistory.length > 0;
     const hasAnyHistory = hasFairnessHistory || flexibility !== null;
     return { emp, fairness, flexibility, stability, composite, hasFairnessHistory, hasAnyHistory };
@@ -79,7 +79,7 @@ export function FairnessTab({ employees }: FairnessTabProps) {
                   <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', fontWeight: 600, color: '#1a4a2e' }}>{emp.name}</td>
                   <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: '#475569' }}>{fairness === 0 && !hasFairnessHistory ? '—' : fairness.toFixed(1)}</td>
                   <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: flexInfo.color, fontWeight: flexibility !== null && flexibility >= 150 ? 700 : 400 }}>{flexInfo.text}</td>
-                  <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: '#475569' }}>{stability}</td>
+                  <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', color: stability >= 8 ? '#1a4a2e' : stability >= 5 ? '#b45309' : '#dc2626', fontWeight: stability >= 8 ? 700 : 400 }}>{stability}</td>
                   <td style={{ padding: '10px 16px', borderBottom: '1px solid #e8e0d4', textAlign: 'center', fontWeight: 700, background: '#f0fdf4', color: '#1a4a2e' }}>{!hasAnyHistory ? '—' : composite.toFixed(2)}</td>
                 </tr>
               );
