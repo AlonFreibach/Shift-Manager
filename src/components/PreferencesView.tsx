@@ -567,9 +567,24 @@ export function PreferencesView({ onAutoSchedule }: Props) {
 
   async function handleUnlockWeek() {
     if (!confirm(`לפתוח את ההגשה לשבוע ${fmtDate(selectedSunday)} — ${fmtDate(selectedFriday)} מחדש?`)) return
-    await toggleWeekUnlock(weekStart, true)
-    setUnlockTrigger(n => n + 1)
-    setToast('השבוע נפתח מחדש')
+    const ok = await toggleWeekUnlock(weekStart, true)
+    if (ok) {
+      setUnlockTrigger(n => n + 1)
+      setToast('השבוע נפתח מחדש')
+    } else {
+      setToast('שגיאה בפתיחת השבוע')
+    }
+  }
+
+  async function handleLockWeek() {
+    if (!confirm(`לנעול את ההגשה לשבוע ${fmtDate(selectedSunday)} — ${fmtDate(selectedFriday)}?`)) return
+    const ok = await toggleWeekUnlock(weekStart, false)
+    if (ok) {
+      setUnlockTrigger(n => n + 1)
+      setToast('השבוע ננעל')
+    } else {
+      setToast('שגיאה בנעילת השבוע')
+    }
   }
 
   function buildWhatsAppText(): string {
@@ -729,31 +744,43 @@ export function PreferencesView({ onAutoSchedule }: Props) {
         {weekLocked ? (
           <>
             <span style={{
-              fontSize: 12, fontWeight: 600, color: '#e74c3c',
-              background: '#fff5f5', border: '1px solid #f5c6cb',
-              padding: '4px 12px', borderRadius: 999,
+              fontSize: 12, fontWeight: 600, color: '#6b7280',
+              background: '#f3f4f6', border: '1px solid #d1d5db',
+              padding: '4px 14px', borderRadius: 999,
             }}>
               🔒 נעול
             </span>
             <button
               onClick={handleUnlockWeek}
               style={{
-                fontSize: 11, fontWeight: 600, color: '#5A8A1F',
+                fontSize: 11, fontWeight: 600, color: '#1a4a2e',
                 background: '#EBF3D8', border: '1px solid #C8DBA0',
-                padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                padding: '4px 12px', borderRadius: 999, cursor: 'pointer',
               }}
             >
               פתח מחדש 🔓
             </button>
           </>
         ) : (
-          <span style={{
-            fontSize: 12, fontWeight: 600, color: '#2D5016',
-            background: '#EBF3D8', border: '1px solid #C8DBA0',
-            padding: '4px 12px', borderRadius: 999,
-          }}>
-            ✅ פתוח להגשה
-          </span>
+          <>
+            <span style={{
+              fontSize: 12, fontWeight: 600, color: '#1a4a2e',
+              background: '#dcfce7', border: '1px solid #86efac',
+              padding: '4px 14px', borderRadius: 999,
+            }}>
+              ✅ פתוח להגשה
+            </span>
+            <button
+              onClick={handleLockWeek}
+              style={{
+                fontSize: 11, fontWeight: 600, color: '#6b7280',
+                background: '#f3f4f6', border: '1px solid #d1d5db',
+                padding: '4px 12px', borderRadius: 999, cursor: 'pointer',
+              }}
+            >
+              נעל בחזרה 🔒
+            </button>
+          </>
         )}
       </div>
 

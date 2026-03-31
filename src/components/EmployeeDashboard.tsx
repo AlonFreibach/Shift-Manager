@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase, type SupabaseEmployee } from '../lib/supabaseClient'
-import { getSubmissionWindow, isWeekLocked, fetchUnlockedWeeks } from '../utils/submissionWindow'
+import { getSubmissionWindow, isWeekLocked, fetchUnlockedWeeks, UNLOCK_MARKER } from '../utils/submissionWindow'
 
 interface EmployeeDashboardProps {
   employee: SupabaseEmployee
@@ -187,7 +187,7 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
         .select('*')
         .gte('date', firstDate)
         .lte('date', lastDate)
-      if (specials) setSpecialShifts(specials)
+      if (specials) setSpecialShifts(specials.filter((s: any) => s.title !== UNLOCK_MARKER))
 
       // Existing preferences for this week
       const { data: prefs } = await supabase

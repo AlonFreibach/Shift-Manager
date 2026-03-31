@@ -12,6 +12,10 @@
 
 import { supabase } from '../lib/supabaseClient'
 
+// Marker title used in special_shifts table to store unlock flags
+const UNLOCK_MARKER = '__WEEK_UNLOCKED__'
+export { UNLOCK_MARKER }
+
 export function getSubmissionWindow() {
   const now = new Date()
   const day = now.getDay()
@@ -70,74 +74,69 @@ export function formatWeekStart(date: Date): string {
 }
 
 /**
- * Fetch unlocked weeks from Supabase (single source of truth).
+ * Fetch unlocked weeks from Supabase via special_shifts table.
+ * Uses the existing special_shifts table (which already has proper RLS access
+ * for both admin and employee sessions) to store unlock markers.
  */
 export async function fetchUnlockedWeeks(): Promise<string[]> {
   try {
     const { data, error } = await supabase
-      .from('unlocked_weeks')
-      .select('week_start')
+      .from('special_shifts')
+      .select('date')
+      .eq('title', UNLOCK_MARKER)
 
     if (error) {
       console.error('Failed to fetch unlocked weeks:', error.message)
-      // Fallback to localStorage for backwards compatibility
-      return getUnlockedWeeksLocal()
+      return []
     }
 
-    return (data || []).map(row => row.week_start)
-  } catch {
-    return getUnlockedWeeksLocal()
-  }
-}
-
-/**
- * Toggle week unlock status in Supabase.
- */
-export async function toggleWeekUnlock(weekStartISO: string, unlock: boolean): Promise<void> {
-  if (unlock) {
-    // Insert (ignore duplicate)
-    const { error } = await supabase
-      .from('unlocked_weeks')
-      .upsert({ week_start: weekStartISO }, { onConflict: 'week_start' })
-
-    if (error) {
-      console.error('Failed to unlock week:', error.message)
-      // Fallback to localStorage
-      toggleWeekUnlockLocal(weekStartISO, true)
-    }
-  } else {
-    const { error } = await supabase
-      .from('unlocked_weeks')
-      .delete()
-      .eq('week_start', weekStartISO)
-
-    if (error) {
-      console.error('Failed to lock week:', error.message)
-      toggleWeekUnlockLocal(weekStartISO, false)
-    }
-  }
-}
-
-// ── localStorage fallbacks (legacy, used only if Supabase fails) ──
-
-function getUnlockedWeeksLocal(): string[] {
-  try {
-    const raw = localStorage.getItem('unlocked_weeks')
-    return raw ? JSON.parse(raw) : []
+    return (data || []).map(row => row.date)
   } catch {
     return []
   }
 }
 
-function toggleWeekUnlockLocal(weekStartISO: string, unlock: boolean): void {
-  const current = getUnlockedWeeksLocal()
+/**
+ * Toggle week unlock status in Supabase via special_shifts table.
+ */
+export async function toggleWeekUnlock(weekStartISO: string, unlock: boolean): Promise<boolean> {
   if (unlock) {
-    if (!current.includes(weekStartISO)) {
-      current.push(weekStartISO)
+    // Check if already unlocked
+    const { data: existing } = await supabase
+      .from('special_shifts')
+      .select('id')
+      .eq('date', weekStartISO)
+      .eq('title', UNLOCK_MARKER)
+      .maybeSingle()
+
+    if (existing) return true // Already unlocked
+
+    const { error } = await supabase
+      .from('special_shifts')
+      .insert({
+        date: weekStartISO,
+        start_time: '00:00',
+        end_time: '00:00',
+        title: UNLOCK_MARKER,
+      })
+
+    if (error) {
+      console.error('Failed to unlock week:', error.message)
+      return false
     }
+    return true
   } else {
-    const idx = current.indexOf(weekStartISO)
-    if (idx >= 0) current.splice(idx, 1)
+    // Re-lock: delete the unlock marker
+    const { error } = await supabase
+      .from('special_shifts')
+      .delete()
+      .eq('date', weekStartISO)
+      .eq('title', UNLOCK_MARKER)
+
+    if (error) {
+      console.error('Failed to lock week:', error.message)
+      return false
+    }
+    return true
   }
-  localStorage.setItem('unlocked_weeks', JSON.stringify(current))
 }
