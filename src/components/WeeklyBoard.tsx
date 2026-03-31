@@ -1092,13 +1092,21 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     }
 
     // ── Phase 0: assign fixed shifts ──
+    // Only assign if: (a) employee submitted preferences, AND (b) preferences include that shift
     const empsWithFixed = employees.filter(e => e.id !== miyaId && e.fixedShifts && e.fixedShifts.length > 0);
     console.log(`[Phase 0] ${empsWithFixed.length} employees with fixedShifts:`, empsWithFixed.map(e => ({ id: e.id, name: e.name, fixedShifts: e.fixedShifts })));
     for (const emp of employees) {
       if (emp.id === miyaId) continue;
       if (!emp.fixedShifts || emp.fixedShifts.length === 0) continue;
+      // Rule 1: no preferences submitted → skip entirely
+      const empPrefs = prefs[emp.id];
+      if (!empPrefs || Object.values(empPrefs).flat().length === 0) continue;
       for (const fs of emp.fixedShifts) {
         if (!fs.day || !fs.shift) continue;
+        // Rule 3: fixed shift is guaranteed only if the employee requested that day+shift in preferences
+        const dayPrefs = empPrefs[fs.day] || [];
+        const requestedThisShift = dayPrefs.some((p: any) => p.shift === fs.shift);
+        if (!requestedThisShift) continue;
         const key = `${fs.day}_${fs.shift}`;
         const slots = workingSlots[key];
         if (!slots) continue;
