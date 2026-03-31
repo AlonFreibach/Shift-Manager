@@ -2256,10 +2256,9 @@ ${pages}
                           type="time"
                           value={tempSlotData.arrivalTime}
                           onChange={e => { setTempSlotData(prev => ({ ...prev, arrivalTime: e.target.value })); setPopoverValidationError(false); }}
-                          disabled={shift === 'בוקר' && !isMiyaFixed}
-                          style={{ ...popoverInputStyle, ...(shift === 'בוקר' && !isMiyaFixed ? { background: '#f5f5f5', color: '#94a3b8' } : {}), ...(popoverValidationError && !tempSlotData.arrivalTime && !(shift === 'בוקר' && !isMiyaFixed) ? { borderColor: '#ef4444' } : {}) }}
+                          style={{ ...popoverInputStyle, ...(popoverValidationError && !tempSlotData.arrivalTime ? { borderColor: '#ef4444' } : {}) }}
                         />
-                        {popoverValidationError && !tempSlotData.arrivalTime && !(shift === 'בוקר' && !isMiyaFixed) && (
+                        {popoverValidationError && !tempSlotData.arrivalTime && (
                           <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2 }}>שדה חובה</div>
                         )}
                       </div>
