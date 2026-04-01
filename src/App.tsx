@@ -9,16 +9,18 @@ import { FairnessTab } from './components/FairnessTab'
 import { AuthScreen } from './components/AuthScreen'
 import { EmployeeDashboard } from './components/EmployeeDashboard'
 import { PreferencesView } from './components/PreferencesView'
+import { WorkforceTab } from './components/WorkforceTab'
 import { JoinPage } from './pages/JoinPage'
 import './App.css'
 
-type TabId = 'board' | 'employees' | 'preferences' | 'fairness';
+type TabId = 'board' | 'employees' | 'preferences' | 'fairness' | 'workforce';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'board', label: 'לוח שיבוץ' },
   { id: 'employees', label: 'עובדות' },
   { id: 'preferences', label: 'העדפות שהוגשו' },
   { id: 'fairness', label: 'טבלת צדק' },
+  { id: 'workforce', label: 'כוח אדם' },
 ];
 
 function AppContent() {
@@ -226,6 +228,9 @@ function AppContent() {
         )}
         {currentTab === 'fairness' && (
           <FairnessTab employees={activeEmployees} />
+        )}
+        {currentTab === 'workforce' && (
+          <WorkforceTab employees={employees} />
         )}
       </main>
     </div>
