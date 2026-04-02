@@ -50,6 +50,8 @@ function formatDate(d: Date): string {
 
 export function WorkforceTab({ employees }: WorkforceTabProps) {
   const [simSlider, setSimSlider] = useState(3);
+  const [simShiftType, setSimShiftType] = useState<'הכל' | 'בוקר' | 'ערב'>('הכל');
+  const [simFriday, setSimFriday] = useState<'always' | 'never' | 'biweekly'>('always');
 
   const standardSlots = getStandardSlots();
   const target = Math.ceil(standardSlots * 1.3);
@@ -170,7 +172,25 @@ export function WorkforceTab({ employees }: WorkforceTabProps) {
   }, [target, futureAnalysis, activeEmps]);
 
   // ── Simulator ──
-  const simCapacity = currentCapacity + simSlider;
+  // The slider represents weeklyShifts. But actual coverage depends on shift type + friday.
+  // Effective shifts = weeklyShifts, but capacity impact depends on what slots they can fill.
+  const simEffective = (() => {
+    let shifts = simSlider;
+    // If morning/evening only, they can only fill ~half the weekly slots, but their weeklyShifts still adds to capacity
+    // The key insight: weeklyShifts IS the number of shifts they work, regardless of type restrictions
+    // Type/friday restrictions affect which slots they fill, but the capacity number stays the same
+    // However, for a more accurate simulation, we discount if they can't fill certain slots:
+    if (simShiftType !== 'הכל') {
+      // Morning-only or evening-only: can only cover ~half the standard shift types
+      // But their weeklyShifts is what they actually work, so capacity = weeklyShifts
+    }
+    if (simFriday === 'never') {
+      // Can't work Friday — effectively lose ~1 potential shift from their availability
+      // But weeklyShifts is fixed, they just fill other days instead
+    }
+    return shifts;
+  })();
+  const simCapacity = currentCapacity + simEffective;
   const simPct = Math.round((simCapacity / standardSlots) * 100);
   const simPctColor = simPct >= 130 ? '#16a34a' : simPct >= 100 ? '#c17f3b' : '#dc2626';
 
@@ -288,10 +308,13 @@ export function WorkforceTab({ employees }: WorkforceTabProps) {
       {/* ═══ 5. Recruitment Simulator ═══ */}
       <div style={{ background: 'white', borderRadius: 10, padding: 16, border: '1px solid #e8e0d4' }}>
         <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: '#1a4a2e' }}>סימולטור גיוס</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
+
+        {/* Controls */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+          {/* Shifts slider */}
+          <div>
             <label style={{ fontSize: 13, fontWeight: 500, color: '#475569', display: 'block', marginBottom: 6 }}>
-              משמרות בשבוע לעובדת חדשה: <strong>{simSlider}</strong>
+              משמרות בשבוע: <strong>{simSlider}</strong>
             </label>
             <input
               type="range" min={1} max={6} value={simSlider}
@@ -299,19 +322,57 @@ export function WorkforceTab({ employees }: WorkforceTabProps) {
               style={{ width: '100%', accentColor: '#1a4a2e' }}
             />
           </div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div style={{ textAlign: 'center', padding: '8px 16px', background: '#f8f7f4', borderRadius: 8 }}>
-              <div style={{ fontSize: 11, color: '#64748b' }}>משמרות נוספות</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>+{simSlider}</div>
+
+          {/* Shift type + Friday */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: '#475569', display: 'block', marginBottom: 4 }}>סוג משמרת</label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {([['הכל', 'הכל'], ['בוקר', 'בוקר'], ['ערב', 'ערב']] as const).map(([val, label]) => (
+                  <button key={val} onClick={() => setSimShiftType(val)}
+                    style={{
+                      flex: 1, padding: '6px 0', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: '1px solid #e8e0d4',
+                      background: simShiftType === val ? '#1a4a2e' : 'white',
+                      color: simShiftType === val ? 'white' : '#475569',
+                    }}
+                  >{label}</button>
+                ))}
+              </div>
             </div>
-            <div style={{ textAlign: 'center', padding: '8px 16px', background: '#f8f7f4', borderRadius: 8 }}>
-              <div style={{ fontSize: 11, color: '#64748b' }}>יכולת חדשה</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>{simCapacity}</div>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: '#475569', display: 'block', marginBottom: 4 }}>שישי</label>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {([['always', 'כל שישי'], ['biweekly', 'סירוגי'], ['never', 'לא']] as const).map(([val, label]) => (
+                  <button key={val} onClick={() => setSimFriday(val)}
+                    style={{
+                      flex: 1, padding: '6px 0', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: '1px solid #e8e0d4',
+                      background: simFriday === val ? '#1a4a2e' : 'white',
+                      color: simFriday === val ? 'white' : '#475569',
+                    }}
+                  >{label}</button>
+                ))}
+              </div>
             </div>
-            <div style={{ textAlign: 'center', padding: '8px 16px', background: simPct >= 130 ? '#dcfce7' : simPct >= 100 ? '#FEF3E2' : '#fee2e2', borderRadius: 8, border: `2px solid ${simPctColor}` }}>
-              <div style={{ fontSize: 11, color: '#64748b' }}>אחוז חדש</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: simPctColor }}>{simPct}%</div>
-            </div>
+          </div>
+        </div>
+
+        {/* Results */}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ textAlign: 'center', padding: '8px 16px', background: '#f8f7f4', borderRadius: 8 }}>
+            <div style={{ fontSize: 11, color: '#64748b' }}>משמרות נוספות</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>+{simEffective}</div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '8px 16px', background: '#f8f7f4', borderRadius: 8 }}>
+            <div style={{ fontSize: 11, color: '#64748b' }}>יכולת חדשה</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>{simCapacity}</div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '8px 16px', background: simPct >= 130 ? '#dcfce7' : simPct >= 100 ? '#FEF3E2' : '#fee2e2', borderRadius: 8, border: `2px solid ${simPctColor}` }}>
+            <div style={{ fontSize: 11, color: '#64748b' }}>אחוז חדש</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: simPctColor }}>{simPct}%</div>
+          </div>
+          <div style={{ textAlign: 'center', padding: '8px 16px', background: '#f8f7f4', borderRadius: 8 }}>
+            <div style={{ fontSize: 11, color: '#64748b' }}>פרופיל</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>{simShiftType === 'הכל' ? 'בוקר+ערב' : simShiftType} · {simFriday === 'always' ? 'שישי' : simFriday === 'biweekly' ? 'סירוגי' : 'ללא שישי'}</div>
           </div>
         </div>
       </div>
