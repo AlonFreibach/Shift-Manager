@@ -140,18 +140,34 @@ export function WorkforceTab({ employees }: WorkforceTabProps) {
     scales: { y: { min: 0, max: 200, ticks: { callback: (v: any) => `${v}%` } } },
   };
 
-  // ── Ideal profile ──
+  // ── Future capacity (after upcoming departures within 60 days) ──
+  const futureAnalysis = useMemo(() => {
+    const today = new Date();
+    const leaving = employees.filter(e => {
+      if (e.name === MIYA_NAME || e.isTrainee) return false;
+      if (!e.availableToDate) return false;
+      const endDate = new Date(e.availableToDate + 'T00:00:00');
+      const daysLeft = Math.ceil((endDate.getTime() - today.getTime()) / 86400000);
+      return daysLeft > 0 && daysLeft <= 60 && isActiveOn(e, today);
+    });
+    const leavingShifts = leaving.reduce((s, e) => s + e.shiftsPerWeek, 0);
+    const futureCapacity = currentCapacity - leavingShifts;
+    const futurePct = Math.round((futureCapacity / standardSlots) * 100);
+    const leavingNames = leaving.map(e => e.name);
+    return { futureCapacity, futurePct, leavingNames, leavingShifts };
+  }, [employees, currentCapacity, standardSlots]);
+
+  // ── Ideal profile (based on future capacity) ──
   const profile = useMemo(() => {
-    const gap = target - currentCapacity;
-    if (gap <= 0) return null;
-    // Check which shift types are weakest
+    const effectiveCapacity = futureAnalysis.futureCapacity;
+    const gap = target - effectiveCapacity;
     const morningOnly = activeEmps.filter(e => e.shiftType === 'בוקר').length;
     const eveningOnly = activeEmps.filter(e => e.shiftType === 'ערב').length;
     const shiftType = morningOnly < eveningOnly ? 'בוקר' : eveningOnly < morningOnly ? 'ערב' : 'הכל';
     const fridayCount = activeEmps.filter(e => e.fridayAvailability !== 'never').length;
     const needsFriday = fridayCount < 4;
-    return { shiftsNeeded: gap, shiftType, needsFriday };
-  }, [target, currentCapacity, activeEmps]);
+    return { shiftsNeeded: Math.max(0, gap), shiftType, needsFriday, needsHiring: gap > 0 };
+  }, [target, futureAnalysis, activeEmps]);
 
   // ── Simulator ──
   const simCapacity = currentCapacity + simSlider;
@@ -215,7 +231,41 @@ export function WorkforceTab({ employees }: WorkforceTabProps) {
       {/* ═══ 4. Ideal Profile ═══ */}
       <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20, border: '1px solid #e8e0d4' }}>
         <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: '#1a4a2e' }}>פרופיל עובדת מבוקשת</h3>
-        {profile ? (
+
+        {/* Future capacity line */}
+        <div style={{
+          padding: '8px 14px', borderRadius: 8, marginBottom: 12, fontSize: 13, fontWeight: 500,
+          background: futureAnalysis.futurePct >= 130 ? '#dcfce7' : futureAnalysis.futurePct >= 100 ? '#FEF3E2' : '#fee2e2',
+          color: futureAnalysis.futurePct >= 130 ? '#166534' : futureAnalysis.futurePct >= 100 ? '#92400E' : '#dc2626',
+          borderRight: `4px solid ${futureAnalysis.futurePct >= 130 ? '#16a34a' : futureAnalysis.futurePct >= 100 ? '#c17f3b' : '#dc2626'}`,
+        }}>
+          יכולת עתידית (אחרי עזיבות צפויות): <strong>{futureAnalysis.futurePct}%</strong>
+          {futureAnalysis.leavingNames.length > 0 && (
+            <span style={{ opacity: 0.8 }}> — {futureAnalysis.leavingNames.join(', ')} ({futureAnalysis.leavingShifts} משמרות)</span>
+          )}
+        </div>
+
+        {/* Recommendation */}
+        {(() => {
+          const fp = futureAnalysis.futurePct;
+          if (fp < 100) return (
+            <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 14, fontWeight: 700, background: '#fee2e2', color: '#dc2626', borderRight: '4px solid #dc2626' }}>
+              🔴 נדרש גיוס — צפי ירידה מתחת לקיבולת אחרי עזיבת {futureAnalysis.leavingNames.join(', ')}
+            </div>
+          );
+          if (fp < 130) return (
+            <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 14, fontWeight: 700, background: '#FEF3E2', color: '#92400E', borderRight: '4px solid #c17f3b' }}>
+              🟡 מומלץ לגייס — היכולת תרד ל-{fp}% אחרי עזיבת {futureAnalysis.leavingNames.length > 0 ? futureAnalysis.leavingNames.join(', ') : 'עובדות צפויות'}
+            </div>
+          );
+          return (
+            <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 14, fontWeight: 700, background: '#dcfce7', color: '#166534', borderRight: '4px solid #16a34a' }}>
+              ✓ אין צורך בגיוס — גם אחרי עזיבות צפויות היכולת תישאר {fp}%
+            </div>
+          );
+        })()}
+
+        {profile.needsHiring && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '10px 16px', fontSize: 13 }}>
               <div style={{ fontWeight: 600, color: '#1a4a2e' }}>משמרות נדרשות</div>
@@ -232,8 +282,6 @@ export function WorkforceTab({ employees }: WorkforceTabProps) {
               </div>
             </div>
           </div>
-        ) : (
-          <div style={{ fontSize: 14, color: '#16a34a', fontWeight: 600 }}>✓ כוח האדם מספיק — אין צורך בגיוס כרגע</div>
         )}
       </div>
 
