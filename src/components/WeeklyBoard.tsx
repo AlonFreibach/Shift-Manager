@@ -1586,7 +1586,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       }
 
       if (tAssigned === 0) {
-        traineeResults.push({ name: trainee.name, assigned: false, reason: 'לא נמצאה משמרת עם עובדת ותיקה' });
+        traineeResults.push({ name: trainee.name, assigned: false, reason: 'לא נמצאה משמרת עם עובד/ת ותיק/ה' });
       } else if (tAssigned < trainee.shiftsPerWeek) {
         traineeResults.push({ name: trainee.name, assigned: true, reason: `שובצה ל-${tAssigned} מתוך ${trainee.shiftsPerWeek} משמרות` });
       } else {
@@ -2037,7 +2037,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
     friday.setDate(weekStart.getDate() + 5);
     const lines: string[] = [];
 
-    lines.push(`🌿 נוי השדה — שוהם`);
+    lines.push(`נוי השדה — סניף שוהם`);
     lines.push(`📅 שבוע ${formatDate(weekStart)}–${formatDate(friday)}.${weekStart.getFullYear()}`);
     lines.push(`─────────────────`);
 
@@ -2074,7 +2074,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
               const station = slot.station ? ` (${slot.station})` : '';
               lines.push(`- ${slot.arrivalTime} ${name}${station}`);
             } else {
-              lines.push(`- ⚠️ חסר עובדת`);
+              lines.push(`- ⚠️ חסר עובד/ת`);
             }
           }
         }
@@ -2083,7 +2083,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
 
     lines.push('');
     lines.push(`─────────────────`);
-    lines.push(`הועתק מנוי השדה 📋`);
+    lines.push(`הועתק מנוי השדה — סניף שוהם 📋`);
 
     return lines.join('\n');
   }
@@ -2225,7 +2225,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
         pages += `<div class="week-page">
           <div style="background:#2D5016;border-radius:10px;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <div>
-              <div style="font-size:22px;font-weight:700;color:#F5EFD8">נוי השדה — שוהם</div>
+              <div style="font-size:22px;font-weight:700;color:#F5EFD8">נוי השדה — סניף שוהם</div>
               <div style="font-size:13px;color:#A8C97A">לוח שיבוץ משמרות</div>
             </div>
             <div style="font-size:15px;color:#F5EFD8;font-weight:500;text-align:left">${dateRange}</div>
@@ -2246,7 +2246,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
         </div>`;
       }
 
-      const html = `<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="UTF-8"><title>שיבוץ משמרות — נוי השדה</title>
+      const html = `<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="UTF-8"><title>שיבוץ משמרות — נוי השדה — סניף שוהם</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700&display=swap');
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2532,7 +2532,7 @@ ${pages}
                 return (
                   <>
                     {/* Employee — grouped by preference */}
-                    <label style={popoverLabelStyle}>עובדת:</label>
+                    <label style={popoverLabelStyle}>עובד/ת:</label>
                     {(() => {
                       const requested: typeof employees = [];
                       const others: typeof employees = [];
@@ -2560,7 +2560,7 @@ ${pages}
                           {requested.length > 0 && <optgroup label="ביקשו משמרת זו">
                             {requested.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                           </optgroup>}
-                          <optgroup label="שאר העובדות">
+                          <optgroup label="שאר העובדות/ים">
                             {others.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                           </optgroup>
                         </select>
@@ -2573,7 +2573,7 @@ ${pages}
                     )}
                     {tempOnVacation && (
                       <div style={{ fontSize: 10, color: '#c17f3b', marginBottom: 4, fontWeight: 600 }}>
-                        ⚠️ עובדת זו בחופש בתאריכים אלו
+                        ⚠️ עובד/ת זו בחופש בתאריכים אלו
                       </div>
                     )}
                     {popoverValidationError && !tempIsDuplicate && tempEmpId === null && (
@@ -2926,7 +2926,7 @@ ${pages}
           ? 'לא הוזנו העדפות לשבוע זה'
           : withPrefs.length === nonMiya.length
           ? `העדפות מוזנות לתאריכים ${rangeText}`
-          : `העדפות חלקיות — ${rangeText} (${withPrefs.length}/${nonMiya.length} עובדות)`;
+          : `העדפות חלקיות — ${rangeText} (${withPrefs.length}/${nonMiya.length} עובדות/ים)`;
 
         return (
           <div style={{
@@ -3294,7 +3294,7 @@ ${pages}
                     <div style={{ fontWeight: 700, marginBottom: 8, color: '#92400e', fontSize: 14 }}>
                       קשר: {tie.day} — {tie.shift} ({autoResultModal.ties.length} {autoResultModal.ties.length === 1 ? 'קשר נותר' : 'קשרים נותרו'})
                     </div>
-                    <div style={{ fontSize: 12, marginBottom: 10, color: '#64748b' }}>בחרי את העובדת המועדפת לשיבוץ:</div>
+                    <div style={{ fontSize: 12, marginBottom: 10, color: '#64748b' }}>בחרי את העובד/ת המועדף/ת לשיבוץ:</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {tie.candidates.map(c => (
                         <button
@@ -3391,7 +3391,7 @@ ${pages}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {autoResultModal.emptySlots.map(es => (
                       <div key={`${es.day}_${es.shift}`} style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 12px', fontSize: 12, color: '#991b1b' }}>
-                        אין עובדות זמינות ל{es.day} {es.shift}
+                        אין עובדות/ים זמינות/ים ל{es.day} {es.shift}
                       </div>
                     ))}
                   </div>
@@ -3745,7 +3745,7 @@ ${pages}
                   {hasNoPrefs && (
                     <>
                       <div style={{ fontWeight: 700, marginBottom: 8, color: '#92400e', fontSize: 13 }}>
-                        לא נמצאו העדפות עובדות לטווח הנבחר
+                        לא נמצאו העדפות עובדות/ים לטווח הנבחר
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button
@@ -4106,7 +4106,7 @@ ${pages}
             case 'limit': return `${empName(c.employeeId)} — ${c.shiftType} בלבד`;
             case 'fix': return `${empName(c.employeeId)} → ${c.day} ${c.shift}${c.arrivalTime ? ` (${c.arrivalTime}–${c.departureTime})` : ''}`;
             case 'hours': return `${c.day} ${c.shift} → ${c.newArrival}–${c.newDeparture}${c.employeeId ? ` (${empName(c.employeeId)})` : ''}`;
-            case 'min': return `${c.day} ${c.shift} — מינימום ${c.minCount} עובדות`;
+            case 'min': return `${c.day} ${c.shift} — מינימום ${c.minCount} עובדות/ים`;
             case 'stationHours': return `${c.day} ${c.shift} — ${c.station}: ${c.newArrival}–${c.newDeparture}`;
             case 'close': return `${c.day}${c.shift ? ` ${c.shift}` : ' (כל היום)'} — סגור`;
           }
@@ -4140,7 +4140,7 @@ ${pages}
             body = (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div>
-                  <label style={modalLabelStyle}>עובדת *</label>
+                  <label style={modalLabelStyle}>עובד/ת *</label>
                   <select value={blockForm.employeeId} onChange={e => setBlockForm(f => ({ ...f, employeeId: e.target.value }))} style={modalSelectStyle}>
                     <option value="">— בחרי —</option>
                     {activeEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -4167,7 +4167,7 @@ ${pages}
             body = (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div>
-                  <label style={modalLabelStyle}>עובדת *</label>
+                  <label style={modalLabelStyle}>עובד/ת *</label>
                   <select value={limitForm.employeeId} onChange={e => setLimitForm(f => ({ ...f, employeeId: e.target.value }))} style={modalSelectStyle}>
                     <option value="">— בחרי —</option>
                     {activeEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -4187,7 +4187,7 @@ ${pages}
             body = (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div>
-                  <label style={modalLabelStyle}>עובדת *</label>
+                  <label style={modalLabelStyle}>עובד/ת *</label>
                   <select value={fixForm.employeeId} onChange={e => setFixForm(f => ({ ...f, employeeId: e.target.value }))} style={modalSelectStyle}>
                     <option value="">— בחרי —</option>
                     {activeEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -4231,13 +4231,13 @@ ${pages}
                       משמרת שלמה
                     </button>
                     <button onClick={() => setHoursForm(f => ({ ...f, mode: 'employee' }))} style={{ flex: 1, padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: hoursForm.mode === 'employee' ? '2px solid #7c3aed' : '1px solid #e8e0d4', background: hoursForm.mode === 'employee' ? '#f3e8ff' : 'white', color: hoursForm.mode === 'employee' ? '#7c3aed' : '#64748b', cursor: 'pointer' }}>
-                      עובדת ספציפית
+                      עובד/ת ספציפי/ת
                     </button>
                   </div>
                 </div>
                 {hoursForm.mode === 'employee' && (
                   <div>
-                    <label style={modalLabelStyle}>עובדת *</label>
+                    <label style={modalLabelStyle}>עובד/ת *</label>
                     <select value={hoursForm.employeeId} onChange={e => setHoursForm(f => ({ ...f, employeeId: e.target.value }))} style={modalSelectStyle}>
                       <option value="">— בחרי —</option>
                       {activeEmps.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -4290,7 +4290,7 @@ ${pages}
                   </div>
                 </div>
                 <div>
-                  <label style={modalLabelStyle}>מינימום עובדות *</label>
+                  <label style={modalLabelStyle}>מינימום עובדות/ים *</label>
                   <select value={minForm.minCount} onChange={e => setMinForm(f => ({ ...f, minCount: Number(e.target.value) }))} style={modalSelectStyle}>
                     {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
@@ -4556,7 +4556,7 @@ ${pages}
 
               {/* Required count */}
               <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>מספר עובדות</label>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>מספר עובדות/ים</label>
                 <select
                   value={customShiftForm.requiredCount}
                   onChange={e => setCustomShiftForm(f => ({ ...f, requiredCount: Number(e.target.value) }))}

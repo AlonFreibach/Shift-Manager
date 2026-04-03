@@ -126,7 +126,7 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
   }
 
   const handleCopy = () => {
-    const text = `שלח/י לעובדת:\nאתר: ${APP_URL}\nאימייל: ${existingEmail}\nPIN: ${existingPin}`
+    const text = `שלח/י לעובד/ת:\nאתר: ${APP_URL}\nאימייל: ${existingEmail}\nPIN: ${existingPin}`
     navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -189,7 +189,7 @@ export function CreateUserModal({ employee, onClose }: CreateUserModalProps) {
                 </p>
               )}
               <p style={{ fontSize: 13, color: '#1a4a2e', fontWeight: 500, marginTop: 0, marginBottom: 12 }}>
-                פרטי כניסה לעובדת:
+                פרטי כניסה לעובד/ת:
               </p>
               <div style={{
                 fontSize: 14, lineHeight: 1.8, color: '#1a1a1a',

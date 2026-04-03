@@ -17,7 +17,7 @@ type TabId = 'board' | 'employees' | 'preferences' | 'fairness' | 'workforce';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'board', label: 'לוח שיבוץ' },
-  { id: 'employees', label: 'עובדות' },
+  { id: 'employees', label: 'עובדות/ים' },
   { id: 'preferences', label: 'העדפות שהוגשו' },
   { id: 'fairness', label: 'טבלת צדק' },
   { id: 'workforce', label: 'כוח אדם' },
@@ -133,8 +133,9 @@ function AppContent() {
         zIndex: 100,
       }}>
         <div className="header-inner" style={{ width: '100%', padding: '0 24px', display: 'flex', alignItems: 'center', height: 56 }}>
-          <div className="header-brand" style={{ fontWeight: 700, fontSize: 18, color: '#ffffff', marginLeft: 32, whiteSpace: 'nowrap' }}>
-            נוי השדה — שוהם
+          <div className="header-brand" style={{ fontWeight: 700, fontSize: 18, color: '#ffffff', marginLeft: 32, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <img src="/logo.png" style={{ height: 32, objectFit: 'contain' }} alt="לוגו נוי השדה" />
+            נוי השדה — סניף שוהם
           </div>
           <nav className="header-nav" style={{ display: 'flex', gap: 2, height: '100%' }}>
             {TABS.map(tab => (

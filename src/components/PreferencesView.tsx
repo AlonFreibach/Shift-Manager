@@ -283,7 +283,7 @@ function ManualEntryModal({
         {/* Employee Selector */}
         {!preselectedEmployeeId && (
           <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#1A3008', display: 'block', marginBottom: 4 }}>בחרי עובדת:</label>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#1A3008', display: 'block', marginBottom: 4 }}>בחרי עובד/ת:</label>
             <select
               value={selectedId}
               onChange={e => setSelectedId(e.target.value)}
@@ -317,7 +317,7 @@ function ManualEntryModal({
           />
         ) : (
           <p style={{ fontSize: 13, color: '#8b8b8b', textAlign: 'center', padding: 20 }}>
-            בחרי עובדת כדי להזין העדפות
+            בחרי עובד/ת כדי להזין העדפות
           </p>
         )}
       </div>
@@ -1051,7 +1051,7 @@ export function PreferencesView({ onAutoSchedule }: Props) {
                 fontWeight: 600, cursor: 'pointer',
               }}
             >
-              + הזן ידנית עבור עובדת
+              + הזן ידנית עבור עובד/ת
             </button>
           </div>
         </>

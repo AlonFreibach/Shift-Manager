@@ -219,7 +219,7 @@ export function WorkforceTab({ employees }: WorkforceTabProps) {
         <div style={cardStyle}>
           <div style={{ fontSize: 12, color: '#64748b', fontWeight: 500, marginBottom: 4 }}>יכולת בפועל</div>
           <div style={{ fontSize: 28, fontWeight: 700, color: '#1a4a2e' }}>{currentCapacity}</div>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>{activeEmps.length} עובדות פעילות</div>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>{activeEmps.length} עובדות/ים פעילות/ים</div>
         </div>
       </div>
 
@@ -250,7 +250,7 @@ export function WorkforceTab({ employees }: WorkforceTabProps) {
 
       {/* ═══ 4. Ideal Profile ═══ */}
       <div style={{ background: 'white', borderRadius: 10, padding: 16, marginBottom: 20, border: '1px solid #e8e0d4' }}>
-        <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: '#1a4a2e' }}>פרופיל עובדת מבוקשת</h3>
+        <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: '#1a4a2e' }}>פרופיל עובד/ת מבוקש/ת</h3>
 
         {/* Future capacity line */}
         <div style={{
@@ -275,7 +275,7 @@ export function WorkforceTab({ employees }: WorkforceTabProps) {
           );
           if (fp < 130) return (
             <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 14, fontWeight: 700, background: '#FEF3E2', color: '#92400E', borderRight: '4px solid #c17f3b' }}>
-              🟡 מומלץ לגייס — היכולת תרד ל-{fp}% אחרי עזיבת {futureAnalysis.leavingNames.length > 0 ? futureAnalysis.leavingNames.join(', ') : 'עובדות צפויות'}
+              🟡 מומלץ לגייס — היכולת תרד ל-{fp}% אחרי עזיבת {futureAnalysis.leavingNames.length > 0 ? futureAnalysis.leavingNames.join(', ') : 'עובדות/ים צפויות/ים'}
             </div>
           );
           return (

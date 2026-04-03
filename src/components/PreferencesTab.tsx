@@ -191,7 +191,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
       lines.push('');
     }
     lines.push(sep);
-    lines.push(`הוגשו: ${withPrefs.length}/${employees.length} עובדות`);
+    lines.push(`הוגשו: ${withPrefs.length}/${employees.length} עובדות/ים`);
     return lines.join('\n');
   }
 
@@ -327,7 +327,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={() => {
-              if (window.confirm('למחוק את כל ההעדפות של כל העובדות השבוע?')) {
+              if (window.confirm('למחוק את כל ההעדפות של כל העובדות/ים השבוע?')) {
                 employees.forEach(e => deletePreferencesForEmployee(e.id));
                 localStorage.removeItem('preferences_date_range');
               }
@@ -394,7 +394,7 @@ export function PreferencesTab({ employees, onAutoSchedule }: PreferencesTabProp
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
-              <th style={{ background: '#1a4a2e', color: 'white', padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>עובדת</th>
+              <th style={{ background: '#1a4a2e', color: 'white', padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>עובד/ת</th>
               <th style={{ background: '#1a4a2e', color: 'white', padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>העדפות</th>
               <th style={{ background: '#1a4a2e', color: 'white', padding: '10px 14px', textAlign: 'center', width: 180, fontWeight: 600 }}>פעולה</th>
             </tr>

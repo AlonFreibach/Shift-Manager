@@ -79,7 +79,7 @@ export function AuthScreen() {
 
   const badgeBg = mode === 'admin' ? '#2D5016' : '#5A8A1F'
   const badgeText = mode === 'admin' ? '#C8DBA0' : '#EBF3D8'
-  const btnLabel = mode === 'admin' ? 'כניסת מנהלת' : 'כניסת עובדת'
+  const btnLabel = mode === 'admin' ? 'כניסת מנהלת' : 'כניסת עובד/ת'
 
   const resetForm = () => {
     setMode(null)
@@ -114,8 +114,9 @@ export function AuthScreen() {
       >
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ fontSize: 26, fontWeight: 700, color: '#1A3008' }}>
-            🌿 נוי השדה
+          <div style={{ fontSize: 26, fontWeight: 700, color: '#1A3008', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <img src="/logo.png" style={{ height: 36, objectFit: 'contain' }} alt="לוגו נוי השדה" />
+            נוי השדה — סניף שוהם
           </div>
           <div style={{ fontSize: 13, color: '#5A8A1F', marginTop: 4, fontWeight: 500 }}>
             מערכת ניהול משמרות
@@ -161,7 +162,7 @@ export function AuthScreen() {
               onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
               onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
             >
-              כניסת עובדת
+              כניסת עובד/ת
             </button>
           </div>
         ) : mode === 'admin' ? (

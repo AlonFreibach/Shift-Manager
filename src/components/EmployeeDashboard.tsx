@@ -355,7 +355,7 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
       <header style={{ background: '#1A3008', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 52, maxWidth: 480, margin: '0 auto', padding: '0 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: '#C8DBA0' }}>🌿 נוי השדה</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#C8DBA0', display: 'flex', alignItems: 'center', gap: 6 }}><img src="/logo.png" style={{ height: 24, objectFit: 'contain' }} alt="" /> נוי השדה — סניף שוהם</span>
             <span style={{ fontSize: 13, color: '#C8DBA0', opacity: 0.8 }}>שלום, {employee.name} 👋</span>
           </div>
           <button
@@ -624,7 +624,7 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
               {hasExisting ? 'ההעדפות עודכנו בהצלחה!' : 'המשמרות הוגשו בהצלחה!'}
             </h2>
             <p style={{ color: '#EBF3D8', fontSize: 14, margin: '0 0 24px' }}>
-              מיה תקבל את ההעדפות שלך 🌿
+              מיה תקבל את ההעדפות שלך ✓
             </p>
             <button
               onClick={() => setShowSuccess(false)}

@@ -169,7 +169,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
       .single();
 
     if (error || !newEmp) {
-      alert('שגיאה בשמירת עובדת: ' + (error?.message || 'Unknown error'));
+      alert('שגיאה בשמירת עובד/ת: ' + (error?.message || 'Unknown error'));
       setSaving(false);
       return;
     }
@@ -181,7 +181,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
         .update({ email: formData.email.trim() })
         .eq('id', newEmp.id);
       if (emailError) {
-        alert('העובדת נוספה בהצלחה, אך לא ניתן לשמור את האימייל: ' + emailError.message);
+        alert('העובד/ת נוסף/ה בהצלחה, אך לא ניתן לשמור את האימייל: ' + emailError.message);
       }
     }
 
@@ -277,7 +277,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const saveCardEdit = async () => {
     if (!draftEmployee || editingCardId === null) return;
     if (!draftEmployee.name?.trim()) {
-      alert('אנא הזן שם עובדת');
+      alert('אנא הזן שם עובד/ת');
       return;
     }
 
@@ -455,7 +455,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   return (
     <div dir="rtl">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>עובדות</h2>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>עובדות/ים</h2>
         {subTab === 'active' && (
           <button
             onClick={openAddModal}
@@ -470,7 +470,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
               cursor: 'pointer',
             }}
           >
-            + הוסף עובדת
+            + הוסף עובד/ת
           </button>
         )}
       </div>
@@ -507,7 +507,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
       {subTab === 'former' && (
         formerEmployees.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8', fontSize: 14 }}>
-            אין עובדות שסיימו לעבוד
+            אין עובדות/ים שסיימו לעבוד
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
@@ -925,7 +925,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       <span style={badgeStyle('#FAEEDA', '#854F0B')}>כל שישי</span>
                     )}
                     {employee.fridayAvailability === 'never' && (
-                      <span style={badgeStyle('#F1EFE8', '#5F5E5A')}>לא עובדת</span>
+                      <span style={badgeStyle('#F1EFE8', '#5F5E5A')}>לא עובד/ת</span>
                     )}
                     {employee.fridayAvailability === 'biweekly' && (
                       <span style={badgeStyle('#E6F1FB', '#185FA5')}>שישי ס״ח</span>
@@ -1159,7 +1159,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                       type="text"
                       value={formData.name}
                       onChange={e => updateFormData({ name: e.target.value })}
-                      placeholder="הזן שם עובדת"
+                      placeholder="הזן שם עובד/ת"
                       style={inputStyle}
                     />
                   </div>
@@ -1264,7 +1264,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
 
                   {/* Friday toggle */}
                   <div>
-                    <label style={labelStyle}>עובדת בשישי</label>
+                    <label style={labelStyle}>עובד/ת בשישי</label>
                     <div style={{ display: 'flex', gap: 8 }}>
                       {toggleBtn('כל שישי', formData.friday === 'yes', () => updateFormData({ friday: 'yes' }))}
                       {toggleBtn('אחת לשבועיים', formData.friday === 'biweekly', () => updateFormData({ friday: 'biweekly' }))}
@@ -1359,7 +1359,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                   </div>
                 ) : (
                   <div style={{ background: '#FEF3C7', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#92400E' }}>
-                    לא הצלחנו ליצור קישור. נסי ליצור דרך כפתור 🔗 בכרטיס העובדת.
+                    לא הצלחנו ליצור קישור. נסי ליצור דרך כפתור 🔗 בכרטיס העובד/ת.
                   </div>
                 )}
 
@@ -1408,7 +1408,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                   קישור כניסה — {linkModal.emp.name}
                 </div>
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
-                  שלחי את הקישור לעובדת כדי שתוכל להגיש העדפות
+                  שלחי את הקישור לעובד/ת כדי שיוכל/תוכל להגיש העדפות
                 </div>
               </div>
             </div>
@@ -1448,7 +1448,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
             ) : (
               <>
                 <div style={{ background: '#FEF3C7', borderRadius: 8, padding: 12, marginBottom: 14, fontSize: 13, color: '#92400E' }}>
-                  לא נמצאה עובדת במערכת. ייתכן שהעובדת לא נוספה עדיין ל-Supabase.
+                  לא נמצא/ה עובד/ת במערכת. ייתכן שטרם נוסף/ה ל-Supabase.
                 </div>
                 <button
                   onClick={() => setLinkModal(null)}
