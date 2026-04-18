@@ -3,7 +3,8 @@ import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from 'chart.js'
 import type { Employee, AvailabilityForecast } from '../data/employees'
 import { supabase } from '../lib/supabaseClient'
-import { ISRAELI_HOLIDAYS, getDateWorkType } from '../data/holidays'
+import { ISRAELI_HOLIDAYS } from '../data/holidays'
+import { HiringRecommendation } from './HiringRecommendation'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -977,6 +978,9 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
           </div>
         )}
       </div>
+
+      {/* ═══ Hiring Recommendation ═══ */}
+      <HiringRecommendation employees={employees} />
 
       {/* ═══ Toast ═══ */}
       {toast && (
