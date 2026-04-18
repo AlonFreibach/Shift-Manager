@@ -50,7 +50,9 @@ export const ISRAELI_HOLIDAYS: IsraeliHoliday[] = [
   { date: '2026-04-21', name: 'ערב יום הזיכרון', type: 'memorial', demand: 'normal' },
   { date: '2026-04-22', name: 'יום הזיכרון / ערב יום העצמאות', type: 'holiday_eve', demand: 'high',
     demandNote: 'ערב יום העצמאות — ביקוש מוגבר לירקות/פירות לעל האש' },
-  { date: '2026-04-23', name: 'יום העצמאות', type: 'holiday' },
+  // Per Mia's decision: יום העצמאות — open as a regular work day (not closed)
+  { date: '2026-04-23', name: 'יום העצמאות', type: 'memorial', demand: 'high',
+    demandNote: 'יום העצמאות — פתוח רגיל (החלטה של מיה). ביקוש גבוה — על האש, פיקניקים' },
 
   // May — Lag BaOmer, Yom Yerushalayim, Shavuot
   { date: '2026-05-05', name: 'ל"ג בעומר', type: 'memorial', demand: 'normal',
@@ -120,7 +122,9 @@ export const ISRAELI_HOLIDAYS: IsraeliHoliday[] = [
   { date: '2027-05-05', name: 'יום השואה', type: 'memorial', demand: 'normal' },
   { date: '2027-05-10', name: 'ערב יום הזיכרון', type: 'memorial', demand: 'normal' },
   { date: '2027-05-11', name: 'יום הזיכרון / ערב יום העצמאות', type: 'holiday_eve', demand: 'high' },
-  { date: '2027-05-12', name: 'יום העצמאות', type: 'holiday' },
+  // Per Mia's decision: יום העצמאות — open as a regular work day
+  { date: '2027-05-12', name: 'יום העצמאות', type: 'memorial', demand: 'high',
+    demandNote: 'יום העצמאות — פתוח רגיל. ביקוש גבוה — על האש, פיקניקים' },
   { date: '2027-05-31', name: 'ערב שבועות', type: 'holiday_eve', demand: 'peak' },
   { date: '2027-06-01', name: 'שבועות', type: 'holiday' },
 
