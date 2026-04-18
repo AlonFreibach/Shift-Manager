@@ -10,7 +10,8 @@ export interface VacationPeriod {
   to: string;   // YYYY-MM-DD
 }
 
-export type { AvailabilityForecast } from '../lib/supabaseClient'
+import type { AvailabilityForecast } from '../lib/supabaseClient'
+export type { AvailabilityForecast }
 
 export interface Employee {
   id: string;
