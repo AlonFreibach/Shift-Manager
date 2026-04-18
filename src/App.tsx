@@ -9,21 +9,19 @@ import { FairnessTab } from './components/FairnessTab'
 import { AuthScreen } from './components/AuthScreen'
 import { EmployeeDashboard } from './components/EmployeeDashboard'
 import { PreferencesView } from './components/PreferencesView'
-import { WorkforceTab } from './components/WorkforceTab'
 import { ForecastTab } from './components/ForecastTab'
 import { JoinPage } from './pages/JoinPage'
 import './App.css'
 
-type TabId = 'board' | 'employees' | 'preferences' | 'fairness' | 'workforce' | 'forecast';
+type TabId = 'board' | 'employees' | 'preferences' | 'fairness' | 'forecast';
 
-const BETA_TABS = new Set(['workforce', 'forecast'])
+const BETA_TABS = new Set(['forecast'])
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'board', label: 'לוח שיבוץ' },
   { id: 'employees', label: 'עובדות/ים' },
   { id: 'preferences', label: 'העדפות שהוגשו' },
   { id: 'fairness', label: 'טבלת צדק' },
-  { id: 'workforce', label: 'כוח אדם' },
   { id: 'forecast', label: 'תחזית כ"א' },
 ];
 
@@ -236,9 +234,6 @@ function AppContent() {
         )}
         {currentTab === 'fairness' && (
           <FairnessTab employees={activeEmployees} />
-        )}
-        {currentTab === 'workforce' && (
-          <WorkforceTab employees={employees} />
         )}
         {currentTab === 'forecast' && (
           <ForecastTab employees={employees} onRefresh={refreshEmployees} />
