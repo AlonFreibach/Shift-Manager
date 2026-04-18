@@ -543,20 +543,26 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
               <th style={{
                 position: 'sticky', right: 0, zIndex: 3,
                 background: '#1a4a2e', color: 'white', padding: '12px 16px',
-                fontSize: 13, fontWeight: 600, textAlign: 'right', minWidth: 140,
+                fontSize: 13, fontWeight: 600, textAlign: 'right',
+                width: 140, minWidth: 140,
                 borderBottom: '2px solid #c17f3b',
               }}>שבוע</th>
               <th style={{
+                position: 'sticky', right: 140, zIndex: 3,
                 background: '#1a4a2e', color: 'white', padding: '10px 8px',
-                fontSize: 12, fontWeight: 600, textAlign: 'center', minWidth: 54,
+                fontSize: 12, fontWeight: 600, textAlign: 'center',
+                width: 60, minWidth: 60,
                 borderBottom: '2px solid #c17f3b',
                 borderRight: '2px solid rgba(255,255,255,0.2)',
               }}>רצוי</th>
               <th style={{
+                position: 'sticky', right: 200, zIndex: 3,
                 background: '#1a4a2e', color: 'white', padding: '10px 8px',
-                fontSize: 12, fontWeight: 600, textAlign: 'center', minWidth: 80,
+                fontSize: 12, fontWeight: 600, textAlign: 'center',
+                width: 80, minWidth: 80,
                 borderBottom: '2px solid #c17f3b',
-                borderRight: '1px solid rgba(255,255,255,0.15)',
+                borderRight: '2px solid rgba(255,255,255,0.2)',
+                boxShadow: '-2px 0 4px rgba(0,0,0,0.06)',
               }}>מצוי</th>
               {activeEmployees.map((emp, i) => (
                 <th key={emp.id} style={{
@@ -577,13 +583,13 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
               const std = getStandard(row.week)
               return (
                 <tr key={row.week.startISO}>
-                  {/* Week label */}
+                  {/* Week label — sticky */}
                   <td style={{
                     position: 'sticky', right: 0, zIndex: 2,
+                    width: 140, minWidth: 140,
                     background: rowBg, padding: '10px 14px',
                     fontSize: 13, fontWeight: 600, color: '#1a1a1a',
                     borderBottom: '1px solid #e8e0d4',
-                    boxShadow: '0 0 6px rgba(0,0,0,0.06)',
                   }}>
                     <div>{row.week.label}</div>
                     {row.week.holidays.length > 0 && (
@@ -593,10 +599,12 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                     )}
                   </td>
 
-                  {/* Standard (editable) */}
+                  {/* Standard (editable) — רצוי — sticky */}
                   <td
                     onClick={() => { setEditingStandard(row.week.startISO); setEditStdValue(String(std)) }}
                     style={{
+                      position: 'sticky', right: 140, zIndex: 2,
+                      width: 60, minWidth: 60,
                       padding: '8px 6px', textAlign: 'center', fontSize: 14, fontWeight: 700,
                       borderBottom: '1px solid #e8e0d4',
                       borderRight: '2px solid #e8e0d4',
@@ -637,12 +645,15 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                     )}
                   </td>
 
-                  {/* מצוי — forecast total + percentage */}
+                  {/* מצוי — forecast total + percentage — sticky */}
                   <td style={{
+                    position: 'sticky', right: 200, zIndex: 2,
+                    width: 80, minWidth: 80,
                     padding: '8px 10px', textAlign: 'center',
                     borderBottom: '1px solid #e8e0d4',
-                    borderRight: '1px solid #f0ebe3',
+                    borderRight: '2px solid #e8e0d4',
                     background: coverageColor(s.ratio),
+                    boxShadow: '-2px 0 4px rgba(0,0,0,0.06)',
                   }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: coverageTextColor(s.ratio) }}>
                       {s.total}
