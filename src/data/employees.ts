@@ -10,6 +10,8 @@ export interface VacationPeriod {
   to: string;   // YYYY-MM-DD
 }
 
+export type { AvailabilityForecast } from '../lib/supabaseClient'
+
 export interface Employee {
   id: string;
   name: string;
@@ -29,6 +31,12 @@ export interface Employee {
   fixedShifts?: FixedShift[];
   vacationPeriods: VacationPeriod[];
   birthday?: string; // DD/MM
+  availabilityForecasts?: AvailabilityForecast[];
+  expectedDeparture?: string;
+  employeeNote?: string;
+  trainingStart?: string;
+  shiftsStart?: string;
+  forecastOverrides?: Record<string, { shifts: number; friday: boolean }>;
 }
 
 // Legacy hardcoded employee names for migrating old localStorage schedule data

@@ -33,6 +33,12 @@ function supabaseToEmployee(emp: SupabaseEmployee): Employee {
     fixedShifts: Array.isArray(emp.fixed_shifts) ? emp.fixed_shifts : [],
     vacationPeriods: Array.isArray(emp.vacation_periods) ? emp.vacation_periods : [],
     birthday: emp.birthday || undefined,
+    availabilityForecasts: Array.isArray(emp.availability_forecasts) ? emp.availability_forecasts : [],
+    expectedDeparture: emp.expected_departure || '',
+    employeeNote: emp.employee_note || '',
+    trainingStart: emp.training_start || '',
+    shiftsStart: emp.shifts_start || '',
+    forecastOverrides: (emp.forecast_overrides as Record<string, { shifts: number; friday: boolean }>) || {},
   };
 }
 

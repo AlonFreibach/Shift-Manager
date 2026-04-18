@@ -301,6 +301,8 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     if (draftEmployee.fixedShifts !== undefined) updateData.fixed_shifts = draftEmployee.fixedShifts;
     if (draftEmployee.vacationPeriods !== undefined) updateData.vacation_periods = draftEmployee.vacationPeriods;
     if (draftEmployee.birthday !== undefined) updateData.birthday = (draftEmployee.birthday as string)?.trim() || null;
+    if ((draftEmployee as Record<string, unknown>).trainingStart !== undefined) updateData.training_start = (draftEmployee as Record<string, unknown>).trainingStart || null;
+    if ((draftEmployee as Record<string, unknown>).shiftsStart !== undefined) updateData.shifts_start = (draftEmployee as Record<string, unknown>).shiftsStart || null;
 
     const { error } = await supabase
       .from('employees')
@@ -744,7 +746,11 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     {/* Date Range */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div>
-                        <label style={labelStyle}>זמין מ:</label>
+                        <label style={labelStyle}>תחילת חפיפה:</label>
+                        <input type="date" value={(draft as Record<string, unknown>).trainingStart as string || ''} onChange={(e) => { updateDraft({ trainingStart: e.target.value } as Partial<Employee>); }} style={{ ...inputStyle, fontSize: 11 }} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>תחילת משמרות:</label>
                         <input type="date" value={draft.availableFromDate || ''} onChange={(e) => { updateDraft({ availableFromDate: e.target.value }); }} style={{ ...inputStyle, fontSize: 11 }} />
                       </div>
                       <div>

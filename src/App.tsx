@@ -10,10 +10,13 @@ import { AuthScreen } from './components/AuthScreen'
 import { EmployeeDashboard } from './components/EmployeeDashboard'
 import { PreferencesView } from './components/PreferencesView'
 import { WorkforceTab } from './components/WorkforceTab'
+import { ForecastTab } from './components/ForecastTab'
 import { JoinPage } from './pages/JoinPage'
 import './App.css'
 
-type TabId = 'board' | 'employees' | 'preferences' | 'fairness' | 'workforce';
+type TabId = 'board' | 'employees' | 'preferences' | 'fairness' | 'workforce' | 'forecast';
+
+const BETA_TABS = new Set(['workforce', 'forecast'])
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'board', label: 'לוח שיבוץ' },
@@ -21,6 +24,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'preferences', label: 'העדפות שהוגשו' },
   { id: 'fairness', label: 'טבלת צדק' },
   { id: 'workforce', label: 'כוח אדם' },
+  { id: 'forecast', label: 'תחזית כ"א' },
 ];
 
 function AppContent() {
@@ -165,6 +169,9 @@ function AppContent() {
                 }}
               >
                 {tab.label}
+                {BETA_TABS.has(tab.id) && (
+                  <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: '#c17f3b', color: 'white', marginRight: 4, verticalAlign: 'super' }}>BETA</span>
+                )}
               </button>
             ))}
           </nav>
@@ -232,6 +239,9 @@ function AppContent() {
         )}
         {currentTab === 'workforce' && (
           <WorkforceTab employees={employees} />
+        )}
+        {currentTab === 'forecast' && (
+          <ForecastTab employees={employees} onRefresh={refreshEmployees} />
         )}
       </main>
     </div>

@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { supabase, type SupabaseEmployee } from '../lib/supabaseClient'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { supabase, type SupabaseEmployee, type AvailabilityForecast, type ForecastExclusion } from '../lib/supabaseClient'
 import { getSubmissionWindow, isWeekLocked, fetchUnlockedWeeks, UNLOCK_MARKER } from '../utils/submissionWindow'
 
 interface EmployeeDashboardProps {
@@ -57,6 +57,95 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
   const [existingWeeks, setExistingWeeks] = useState<Set<string>>(new Set())
   const firstLoadDone = useRef(false)
   const [unlockedWeeks, setUnlockedWeeks] = useState<string[]>([])
+
+  // ═══ Future Availability State ═══
+  const [forecastOpen, setForecastOpen] = useState(() =>
+    localStorage.getItem('forecast_section_open') === 'true'
+  )
+  const [forecasts, setForecasts] = useState<AvailabilityForecast[]>(
+    Array.isArray(employee.availability_forecasts) ? employee.availability_forecasts : []
+  )
+  const [expectedDeparture, setExpectedDeparture] = useState(employee.expected_departure || '')
+  const [employeeNote, setEmployeeNote] = useState(employee.employee_note || '')
+  const [showForecastModal, setShowForecastModal] = useState(false)
+  const [editingForecastIdx, setEditingForecastIdx] = useState<number | null>(null)
+  const [forecastSaving, setForecastSaving] = useState(false)
+  const [forecastToast, setForecastToast] = useState<string | null>(null)
+
+  // Forecast modal form
+  const [fmFrom, setFmFrom] = useState('')
+  const [fmTo, setFmTo] = useState('')
+  const [fmShifts, setFmShifts] = useState(3)
+  const [fmFriday, setFmFriday] = useState(true)
+  const [fmReason, setFmReason] = useState<AvailabilityForecast['reason']>('אישי')
+  const [fmNote, setFmNote] = useState('')
+  const [fmExclusions, setFmExclusions] = useState<ForecastExclusion[]>([])
+  const [showExclusionForm, setShowExclusionForm] = useState(false)
+  const [exDate, setExDate] = useState('')
+  const [exShift, setExShift] = useState<ForecastExclusion['shift']>('הכל')
+  const [exNote, setExNote] = useState('')
+
+  const showToast = useCallback((msg: string) => {
+    setForecastToast(msg)
+    setTimeout(() => setForecastToast(null), 2200)
+  }, [])
+
+  const updateGuestStorage = useCallback((patch: Partial<SupabaseEmployee>) => {
+    const raw = localStorage.getItem('guest_employee')
+    if (raw) {
+      try {
+        const guest = JSON.parse(raw)
+        Object.assign(guest, patch)
+        localStorage.setItem('guest_employee', JSON.stringify(guest))
+      } catch { /* ignore */ }
+    }
+  }, [])
+
+  const saveForecastPeriods = useCallback(async (updated: AvailabilityForecast[]) => {
+    setForecastSaving(true)
+    const { error } = await supabase
+      .from('employees')
+      .update({ availability_forecasts: updated })
+      .eq('id', employee.id)
+    setForecastSaving(false)
+    if (!error) {
+      setForecasts(updated)
+      updateGuestStorage({ availability_forecasts: updated })
+      showToast('התקופות נשמרו בהצלחה ✓')
+    }
+  }, [employee.id, updateGuestStorage, showToast])
+
+  const saveExpectedDeparture = useCallback(async () => {
+    setForecastSaving(true)
+    const val = expectedDeparture || null
+    const { error } = await supabase
+      .from('employees')
+      .update({ expected_departure: val })
+      .eq('id', employee.id)
+    setForecastSaving(false)
+    if (!error) {
+      updateGuestStorage({ expected_departure: val })
+      showToast('תאריך עזיבה נשמר ✓')
+    }
+  }, [employee.id, expectedDeparture, updateGuestStorage, showToast])
+
+  const saveEmployeeNote = useCallback(async () => {
+    setForecastSaving(true)
+    const val = employeeNote || null
+    const { error } = await supabase
+      .from('employees')
+      .update({ employee_note: val })
+      .eq('id', employee.id)
+    setForecastSaving(false)
+    if (!error) {
+      updateGuestStorage({ employee_note: val })
+      showToast('הערה נשמרה ✓')
+    }
+  }, [employee.id, employeeNote, updateGuestStorage, showToast])
+
+  useEffect(() => {
+    localStorage.setItem('forecast_section_open', String(forecastOpen))
+  }, [forecastOpen])
 
   // Fetch unlocked weeks from Supabase on mount
   useEffect(() => {
@@ -485,6 +574,168 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
               )
             })}
 
+            {/* ═══ Future Availability Section ═══ */}
+            <div style={{ marginTop: 12 }}>
+              <button
+                onClick={() => setForecastOpen(p => !p)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: '#FEF3E2', border: '1px solid #F5D5A0', borderRadius: forecastOpen ? '12px 12px 0 0' : 12,
+                  padding: '12px 16px', cursor: 'pointer',
+                }}
+              >
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#c17f3b' }}>
+                  הזמינות שלי בתקופות הקרובות
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#c17f3b', color: 'white', marginRight: 8, verticalAlign: 'middle' }}>BETA</span>
+                </span>
+                <span style={{ fontSize: 18, color: '#c17f3b', transform: forecastOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+              </button>
+
+              {forecastOpen && (
+                <div style={{
+                  background: '#FFFCF5', border: '1px solid #F5D5A0', borderTop: 'none',
+                  borderRadius: '0 0 12px 12px', padding: 16,
+                }}>
+
+                  {/* --- Forecast periods list --- */}
+                  <div style={{ marginBottom: 16 }}>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1A3008', marginBottom: 8 }}>
+                      תקופות עם זמינות שונה מהרגיל
+                    </span>
+
+                    {forecasts.length === 0 ? (
+                      <div style={{ fontSize: 13, color: '#9ca3af', padding: '8px 0' }}>
+                        לא הוזנו תקופות. הוסיפי תקופה אם יש שינוי צפוי בזמינות שלך.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {forecasts.map((fc, idx) => (
+                          <div key={idx} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            background: '#FEF3E2', borderRadius: 8, padding: '10px 12px',
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: '#c17f3b' }}>
+                                {fc.period_from.split('-').reverse().join('/')} — {fc.period_to.split('-').reverse().join('/')}
+                              </div>
+                              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                                {fc.expected_shifts} משמרות/שבוע · שישי: {fc.friday_available ? 'כן' : 'לא'} · {fc.reason}
+                                {fc.note ? ` · ${fc.note}` : ''}
+                              </div>
+                              {fc.exclusions && fc.exclusions.length > 0 && (
+                                <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>
+                                  {fc.exclusions.length} ימים חסומים: {fc.exclusions.map(ex =>
+                                    `${ex.date.split('-').reverse().join('/')}${ex.shift !== 'הכל' ? ` (${ex.shift})` : ''}`
+                                  ).join(', ')}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, marginRight: 8 }}>
+                              <button
+                                onClick={() => {
+                                  setEditingForecastIdx(idx)
+                                  setFmFrom(fc.period_from); setFmTo(fc.period_to)
+                                  setFmShifts(fc.expected_shifts); setFmFriday(fc.friday_available)
+                                  setFmReason(fc.reason); setFmNote(fc.note || '')
+                                  setFmExclusions(fc.exclusions || []); setShowExclusionForm(false)
+                                  setShowForecastModal(true)
+                                }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: '2px 4px' }}
+                              >✏️</button>
+                              <button
+                                onClick={() => {
+                                  const updated = forecasts.filter((_, i) => i !== idx)
+                                  saveForecastPeriods(updated)
+                                }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: '2px 4px', color: '#dc2626' }}
+                              >✕</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setEditingForecastIdx(null)
+                        setFmFrom(''); setFmTo(''); setFmShifts(3); setFmFriday(true)
+                        setFmReason('אישי'); setFmNote('')
+                        setFmExclusions([]); setShowExclusionForm(false)
+                        setShowForecastModal(true)
+                      }}
+                      style={{
+                        width: '100%', marginTop: 8, padding: '8px 0', fontSize: 13, fontWeight: 600,
+                        background: 'transparent', border: '1px dashed #c17f3b', borderRadius: 8,
+                        color: '#c17f3b', cursor: 'pointer',
+                      }}
+                    >
+                      + הוסף תקופה
+                    </button>
+                  </div>
+
+                  {/* --- Expected departure --- */}
+                  <div style={{ marginBottom: 16 }}>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1A3008', marginBottom: 6 }}>
+                      תאריך עזיבה צפוי
+                    </span>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input
+                        type="date"
+                        value={expectedDeparture}
+                        onChange={e => setExpectedDeparture(e.target.value)}
+                        style={{
+                          flex: 1, padding: '8px 10px', fontSize: 14,
+                          border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr', color: '#1a1a1a',
+                        }}
+                      />
+                      {expectedDeparture && (
+                        <button
+                          onClick={() => setExpectedDeparture('')}
+                          style={{ background: 'none', border: 'none', fontSize: 16, cursor: 'pointer', color: '#dc2626', padding: '4px 6px' }}
+                        >✕</button>
+                      )}
+                      <button
+                        onClick={saveExpectedDeparture}
+                        disabled={forecastSaving}
+                        style={{
+                          padding: '8px 16px', fontSize: 13, fontWeight: 600,
+                          background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6,
+                          cursor: forecastSaving ? 'default' : 'pointer', opacity: forecastSaving ? 0.6 : 1,
+                        }}
+                      >שמור</button>
+                    </div>
+                  </div>
+
+                  {/* --- General note to manager --- */}
+                  <div>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1A3008', marginBottom: 6 }}>
+                      הערות כלליות למנהלת
+                    </span>
+                    <textarea
+                      value={employeeNote}
+                      onChange={e => setEmployeeNote(e.target.value)}
+                      placeholder="הערה למנהלת..."
+                      rows={3}
+                      style={{
+                        width: '100%', padding: 10, fontSize: 13,
+                        border: '1px solid #d1cdc6', borderRadius: 8,
+                        resize: 'vertical', background: 'white', color: '#1a1a1a', boxSizing: 'border-box',
+                      }}
+                    />
+                    <button
+                      onClick={saveEmployeeNote}
+                      disabled={forecastSaving}
+                      style={{
+                        marginTop: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600,
+                        background: '#1a4a2e', color: 'white', border: 'none', borderRadius: 6,
+                        cursor: forecastSaving ? 'default' : 'pointer', opacity: forecastSaving ? 0.6 : 1,
+                      }}
+                    >שמור הערה</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* ═══ Note + Submit ═══ */}
             <div style={{ background: '#F5F0E8', borderRadius: 12, padding: 16, marginTop: 8 }}>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1A3008', marginBottom: 6 }}>
@@ -637,6 +888,230 @@ export function EmployeeDashboard({ employee, signOut }: EmployeeDashboardProps)
               סגור
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ═══ Forecast Period Modal ═══ */}
+      {showForecastModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 10000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div dir="rtl" style={{
+            background: 'white', borderRadius: 14, padding: 24, width: '100%', maxWidth: 380,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)', maxHeight: '85vh', overflowY: 'auto',
+          }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#1A3008' }}>
+              {editingForecastIdx !== null ? 'עריכת תקופה' : 'הוספת תקופה חדשה'}
+            </h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Date range */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>מתאריך</label>
+                  <input type="date" value={fmFrom} onChange={e => setFmFrom(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr', color: '#1a1a1a', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>עד תאריך</label>
+                  <input type="date" value={fmTo} onChange={e => setFmTo(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr', color: '#1a1a1a', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+
+              {/* Shifts per week slider */}
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>
+                  משמרות בשבוע: <strong style={{ color: '#1a4a2e' }}>{fmShifts}</strong>
+                </label>
+                <input type="range" min={0} max={6} value={fmShifts} onChange={e => setFmShifts(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: '#1a4a2e' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                  <span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span>
+                </div>
+              </div>
+
+              {/* Friday toggle */}
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>זמינות בשישי</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[true, false].map(val => (
+                    <button key={String(val)} onClick={() => setFmFriday(val)}
+                      style={{
+                        flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
+                        background: fmFriday === val ? '#1a4a2e' : 'white',
+                        color: fmFriday === val ? 'white' : '#64748b',
+                        border: fmFriday === val ? '2px solid #1a4a2e' : '1px solid #e8e0d4',
+                      }}
+                    >
+                      {val ? 'כן' : 'לא'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reason dropdown */}
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>סיבה</label>
+                <select value={fmReason} onChange={e => setFmReason(e.target.value as AvailabilityForecast['reason'])}
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 14, border: '1px solid #d1cdc6', borderRadius: 6, color: '#1a1a1a' }}
+                >
+                  <option value="מבחנים">מבחנים</option>
+                  <option value="חופש">חופש / טיול</option>
+                  <option value="אישי">אישי</option>
+                  <option value="אחר">אחר</option>
+                </select>
+              </div>
+
+              {/* Note */}
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>הערה (אופציונלי)</label>
+                <textarea value={fmNote} onChange={e => setFmNote(e.target.value)}
+                  placeholder="פירוט נוסף..."
+                  rows={2}
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d1cdc6', borderRadius: 8, resize: 'vertical', color: '#1a1a1a', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              {/* Exclusions — specific days/shifts the employee can't work */}
+              <div style={{ borderTop: '1px solid #e8e0d4', paddingTop: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>ימים שלא אוכל לעבוד</label>
+                  <button
+                    type="button"
+                    onClick={() => { setShowExclusionForm(p => !p); setExDate(''); setExShift('הכל'); setExNote('') }}
+                    style={{
+                      fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 6,
+                      background: 'transparent', border: '1px solid #c17f3b', color: '#c17f3b', cursor: 'pointer',
+                    }}
+                  >{showExclusionForm ? 'ביטול' : '+ הוסף יום'}</button>
+                </div>
+
+                {/* Add exclusion form */}
+                {showExclusionForm && (
+                  <div style={{ background: '#f8f7f4', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', fontSize: 12, color: '#475569', marginBottom: 3 }}>תאריך</label>
+                        <input type="date" value={exDate} onChange={e => setExDate(e.target.value)}
+                          min={fmFrom} max={fmTo}
+                          style={{ width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid #d1cdc6', borderRadius: 6, direction: 'ltr', color: '#1a1a1a', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: 'block', fontSize: 12, color: '#475569', marginBottom: 3 }}>משמרת</label>
+                        <select value={exShift} onChange={e => setExShift(e.target.value as ForecastExclusion['shift'])}
+                          style={{ width: '100%', padding: '6px 8px', fontSize: 13, border: '1px solid #d1cdc6', borderRadius: 6, color: '#1a1a1a' }}
+                        >
+                          <option value="הכל">כל היום</option>
+                          <option value="בוקר">בוקר</option>
+                          <option value="ערב">ערב</option>
+                        </select>
+                      </div>
+                    </div>
+                    <input
+                      type="text" value={exNote} onChange={e => setExNote(e.target.value)}
+                      placeholder="סיבה (אופציונלי)..."
+                      style={{ width: '100%', padding: '6px 8px', fontSize: 12, border: '1px solid #d1cdc6', borderRadius: 6, color: '#1a1a1a', marginBottom: 8, boxSizing: 'border-box' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!exDate) return
+                        setFmExclusions(prev => [...prev, { date: exDate, shift: exShift, note: exNote || undefined }])
+                        setExDate(''); setExShift('הכל'); setExNote('')
+                        setShowExclusionForm(false)
+                      }}
+                      disabled={!exDate}
+                      style={{
+                        width: '100%', padding: '7px 0', fontSize: 13, fontWeight: 600, borderRadius: 6,
+                        background: exDate ? '#1a4a2e' : '#C8DBA0', color: exDate ? 'white' : '#F5F0E8',
+                        border: 'none', cursor: exDate ? 'pointer' : 'default',
+                      }}
+                    >הוסף</button>
+                  </div>
+                )}
+
+                {/* Exclusion list */}
+                {fmExclusions.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {fmExclusions.map((ex, idx) => (
+                      <div key={idx} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        background: '#fee2e2', borderRadius: 6, padding: '6px 10px', fontSize: 12,
+                      }}>
+                        <span style={{ color: '#dc2626', fontWeight: 600 }}>
+                          {ex.date.split('-').reverse().join('/')} · {ex.shift === 'הכל' ? 'כל היום' : ex.shift}
+                          {ex.note && <span style={{ color: '#6b7280', fontWeight: 400 }}> · {ex.note}</span>}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setFmExclusions(prev => prev.filter((_, i) => i !== idx))}
+                          style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal buttons */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+              <button
+                onClick={() => setShowForecastModal(false)}
+                style={{
+                  flex: 1, padding: 12, borderRadius: 8,
+                  border: '1px solid #e8e0d4', background: 'white',
+                  color: '#475569', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}
+              >ביטול</button>
+              <button
+                onClick={() => {
+                  if (!fmFrom || !fmTo || fmTo < fmFrom) return
+                  const entry: AvailabilityForecast = {
+                    period_from: fmFrom, period_to: fmTo,
+                    expected_shifts: fmShifts, friday_available: fmFriday,
+                    reason: fmReason, note: fmNote || undefined,
+                    exclusions: fmExclusions.length > 0 ? fmExclusions : undefined,
+                  }
+                  let updated: AvailabilityForecast[]
+                  if (editingForecastIdx !== null) {
+                    updated = forecasts.map((fc, i) => i === editingForecastIdx ? entry : fc)
+                  } else {
+                    updated = [...forecasts, entry]
+                  }
+                  saveForecastPeriods(updated)
+                  setShowForecastModal(false)
+                }}
+                disabled={!fmFrom || !fmTo || fmTo < fmFrom || forecastSaving}
+                style={{
+                  flex: 1, padding: 12, borderRadius: 8, border: 'none',
+                  background: fmFrom && fmTo && fmTo >= fmFrom ? '#1a4a2e' : '#C8DBA0',
+                  color: fmFrom && fmTo && fmTo >= fmFrom ? 'white' : '#F5F0E8',
+                  fontSize: 14, fontWeight: 600,
+                  cursor: fmFrom && fmTo && fmTo >= fmFrom ? 'pointer' : 'default',
+                }}
+              >שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Forecast Toast ═══ */}
+      {forecastToast && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: '50%', transform: 'translateX(50%)',
+          background: '#1a4a2e', color: 'white', padding: '10px 20px', borderRadius: 10,
+          fontSize: 14, fontWeight: 600, zIndex: 10001,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+        }}>
+          {forecastToast}
         </div>
       )}
     </div>
