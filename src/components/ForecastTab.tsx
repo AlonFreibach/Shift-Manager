@@ -447,20 +447,19 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>עמודות סיכום</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
-              <div><strong>תקן</strong> — מספר המשמרות הנדרשות בשבוע (100%). מתעדכן אוטומטית לפי חגים, ניתן לדרוס ידנית</div>
-              <div><strong>צפי</strong> — סה"כ משמרות צפויות + אחוז כיסוי ביחס לתקן</div>
+              <div><strong>רצוי</strong> — מספר המשמרות הנדרשות בשבוע (100%). מתעדכן אוטומטית לפי חגים, ניתן לדרוס ידנית</div>
+              <div><strong>מצוי</strong> — סה"כ משמרות צפויות בפועל + אחוז כיסוי ביחס לרצוי</div>
             </div>
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>איך לערוך?</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
               <div><strong>לחיצה על תא</strong> — פותחת חלון עריכה. ניתן לשנות מספר משמרות, שישי, ולאפס דריסה ידנית</div>
-              <div><strong>לחיצה על עמודת "תקן"</strong> — מאפשרת לשנות את מספר המשמרות הנדרש לשבוע (למשל בגלל חג שמגדיל עומס)</div>
+              <div><strong>לחיצה על עמודת "רצוי"</strong> — מאפשרת לשנות את מספר המשמרות הנדרש לשבוע (למשל בגלל חג שמגדיל עומס)</div>
             </div>
 
-            <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>עמודת "סה"כ"</div>
+            <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>היעד</div>
             <p style={{ margin: '0 0 6px' }}>
-              מציגה את סך המשמרות הצפויות מול התקן לאותו שבוע, ואת אחוז הכיסוי.
-              <br />היעד הוא <strong>125%</strong> — כדי שיהיו מספיק אפשרויות שיבוץ ולא תהיי תקועה עם בדיוק מספיק.
+              היעד הוא <strong>125%</strong> — כדי שיהיו מספיק אפשרויות שיבוץ ולא תהיי תקועה עם בדיוק מספיק.
             </p>
 
             <div style={{
@@ -552,7 +551,13 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                 fontSize: 12, fontWeight: 600, textAlign: 'center', minWidth: 54,
                 borderBottom: '2px solid #c17f3b',
                 borderRight: '2px solid rgba(255,255,255,0.2)',
-              }}>תקן</th>
+              }}>רצוי</th>
+              <th style={{
+                background: '#1a4a2e', color: 'white', padding: '10px 8px',
+                fontSize: 12, fontWeight: 600, textAlign: 'center', minWidth: 80,
+                borderBottom: '2px solid #c17f3b',
+                borderRight: '1px solid rgba(255,255,255,0.15)',
+              }}>מצוי</th>
               {activeEmployees.map((emp, i) => (
                 <th key={emp.id} style={{
                   background: '#1a4a2e', color: 'white', padding: '10px 6px',
@@ -563,12 +568,6 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                   {emp.name.split(' ')[0]}
                 </th>
               ))}
-              <th style={{
-                background: '#1a4a2e', color: 'white', padding: '10px 8px',
-                fontSize: 12, fontWeight: 600, textAlign: 'center', minWidth: 80,
-                borderBottom: '2px solid #c17f3b',
-                borderRight: '2px solid rgba(255,255,255,0.2)',
-              }}>צפי</th>
             </tr>
           </thead>
           <tbody>
@@ -638,6 +637,21 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                     )}
                   </td>
 
+                  {/* מצוי — forecast total + percentage */}
+                  <td style={{
+                    padding: '8px 10px', textAlign: 'center',
+                    borderBottom: '1px solid #e8e0d4',
+                    borderRight: '1px solid #f0ebe3',
+                    background: coverageColor(s.ratio),
+                  }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: coverageTextColor(s.ratio) }}>
+                      {s.total}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: coverageTextColor(s.ratio) }}>
+                      {Math.round(s.ratio * 100)}%
+                    </div>
+                  </td>
+
                   {/* Employee cells */}
                   {row.cells.map((cell, ei) => {
                     const emp = activeEmployees[ei]
@@ -682,21 +696,6 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                       </td>
                     )
                   })}
-
-                  {/* Forecast total + percentage */}
-                  <td style={{
-                    padding: '8px 10px', textAlign: 'center',
-                    borderBottom: '1px solid #e8e0d4',
-                    borderRight: '2px solid #e8e0d4',
-                    background: coverageColor(s.ratio),
-                  }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: coverageTextColor(s.ratio) }}>
-                      {s.total}
-                    </div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: coverageTextColor(s.ratio) }}>
-                      {Math.round(s.ratio * 100)}%
-                    </div>
-                  </td>
                 </tr>
               )
             })}
