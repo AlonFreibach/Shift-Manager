@@ -48,24 +48,44 @@ interface WeekInfo {
   autoStandard: number
 }
 
+// Slots per day (Sun-Fri) based on SLOT_DEFAULTS in WeeklyBoard:
+// Sun/Mon/Tue: 2 morning + 2 evening = 4
+// Wed: 2 morning + 3 evening = 5
+// Thu: 4 morning + 3 evening = 7
+// Fri: 6 morning = 6
+// Total: 4+4+4+5+7+6 = 30 (STANDARD_SLOTS)
+const SLOTS_PER_DAY = [4, 4, 4, 5, 7, 6]       // Sun, Mon, Tue, Wed, Thu, Fri
+const EVENING_SLOTS = [2, 2, 2, 3, 3, 0]       // Sun-Thu: evening lost on holiday_eve; Fri has no evening
+
 function calcAutoStandard(startISO: string): { standard: number; holidays: string[] } {
-  // Holidays are displayed for info only — they do NOT automatically change the standard.
-  // The manager can manually override the "רצוי" value per week if needed.
+  // Default auto-calculation based on Israeli law + common retail practice.
+  // Holidays (like Shabbat): subtract all that day's slots
+  // Holiday eves (like Friday): subtract evening slots only (Sun-Thu); Friday itself already short
+  // Memorial (regular day): no change to standard, but shown as info
+  // Manager can always override manually.
   const start = new Date(startISO)
   const holidays: string[] = []
+  let slotsLost = 0
 
   for (let d = 0; d < 6; d++) {
     const day = addDays(start, d)
     const dayISO = toISO(day)
     const h = ISRAELI_HOLIDAYS.find(h => h.date === dayISO)
-    if (h) {
-      if (h.type === 'holiday') holidays.push(h.name)
-      else if (h.type === 'holiday_eve') holidays.push(`ערב: ${h.name}`)
-      else if (h.type === 'memorial') holidays.push(h.name)
+    if (!h) continue
+
+    if (h.type === 'holiday') {
+      slotsLost += SLOTS_PER_DAY[d]
+      holidays.push(`🔴 ${h.name}`)
+    } else if (h.type === 'holiday_eve') {
+      // Short day — lose evening slots (on weekdays Sun-Thu); Friday already short
+      if (d < 5) slotsLost += EVENING_SLOTS[d]
+      holidays.push(`🟡 ${h.name}`)
+    } else if (h.type === 'memorial') {
+      holidays.push(h.name)
     }
   }
 
-  return { standard: STANDARD_SLOTS, holidays }
+  return { standard: Math.max(0, STANDARD_SLOTS - slotsLost), holidays }
 }
 
 function generateWeeks(): WeekInfo[] {
@@ -184,8 +204,31 @@ interface ForecastTabProps {
   onRefresh?: () => void
 }
 
+const STANDARD_OVERRIDES_KEY = 'forecast_standard_overrides'
+
+function loadStandardOverrides(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(STANDARD_OVERRIDES_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return {}
+}
+
+function saveStandardOverrides(overrides: Record<string, number>) {
+  try {
+    localStorage.setItem(STANDARD_OVERRIDES_KEY, JSON.stringify(overrides))
+  } catch { /* ignore */ }
+}
+
 export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
-  const [standardOverrides, setStandardOverrides] = useState<Record<string, number>>({})
+  const [standardOverrides, setStandardOverridesState] = useState<Record<string, number>>(() => loadStandardOverrides())
+  const setStandardOverrides = useCallback((update: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => {
+    setStandardOverridesState(prev => {
+      const next = typeof update === 'function' ? update(prev) : update
+      saveStandardOverrides(next)
+      return next
+    })
+  }, [])
   const [editingCell, setEditingCell] = useState<{ empId: string; weekISO: string } | null>(null)
   const [editValue, setEditValue] = useState('')
   const [editFriday, setEditFriday] = useState(true)
