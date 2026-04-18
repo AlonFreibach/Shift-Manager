@@ -12,16 +12,16 @@ interface WorkforceTabProps {
 }
 
 // Standard weekly slots from WEEK_STRUCTURE + SLOT_DEFAULTS (including Miya slot per morning)
-// Sun-Thu: morning(2+Miya=3)+evening(2)=5 each = 25; Wed: +1 evening = 26; Thu: +1 morning +1 evening = 28; Fri: 5+Miya=6
+// Sun-Wed: morning(1+Miya=2)+evening=varies; Thu: 3+1M bkr + 3 eve = 7; Fri: 5+1M bkr = 6
 function getStandardSlots(): number {
-  // Sun: 2+1M bkr + 2 eve = 5
-  // Mon: 2+1M bkr + 2 eve = 5
-  // Tue: 2+1M bkr + 2 eve = 5
-  // Wed: 2+1M bkr + 3 eve = 6
+  // Sun: 1+1M bkr + 2 eve = 4
+  // Mon: 1+1M bkr + 2 eve = 4
+  // Tue: 1+1M bkr + 2 eve = 4
+  // Wed: 1+1M bkr + 3 eve = 5
   // Thu: 3+1M bkr + 3 eve = 7
   // Fri: 5+1M bkr = 6
-  // Total: 5+5+5+6+7+6 = 34
-  return 34;
+  // Total: 4+4+4+5+7+6 = 30
+  return 30;
 }
 
 function isActiveOn(emp: Employee, date: Date): boolean {

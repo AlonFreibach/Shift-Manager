@@ -9,7 +9,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 
 const MIYA_NAME = 'מיה'
 const WEEKS_AHEAD = 12
-const STANDARD_SLOTS = 31
+const STANDARD_SLOTS = 30
 const TARGET_RATIO = 1.25
 
 // ═══ Utility functions ═══
@@ -438,7 +438,7 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>עמודות סיכום</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
-              <div><strong>רצוי</strong> — מספר המשמרות הנדרש בשבוע (100%). ברירת מחדל: 31. ניתן לדרוס ידנית לכל שבוע</div>
+              <div><strong>רצוי</strong> — מספר המשמרות הנדרש בשבוע (100%). ברירת מחדל: 30. ניתן לדרוס ידנית לכל שבוע</div>
               <div><strong>מצוי</strong> — סה"כ משמרות צפויות בפועל + אחוז כיסוי ביחס לרצוי</div>
             </div>
 

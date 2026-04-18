@@ -97,19 +97,19 @@ const WEEK_STRUCTURE = [
 interface SlotDefault { arrival: string; departure: string; }
 const SLOT_DEFAULTS: Record<string, Record<string, SlotDefault[]>> = {
   'ראשון':  {
-    'בוקר': [{ arrival: '06:55', departure: '14:00' }, { arrival: '07:00', departure: '15:00' }],
+    'בוקר': [{ arrival: '07:00', departure: '15:00' }],
     'ערב':  [{ arrival: '14:00', departure: '21:00' }, { arrival: '15:00', departure: '21:00' }],
   },
   'שני':    {
-    'בוקר': [{ arrival: '06:55', departure: '14:00' }, { arrival: '07:00', departure: '15:00' }],
+    'בוקר': [{ arrival: '07:00', departure: '15:00' }],
     'ערב':  [{ arrival: '14:00', departure: '21:00' }, { arrival: '15:00', departure: '21:00' }],
   },
   'שלישי':  {
-    'בוקר': [{ arrival: '06:55', departure: '14:00' }, { arrival: '07:00', departure: '15:00' }],
+    'בוקר': [{ arrival: '07:00', departure: '15:00' }],
     'ערב':  [{ arrival: '14:00', departure: '21:00' }, { arrival: '15:00', departure: '21:00' }],
   },
   'רביעי':  {
-    'בוקר': [{ arrival: '06:55', departure: '14:00' }, { arrival: '07:00', departure: '15:00' }],
+    'בוקר': [{ arrival: '07:00', departure: '15:00' }],
     'ערב':  [{ arrival: '14:00', departure: '21:00' }, { arrival: '15:00', departure: '21:00' }, { arrival: '16:00', departure: '21:00' }],
   },
   'חמישי':  {
