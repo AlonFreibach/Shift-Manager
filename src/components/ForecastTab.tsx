@@ -48,32 +48,23 @@ interface WeekInfo {
 }
 
 function calcAutoStandard(startISO: string): { standard: number; holidays: string[] } {
+  // Holidays are displayed for info only — they do NOT automatically change the standard.
+  // The manager can manually override the "רצוי" value per week if needed.
   const start = new Date(startISO)
   const holidays: string[] = []
-  let slotsLost = 0
 
   for (let d = 0; d < 6; d++) {
     const day = addDays(start, d)
     const dayISO = toISO(day)
-    const workType = getDateWorkType(dayISO)
-    const dow = day.getDay()
-
-    if (dow < 5 && workType === 'shabbat') {
-      slotsLost += 4
-      const h = ISRAELI_HOLIDAYS.find(h => h.date === dayISO)
-      if (h) holidays.push(h.name)
-    } else if (dow < 5 && workType === 'friday') {
-      slotsLost += 2
-      const h = ISRAELI_HOLIDAYS.find(h => h.date === dayISO)
-      if (h) holidays.push(`ערב: ${h.name}`)
-    } else if (dow === 5 && workType === 'shabbat') {
-      slotsLost += 6
-      const h = ISRAELI_HOLIDAYS.find(h => h.date === dayISO)
-      if (h) holidays.push(h.name)
+    const h = ISRAELI_HOLIDAYS.find(h => h.date === dayISO)
+    if (h) {
+      if (h.type === 'holiday') holidays.push(h.name)
+      else if (h.type === 'holiday_eve') holidays.push(`ערב: ${h.name}`)
+      else if (h.type === 'memorial') holidays.push(h.name)
     }
   }
 
-  return { standard: Math.max(0, STANDARD_SLOTS - slotsLost), holidays }
+  return { standard: STANDARD_SLOTS, holidays }
 }
 
 function generateWeeks(): WeekInfo[] {
@@ -447,19 +438,25 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>עמודות סיכום</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
-              <div><strong>רצוי</strong> — מספר המשמרות הנדרשות בשבוע (100%). מתעדכן אוטומטית לפי חגים, ניתן לדרוס ידנית</div>
+              <div><strong>רצוי</strong> — מספר המשמרות הנדרש בשבוע (100%). ברירת מחדל: 31. ניתן לדרוס ידנית לכל שבוע</div>
               <div><strong>מצוי</strong> — סה"כ משמרות צפויות בפועל + אחוז כיסוי ביחס לרצוי</div>
             </div>
 
+            <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>חגים ומועדים</div>
+            <p style={{ margin: '0 0 10px' }}>
+              מועדים מופיעים לצד תאריך השבוע <strong>לידיעה בלבד</strong> — המערכת אינה משנה את ה"רצוי" אוטומטית.
+              אם שבוע מסוים דורש יותר או פחות משמרות (לדוגמה: ערב חג = ביקוש מוגבר) — לחצי על עמודת <strong>"רצוי"</strong> והזיני את הערך הנכון לאותו שבוע.
+            </p>
+
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>איך לערוך?</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
-              <div><strong>לחיצה על תא</strong> — פותחת חלון עריכה. ניתן לשנות מספר משמרות, שישי, ולאפס דריסה ידנית</div>
-              <div><strong>לחיצה על עמודת "רצוי"</strong> — מאפשרת לשנות את מספר המשמרות הנדרש לשבוע (למשל בגלל חג שמגדיל עומס)</div>
+              <div><strong>לחיצה על תא של עובדת</strong> — פותחת חלון עריכה. ניתן לשנות מספר משמרות, שישי, ולאפס דריסה ידנית</div>
+              <div><strong>לחיצה על עמודת "רצוי"</strong> — מאפשרת לשנות את מספר המשמרות הנדרש לשבוע (חגים, ביקוש מוגבר, וכד')</div>
             </div>
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>היעד</div>
             <p style={{ margin: '0 0 6px' }}>
-              היעד הוא <strong>125%</strong> — כדי שיהיו מספיק אפשרויות שיבוץ ולא תהיי תקועה עם בדיוק מספיק.
+              היעד הוא <strong>125%</strong> כיסוי — כדי שיהיו מספיק אפשרויות שיבוץ ולא תהיי תקועה עם בדיוק מספיק.
             </p>
 
             <div style={{
