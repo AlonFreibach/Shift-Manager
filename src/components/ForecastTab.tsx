@@ -561,18 +561,23 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                 borderRight: '2px solid rgba(255,255,255,0.2)',
                 boxShadow: '-2px 0 4px rgba(0,0,0,0.06)',
               }}>מצוי</th>
-              {activeEmployees.map((emp, i) => (
-                <th key={emp.id} style={{
-                  background: '#1a4a2e', color: 'white', padding: '10px 8px',
-                  fontSize: 12, fontWeight: 600, textAlign: 'center',
-                  width: 90, minWidth: 90,
-                  borderBottom: '2px solid #c17f3b',
-                  borderRight: i === 0 ? '2px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.1)',
-                  lineHeight: 1.25, wordBreak: 'break-word',
-                }} title={emp.name}>
-                  {emp.name}
-                </th>
-              ))}
+              {activeEmployees.map((emp, i) => {
+                const parts = emp.name.split(' ')
+                return (
+                  <th key={emp.id} style={{
+                    background: '#1a4a2e', color: 'white', padding: '8px 6px',
+                    fontSize: 12, fontWeight: 600, textAlign: 'center',
+                    width: 90, minWidth: 90,
+                    borderBottom: '2px solid #c17f3b',
+                    borderRight: i === 0 ? '2px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.1)',
+                    verticalAlign: 'middle',
+                  }} title={emp.name}>
+                    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                      {parts.map((p, idx) => <span key={idx}>{p}</span>)}
+                    </div>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
