@@ -46,6 +46,8 @@ interface WeekInfo {
   label: string
   holidays: string[]
   autoStandard: number
+  demandLevel: 'peak' | 'high' | 'normal' | 'low'
+  demandNotes: string[]
 }
 
 // Slots per day (Sun-Fri) based on SLOT_DEFAULTS in WeeklyBoard:
@@ -57,15 +59,26 @@ interface WeekInfo {
 const SLOTS_PER_DAY = [4, 4, 4, 5, 7, 6]       // Sun, Mon, Tue, Wed, Thu, Fri
 const EVENING_SLOTS = [2, 2, 2, 3, 3, 0]       // Sun-Thu: evening lost on holiday_eve; Fri has no evening
 
-function calcAutoStandard(startISO: string): { standard: number; holidays: string[] } {
-  // Default auto-calculation based on Israeli law + common retail practice.
-  // Holidays (like Shabbat): subtract all that day's slots
-  // Holiday eves (like Friday): subtract evening slots only (Sun-Thu); Friday itself already short
-  // Memorial (regular day): no change to standard, but shown as info
-  // Manager can always override manually.
+function calcAutoStandard(startISO: string): {
+  standard: number
+  holidays: string[]
+  demandLevel: 'peak' | 'high' | 'normal' | 'low'
+  demandNotes: string[]
+} {
+  // Default auto-calculation for fruit/vegetable retail (נוי השדה):
+  // Hours classification (type):
+  //   'holiday'     → closed (subtract all that day's slots)
+  //   'holiday_eve' → short day (subtract evening slots only Sun-Thu)
+  //   'memorial'    → regular work day (no change)
+  // Demand classification (demand):
+  //   'peak' / 'high' / 'normal' / 'low' — staffing consideration for the manager
   const start = new Date(startISO)
   const holidays: string[] = []
+  const demandNotes: string[] = []
   let slotsLost = 0
+  let weekDemand: 'peak' | 'high' | 'normal' | 'low' = 'normal'
+
+  const demandRank = { peak: 3, high: 2, normal: 1, low: 0 }
 
   for (let d = 0; d < 6; d++) {
     const day = addDays(start, d)
@@ -77,15 +90,25 @@ function calcAutoStandard(startISO: string): { standard: number; holidays: strin
       slotsLost += SLOTS_PER_DAY[d]
       holidays.push(`🔴 ${h.name}`)
     } else if (h.type === 'holiday_eve') {
-      // Short day — lose evening slots (on weekdays Sun-Thu); Friday already short
       if (d < 5) slotsLost += EVENING_SLOTS[d]
       holidays.push(`🟡 ${h.name}`)
     } else if (h.type === 'memorial') {
       holidays.push(h.name)
     }
+
+    // Track highest demand level in the week
+    if (h.demand && demandRank[h.demand] > demandRank[weekDemand]) {
+      weekDemand = h.demand
+    }
+    if (h.demandNote) {
+      demandNotes.push(h.demandNote)
+    }
   }
 
-  return { standard: Math.max(0, STANDARD_SLOTS - slotsLost), holidays }
+  return {
+    standard: Math.max(0, STANDARD_SLOTS - slotsLost),
+    holidays, demandLevel: weekDemand, demandNotes,
+  }
 }
 
 function generateWeeks(): WeekInfo[] {
@@ -95,11 +118,11 @@ function generateWeeks(): WeekInfo[] {
     const start = addDays(sunday, w * 7)
     const startISO = toISO(start)
     const endISO = toISO(addDays(start, 5))
-    const { standard, holidays } = calcAutoStandard(startISO)
+    const { standard, holidays, demandLevel, demandNotes } = calcAutoStandard(startISO)
     weeks.push({
       start, startISO, endISO,
       label: `${fmtShort(startISO)} – ${fmtShort(endISO)}`,
-      holidays, autoStandard: standard,
+      holidays, autoStandard: standard, demandLevel, demandNotes,
     })
   }
   return weeks
@@ -488,9 +511,14 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>חגים ומועדים</div>
             <p style={{ margin: '0 0 10px' }}>
-              מועדים מופיעים לצד תאריך השבוע <strong>לידיעה בלבד</strong> — המערכת אינה משנה את ה"רצוי" אוטומטית.
-              אם שבוע מסוים דורש יותר או פחות משמרות (לדוגמה: ערב חג = ביקוש מוגבר) — לחצי על עמודת <strong>"רצוי"</strong> והזיני את הערך הנכון לאותו שבוע.
+              המערכת מפחיתה אוטומטית את ה"רצוי" בחגים (כמו שבת) ובערבי חגים (מקוצר כמו שישי), לפי חוק שעות עבודה ומנוחה.
+              בימים של <strong>ביקוש מוגבר</strong> (ערב פסח, ערב שבועות, ט"ו בשבט, פורים, חול המועד וכד') יופיע תג <strong style={{ color: '#dc2626' }}>פסגה</strong> או <strong style={{ color: '#f59e0b' }}>גבוה</strong> ליד התאריך — שקלי להעלות את ה"רצוי" ידנית באותם שבועות.
+              <br />כל ערך ידני שתזיני נשמר במערכת (גם אחרי רענון).
             </p>
+            <div style={{ background: '#fff7ed', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#9a3412', marginBottom: 12 }}>
+              💡 <strong>ברירת המחדל מותאמת לחנות ירקות ופירות</strong> — ערבי חג ומועדים מסוימים (פורים, ט"ו בשבט) מסומנים כימי ביקוש גבוה/פסגה.
+              ברגע שמיה תחזיר רשימה עם ההחלטות שלה — הסיווג יעודכן בדיוק.
+            </div>
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>איך לערוך?</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
@@ -638,8 +666,15 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                     background: rowBg, padding: '10px 14px',
                     fontSize: 13, fontWeight: 600, color: '#1a1a1a',
                     borderBottom: '1px solid #e8e0d4',
-                  }}>
-                    <div>{row.week.label}</div>
+                  }}
+                  title={row.week.demandNotes.length > 0 ? row.week.demandNotes.join('\n') : undefined}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>{row.week.label}</span>
+                      {row.week.demandLevel === 'peak' && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#dc2626', color: 'white', fontWeight: 700 }}>פסגה</span>}
+                      {row.week.demandLevel === 'high' && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#f59e0b', color: 'white', fontWeight: 700 }}>גבוה</span>}
+                      {row.week.demandLevel === 'low' && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#6b7280', color: 'white', fontWeight: 700 }}>נמוך</span>}
+                    </div>
                     {row.week.holidays.length > 0 && (
                       <div style={{ fontSize: 10, color: '#c17f3b', fontWeight: 500, marginTop: 3, lineHeight: 1.4 }}>
                         {row.week.holidays.join(', ')}
