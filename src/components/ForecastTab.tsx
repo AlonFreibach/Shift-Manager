@@ -534,7 +534,7 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
         overflowX: 'auto', border: '1px solid #e8e0d4', borderRadius: 10,
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'relative',
       }}>
-        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: activeEmployees.length * 68 + 300 }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: activeEmployees.length * 90 + 300 }}>
           <thead>
             <tr>
               <th style={{
@@ -563,12 +563,14 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
               }}>מצוי</th>
               {activeEmployees.map((emp, i) => (
                 <th key={emp.id} style={{
-                  background: '#1a4a2e', color: 'white', padding: '10px 6px',
-                  fontSize: 12, fontWeight: 600, textAlign: 'center', minWidth: 62,
+                  background: '#1a4a2e', color: 'white', padding: '10px 8px',
+                  fontSize: 12, fontWeight: 600, textAlign: 'center',
+                  width: 90, minWidth: 90,
                   borderBottom: '2px solid #c17f3b',
                   borderRight: i === 0 ? '2px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.1)',
-                }}>
-                  {emp.name.split(' ')[0]}
+                  lineHeight: 1.25, wordBreak: 'break-word',
+                }} title={emp.name}>
+                  {emp.name}
                 </th>
               ))}
             </tr>
@@ -677,6 +679,7 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                           setEditFriday(cell.fridayAvailable ?? emp.fridayAvailability !== 'never')
                         }}
                         style={{
+                          width: 90, minWidth: 90,
                           padding: '8px 4px', textAlign: 'center', fontSize: 14,
                           borderBottom: '1px solid #e8e0d4',
                           borderRight: ei === 0 ? '2px solid #e8e0d4' : '1px solid #f0ebe3',
