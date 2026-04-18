@@ -57,7 +57,7 @@ interface WeekInfo {
 // Fri: 6 morning = 6
 // Total: 4+4+4+5+7+6 = 30 (STANDARD_SLOTS)
 const SLOTS_PER_DAY = [4, 4, 4, 5, 7, 6]       // Sun, Mon, Tue, Wed, Thu, Fri
-const EVENING_SLOTS = [2, 2, 2, 3, 3, 0]       // Sun-Thu: evening lost on holiday_eve; Fri has no evening
+const FRIDAY_SLOTS = 6                          // Holiday eves are treated like Friday (6 morning, 0 evening)
 
 function calcAutoStandard(startISO: string): {
   standard: number
@@ -68,14 +68,14 @@ function calcAutoStandard(startISO: string): {
   // Default auto-calculation for fruit/vegetable retail (נוי השדה):
   // Hours classification (type):
   //   'holiday'     → closed (subtract all that day's slots)
-  //   'holiday_eve' → short day (subtract evening slots only Sun-Thu)
+  //   'holiday_eve' → treat as Friday (6 morning slots, 0 evening — replaces normal day count)
   //   'memorial'    → regular work day (no change)
   // Demand classification (demand):
   //   'peak' / 'high' / 'normal' / 'low' — staffing consideration for the manager
   const start = new Date(startISO)
   const holidays: string[] = []
   const demandNotes: string[] = []
-  let slotsLost = 0
+  let slotsDelta = 0  // positive = slots removed, negative = slots added
   let weekDemand: 'peak' | 'high' | 'normal' | 'low' = 'normal'
 
   const demandRank = { peak: 3, high: 2, normal: 1, low: 0 }
@@ -87,16 +87,22 @@ function calcAutoStandard(startISO: string): {
     if (!h) continue
 
     if (h.type === 'holiday') {
-      slotsLost += SLOTS_PER_DAY[d]
+      // Full-day closure — remove all this day's slots
+      slotsDelta += SLOTS_PER_DAY[d]
       holidays.push(`🔴 ${h.name}`)
     } else if (h.type === 'holiday_eve') {
-      if (d < 5) slotsLost += EVENING_SLOTS[d]
+      // Per Mia's rule: holiday eves = same as Friday (6 slots, all morning)
+      // Replace this day's normal slot count with Friday's.
+      // Sun/Mon/Tue: normal 4 → 6 (−2 delta, i.e. +2 slots)
+      // Wed: normal 5 → 6 (−1 delta, i.e. +1 slot)
+      // Thu: normal 7 → 6 (+1 delta, i.e. −1 slot)
+      // Fri: already 6 (no change)
+      slotsDelta += SLOTS_PER_DAY[d] - FRIDAY_SLOTS
       holidays.push(`🟡 ${h.name}`)
     } else if (h.type === 'memorial') {
       holidays.push(h.name)
     }
 
-    // Track highest demand level in the week
     if (h.demand && demandRank[h.demand] > demandRank[weekDemand]) {
       weekDemand = h.demand
     }
@@ -106,7 +112,7 @@ function calcAutoStandard(startISO: string): {
   }
 
   return {
-    standard: Math.max(0, STANDARD_SLOTS - slotsLost),
+    standard: Math.max(0, STANDARD_SLOTS - slotsDelta),
     holidays, demandLevel: weekDemand, demandNotes,
   }
 }
@@ -511,13 +517,18 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>חגים ומועדים</div>
             <p style={{ margin: '0 0 10px' }}>
-              המערכת מפחיתה אוטומטית את ה"רצוי" בחגים (כמו שבת) ובערבי חגים (מקוצר כמו שישי), לפי חוק שעות עבודה ומנוחה.
-              בימים של <strong>ביקוש מוגבר</strong> (ערב פסח, ערב שבועות, ט"ו בשבט, פורים, חול המועד וכד') יופיע תג <strong style={{ color: '#dc2626' }}>פסגה</strong> או <strong style={{ color: '#f59e0b' }}>גבוה</strong> ליד התאריך — שקלי להעלות את ה"רצוי" ידנית באותם שבועות.
-              <br />כל ערך ידני שתזיני נשמר במערכת (גם אחרי רענון).
+              המערכת מחשבת אוטומטית את ה"רצוי" לכל שבוע לפי המועדים שבו:
+            </p>
+            <ul style={{ margin: '0 0 10px', paddingInlineStart: 20, lineHeight: 1.7 }}>
+              <li>🔴 <strong>חג רשמי</strong> (סגור) — כל המשמרות של אותו יום יורדות מהתקן</li>
+              <li>🟡 <strong>ערב חג</strong> — היום הופך להיות כמו יום שישי: 6 משמרות בוקר, ללא ערב. לרוב זה מעלה את התקן של השבוע (ערב חג ביום א'-ג' יוסיף 2 משמרות, ברביעי יוסיף 1)</li>
+              <li>⚪ <strong>יום זיכרון / חול המועד / חנוכה / ל"ג בעומר</strong> — יום עבודה רגיל, ללא שינוי</li>
+            </ul>
+            <p style={{ margin: '0 0 10px' }}>
+              בימים של <strong>ביקוש מוגבר</strong> (ערב פסח, ערב שבועות, ט"ו בשבט, פורים, חול המועד וכד') יופיע תג <strong style={{ color: '#dc2626' }}>פסגה</strong> או <strong style={{ color: '#f59e0b' }}>גבוה</strong> ליד התאריך. תגים אלה הם <strong>אינדיקציה ויזואלית</strong> — כל ערך ידני שתזיני נשמר במערכת (גם אחרי רענון).
             </p>
             <div style={{ background: '#fff7ed', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#9a3412', marginBottom: 12 }}>
-              💡 <strong>ברירת המחדל מותאמת לחנות ירקות ופירות</strong> — ערבי חג ומועדים מסוימים (פורים, ט"ו בשבט) מסומנים כימי ביקוש גבוה/פסגה.
-              ברגע שמיה תחזיר רשימה עם ההחלטות שלה — הסיווג יעודכן בדיוק.
+              💡 <strong>ברירת המחדל מותאמת לחנות ירקות ופירות</strong> — ערב חג = יום שישי (6 משמרות בוקר). ברגע שמיה תחזיר רשימה עם ההחלטות הסופיות — הסיווג יעודכן בדיוק.
             </div>
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>איך לערוך?</div>
