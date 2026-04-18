@@ -1,169 +1,22 @@
 import { useState, useMemo } from 'react'
 import jsPDF from 'jspdf'
-import type { Employee, AvailabilityForecast } from '../data/employees'
-
-const MIYA_NAME = 'מיה'
-const WEEKS_AHEAD = 12
-
-// Standard shift slots per day (excluding Miya for morning)
-// This mirrors WeeklyBoard SLOT_DEFAULTS
-const REQUIRED_PER_DAY = {
-  'ראשון':  { 'בוקר': 2, 'ערב': 2 }, // 1 + Miya, 2 evening
-  'שני':    { 'בוקר': 2, 'ערב': 2 },
-  'שלישי':  { 'בוקר': 2, 'ערב': 2 },
-  'רביעי':  { 'בוקר': 2, 'ערב': 3 },
-  'חמישי':  { 'בוקר': 4, 'ערב': 3 }, // 3 + Miya = 4, 3 evening
-  'שישי':   { 'בוקר': 6, 'ערב': 0 }, // 5 + Miya = 6
-}
-
-const DAYS: (keyof typeof REQUIRED_PER_DAY)[] = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
-
-function toISO(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+import type { Employee } from '../data/employees'
+import {
+  calculateGaps as calcGapsShared, MIYA_NAME, WEEKS_AHEAD,
+  toISO, getSunday,
+  type DayShiftGap,
+} from '../utils/forecastGaps'
 
 function fmtShort(iso: string): string {
   const [, m, d] = iso.split('-')
   return `${parseInt(d)}/${parseInt(m)}`
 }
 
-function getSunday(d: Date): Date {
-  const copy = new Date(d)
-  copy.setDate(copy.getDate() - copy.getDay())
-  copy.setHours(0, 0, 0, 0)
-  return copy
-}
-
-function addDays(d: Date, n: number): Date {
-  const copy = new Date(d)
-  copy.setDate(copy.getDate() + n)
-  return copy
-}
-
-// ═══ Employee availability logic ═══
-
-function isActiveOnDay(emp: Employee, dateISO: string): boolean {
-  if (emp.name === MIYA_NAME) return false // Miya doesn't count as "additional"
-  if (emp.isTrainee) return false
-  const startDate = emp.shiftsStart || emp.availableFromDate
-  if (startDate && dateISO < startDate) return false
-  if (emp.availableToDate && dateISO > emp.availableToDate) return false
-  if (emp.expectedDeparture && dateISO > emp.expectedDeparture) return false
-  return true
-}
-
-function isInTraining(emp: Employee, dateISO: string): boolean {
-  if (!emp.trainingStart) return false
-  const shiftsDate = emp.shiftsStart || emp.availableFromDate || ''
-  return dateISO >= emp.trainingStart && (!shiftsDate || dateISO < shiftsDate)
-}
-
-function isOnVacation(emp: Employee, dateISO: string): boolean {
-  return (emp.vacationPeriods || []).some(v => v.from <= dateISO && v.to >= dateISO)
-}
-
-function getForecast(emp: Employee, dateISO: string): AvailabilityForecast | undefined {
-  return (emp.availabilityForecasts || []).find(f => f.period_from <= dateISO && f.period_to >= dateISO)
-}
-
-/**
- * For a given employee and week, estimate expected shifts that week
- * (uses override, forecast, or default shiftsPerWeek).
- */
-function expectedShiftsThisWeek(emp: Employee, weekStartISO: string, weekEndISO: string): number {
-  if (!isActiveOnDay(emp, weekEndISO)) return 0
-  if (isInTraining(emp, weekStartISO)) return 0
-  if (isOnVacation(emp, weekStartISO) && isOnVacation(emp, weekEndISO)) return 0
-
-  const override = emp.forecastOverrides?.[weekStartISO]
-  if (override) return override.shifts
-
-  const fc = getForecast(emp, weekStartISO) || getForecast(emp, weekEndISO)
-  if (fc) return fc.expected_shifts
-
-  return emp.shiftsPerWeek
-}
-
-function isAvailableForShift(emp: Employee, shift: 'בוקר' | 'ערב'): boolean {
-  if (shift === 'בוקר') {
-    return emp.shiftType === 'הכל' || emp.shiftType === 'בוקר'
-  }
-  return emp.shiftType === 'הכל' || emp.shiftType === 'ערב'
-}
-
-function fridayAvailable(emp: Employee, weekStartISO: string): boolean {
-  const override = emp.forecastOverrides?.[weekStartISO]
-  if (override) return override.friday
-  const fc = getForecast(emp, weekStartISO)
-  if (fc) return fc.friday_available
-  return emp.fridayAvailability !== 'never'
-}
-
-// ═══ Gap calculation ═══
-
-interface Gap {
-  day: string
-  shift: 'בוקר' | 'ערב'
-  required: number        // total required across 12 weeks
-  covered: number         // total covered
-  gap: number             // required - covered
-}
+// Alias type kept for readability inside this component
+type Gap = DayShiftGap
 
 function calculateGaps(employees: Employee[]): { gaps: Gap[]; totalGap: number; fridayGap: number } {
-  const gaps: Gap[] = []
-  const now = new Date()
-  const sunday = getSunday(now)
-
-  for (const day of DAYS) {
-    const dayIdx = DAYS.indexOf(day)
-    for (const shift of ['בוקר', 'ערב'] as const) {
-      const req = REQUIRED_PER_DAY[day][shift]
-      if (req === 0) continue
-
-      let totalRequired = 0
-      let totalCovered = 0
-
-      for (let w = 0; w < WEEKS_AHEAD; w++) {
-        const weekStart = addDays(sunday, w * 7)
-        const weekStartISO = toISO(weekStart)
-        const weekEndISO = toISO(addDays(weekStart, 5))
-        const thisDayISO = toISO(addDays(weekStart, dayIdx))
-
-        totalRequired += req
-
-        // Count employees available for this day/shift this week
-        for (const emp of employees) {
-          if (emp.name === MIYA_NAME) continue
-          if (!isAvailableForShift(emp, shift)) continue
-          if (!isActiveOnDay(emp, thisDayISO)) continue
-          if (isInTraining(emp, thisDayISO)) continue
-          if (isOnVacation(emp, thisDayISO)) continue
-
-          // Proportional coverage: employee's weekly shifts / total shift slots available to them
-          const empExpected = expectedShiftsThisWeek(emp, weekStartISO, weekEndISO)
-          if (empExpected === 0) continue
-
-          // For friday — additional check
-          if (day === 'שישי' && !fridayAvailable(emp, weekStartISO)) continue
-
-          // Count this employee as covering 1 shift in this day×shift (simplified)
-          // More accurate: split empExpected across their available days
-          const availableDays = DAYS.filter(d => {
-            if (d === 'שישי') return fridayAvailable(emp, weekStartISO)
-            return true
-          }).length
-          totalCovered += empExpected / (availableDays * (emp.shiftType === 'הכל' ? 2 : 1))
-        }
-      }
-
-      gaps.push({
-        day, shift,
-        required: totalRequired,
-        covered: Math.round(totalCovered),
-        gap: Math.max(0, totalRequired - Math.round(totalCovered)),
-      })
-    }
-  }
+  const gaps = calcGapsShared(employees)
 
   const totalGap = gaps.reduce((sum, g) => sum + g.gap, 0)
   const fridayGap = gaps.filter(g => g.day === 'שישי').reduce((sum, g) => sum + g.gap, 0)

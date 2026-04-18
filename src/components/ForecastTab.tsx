@@ -5,6 +5,10 @@ import type { Employee, AvailabilityForecast } from '../data/employees'
 import { supabase } from '../lib/supabaseClient'
 import { ISRAELI_HOLIDAYS } from '../data/holidays'
 import { HiringRecommendation } from './HiringRecommendation'
+import {
+  DAYS, calculateGaps, simulateHire, summarizeGapImpact,
+  type DayName,
+} from '../utils/forecastGaps'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -270,7 +274,18 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
   const [simShifts, setSimShifts] = useState(4)
   const [simFriday, setSimFriday] = useState<'always' | 'never' | 'biweekly'>('always')
   const [simShiftType, setSimShiftType] = useState<'הכל' | 'בוקר' | 'ערב'>('הכל')
+  const [simDays, setSimDays] = useState<Set<DayName>>(new Set(['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']))
   const [showSim, setShowSim] = useState(false)
+
+  // Compute current gaps + simulated gaps
+  const baseGaps = useMemo(() => calculateGaps(employees), [employees])
+  const simulatedGaps = useMemo(() => simulateHire(baseGaps, {
+    weeklyShifts: simShifts,
+    shiftType: simShiftType,
+    friday: simFriday,
+    availableDays: simDays,
+  }), [baseGaps, simShifts, simShiftType, simFriday, simDays])
+  const gapImpact = useMemo(() => summarizeGapImpact(baseGaps, simulatedGaps), [baseGaps, simulatedGaps])
 
   const [hoveredCell, setHoveredCell] = useState<{ empIdx: number; weekIdx: number } | null>(null)
 
@@ -1004,65 +1019,186 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
             background: 'white', border: '1px solid #e8e0d4', borderTop: 'none',
             borderRadius: '0 0 10px 10px', padding: 20,
           }}>
-            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 16 }}>
-              <div style={{ minWidth: 200, flex: 1 }}>
+            {/* Step 1: Employee details */}
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a4a2e', marginBottom: 10 }}>1. פרטי העובדת החדשה</div>
+
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 14 }}>
+                <div style={{ minWidth: 200, flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 6 }}>
+                    משמרות בשבוע: <strong style={{ color: '#1a4a2e' }}>{simShifts}</strong>
+                  </label>
+                  <input type="range" min={1} max={6} value={simShifts}
+                    onChange={e => setSimShifts(Number(e.target.value))}
+                    style={{ width: '100%', accentColor: '#1a4a2e' }}
+                  />
+                </div>
+                <div style={{ minWidth: 160 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 6 }}>שישי</label>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {(['always', 'biweekly', 'never'] as const).map(val => (
+                      <button key={val} onClick={() => setSimFriday(val)}
+                        style={{
+                          flex: 1, padding: '6px 0', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
+                          background: simFriday === val ? '#1a4a2e' : 'white',
+                          color: simFriday === val ? 'white' : '#64748b',
+                          border: simFriday === val ? '2px solid #1a4a2e' : '1px solid #e8e0d4',
+                        }}
+                      >{val === 'always' ? 'תמיד' : val === 'biweekly' ? 'לסירוגין' : 'לא'}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ minWidth: 160 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 6 }}>סוג משמרת</label>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {(['הכל', 'בוקר', 'ערב'] as const).map(val => (
+                      <button key={val} onClick={() => setSimShiftType(val)}
+                        style={{
+                          flex: 1, padding: '6px 0', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
+                          background: simShiftType === val ? '#1a4a2e' : 'white',
+                          color: simShiftType === val ? 'white' : '#64748b',
+                          border: simShiftType === val ? '2px solid #1a4a2e' : '1px solid #e8e0d4',
+                        }}
+                      >{val}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Day selection */}
+              <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 6 }}>
-                  משמרות בשבוע: <strong style={{ color: '#1a4a2e' }}>{simShifts}</strong>
+                  ימים זמינים: <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400 }}>(סמנ/י את הימים שבהם העובדת תוכל לעבוד)</span>
                 </label>
-                <input type="range" min={1} max={6} value={simShifts}
-                  onChange={e => setSimShifts(Number(e.target.value))}
-                  style={{ width: '100%', accentColor: '#1a4a2e' }}
-                />
-              </div>
-              <div style={{ minWidth: 160 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 6 }}>שישי</label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {(['always', 'biweekly', 'never'] as const).map(val => (
-                    <button key={val} onClick={() => setSimFriday(val)}
-                      style={{
-                        flex: 1, padding: '6px 0', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
-                        background: simFriday === val ? '#1a4a2e' : 'white',
-                        color: simFriday === val ? 'white' : '#64748b',
-                        border: simFriday === val ? '2px solid #1a4a2e' : '1px solid #e8e0d4',
-                      }}
-                    >{val === 'always' ? 'תמיד' : val === 'biweekly' ? 'לסירוגין' : 'לא'}</button>
-                  ))}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {DAYS.map(day => {
+                    const selected = simDays.has(day)
+                    const isFriday = day === 'שישי'
+                    const disabled = isFriday && simFriday === 'never'
+                    return (
+                      <button
+                        key={day}
+                        disabled={disabled}
+                        onClick={() => setSimDays(prev => {
+                          const next = new Set(prev)
+                          if (next.has(day)) next.delete(day)
+                          else next.add(day)
+                          return next
+                        })}
+                        style={{
+                          minWidth: 56, padding: '8px 12px', fontSize: 13, fontWeight: 600, borderRadius: 6,
+                          cursor: disabled ? 'not-allowed' : 'pointer',
+                          background: disabled ? '#f3f4f6' : selected ? '#1a4a2e' : 'white',
+                          color: disabled ? '#9ca3af' : selected ? 'white' : '#64748b',
+                          border: selected ? '2px solid #1a4a2e' : '1px solid #e8e0d4',
+                          opacity: disabled ? 0.5 : 1,
+                        }}
+                      >{day}</button>
+                    )
+                  })}
                 </div>
-              </div>
-              <div style={{ minWidth: 160 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 6 }}>סוג משמרת</label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {(['הכל', 'בוקר', 'ערב'] as const).map(val => (
-                    <button key={val} onClick={() => setSimShiftType(val)}
-                      style={{
-                        flex: 1, padding: '6px 0', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
-                        background: simShiftType === val ? '#1a4a2e' : 'white',
-                        color: simShiftType === val ? 'white' : '#64748b',
-                        border: simShiftType === val ? '2px solid #1a4a2e' : '1px solid #e8e0d4',
-                      }}
-                    >{val}</button>
-                  ))}
-                </div>
+                {simDays.size === 0 && (
+                  <div style={{ fontSize: 11, color: '#dc2626', marginTop: 6 }}>⚠ יש לבחור לפחות יום אחד</div>
+                )}
               </div>
             </div>
-            <div style={{
-              background: '#EBF3D8', borderRadius: 8, padding: 14,
-              display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center',
-            }}>
-              <div style={{ fontSize: 13, color: '#1a4a2e' }}>
-                <strong>תוספת שבועית:</strong> +{simShifts} משמרות
+
+            {/* Step 2: Before/After comparison */}
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a4a2e', marginBottom: 10 }}>2. מה זה ייתן לך</div>
+
+              <div style={{ border: '1px solid #e8e0d4', borderRadius: 10, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#f8f7f4' }}>
+                      <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#6b7280' }}>מדד</th>
+                      <th style={{ padding: '10px', textAlign: 'center', fontWeight: 600, color: '#6b7280' }}>לפני</th>
+                      <th style={{ padding: '10px', textAlign: 'center', fontWeight: 600, color: '#6b7280' }}>אחרי</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#6b7280' }}>שיפור</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, borderTop: '1px solid #e8e0d4' }}>סה"כ חוסר</td>
+                      <td style={{ padding: '10px', textAlign: 'center', color: '#dc2626', fontWeight: 700, borderTop: '1px solid #e8e0d4' }}>
+                        {gapImpact.totalBefore}
+                      </td>
+                      <td style={{ padding: '10px', textAlign: 'center', color: gapImpact.totalAfter > 0 ? '#c17f3b' : '#16a34a', fontWeight: 700, borderTop: '1px solid #e8e0d4' }}>
+                        {gapImpact.totalAfter}
+                      </td>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, borderTop: '1px solid #e8e0d4', color: gapImpact.gapClosed > 0 ? '#16a34a' : '#6b7280' }}>
+                        {gapImpact.gapClosed > 0 ? `−${gapImpact.gapClosed} (${gapImpact.gapClosedPct}%)` : 'ללא שינוי'}
+                      </td>
+                    </tr>
+                    {gapImpact.totalFridayBefore > 0 && (
+                      <tr>
+                        <td style={{ padding: '10px 14px', fontWeight: 600, borderTop: '1px solid #e8e0d4' }}>חוסר בשישי</td>
+                        <td style={{ padding: '10px', textAlign: 'center', color: '#dc2626', fontWeight: 700, borderTop: '1px solid #e8e0d4' }}>
+                          {gapImpact.totalFridayBefore}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center', color: gapImpact.totalFridayAfter > 0 ? '#c17f3b' : '#16a34a', fontWeight: 700, borderTop: '1px solid #e8e0d4' }}>
+                          {gapImpact.totalFridayAfter}
+                        </td>
+                        <td style={{ padding: '10px 14px', fontWeight: 600, borderTop: '1px solid #e8e0d4', color: gapImpact.totalFridayBefore - gapImpact.totalFridayAfter > 0 ? '#16a34a' : '#6b7280' }}>
+                          {gapImpact.totalFridayBefore - gapImpact.totalFridayAfter > 0
+                            ? `−${gapImpact.totalFridayBefore - gapImpact.totalFridayAfter}`
+                            : simFriday === 'never' ? '🔴 לא נענה (העובדת לא זמינה שישי)' : 'ללא שינוי'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-              <div style={{ fontSize: 13, color: '#1a4a2e' }}>
-                <strong>שבוע הכי חלש:</strong>{' '}
-                {(() => {
-                  const ws = summaries[worstIdx]
-                  return ws ? `${Math.round(((ws.total + simShifts) / ws.standard) * 100)}% (במקום ${Math.round(ws.ratio * 100)}%)` : '—'
-                })()}
-              </div>
-              <div style={{ fontSize: 13, color: '#1a4a2e' }}>
-                <strong>ממוצע:</strong>{' '}
-                {Math.round(summaries.reduce((s, r) => s + ((r.total + simShifts) / r.standard), 0) / summaries.length * 100)}%
-              </div>
+            </div>
+
+            {/* Step 3: Smart recommendation */}
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a4a2e', marginBottom: 10 }}>3. המלצה</div>
+              {(() => {
+                const pct = gapImpact.gapClosedPct
+                const fridayUnmet = gapImpact.totalFridayAfter > 0 && simFriday === 'never'
+                const noDaysSelected = simDays.size === 0
+                const criticalGap = gapImpact.topRemaining.find(g => g.gap >= 4)
+
+                let category: 'excellent' | 'good' | 'partial' | 'poor' = 'poor'
+                if (noDaysSelected) category = 'poor'
+                else if (pct >= 80) category = 'excellent'
+                else if (pct >= 40) category = 'good'
+                else if (pct >= 10) category = 'partial'
+
+                const cfg = {
+                  excellent: { bg: '#dcfce7', border: '#16a34a', icon: '🟢', title: 'גיוס מצוין', color: '#16a34a' },
+                  good: { bg: '#FEF3E2', border: '#f59e0b', icon: '🟡', title: 'גיוס טוב חלקית', color: '#c17f3b' },
+                  partial: { bg: '#fff7ed', border: '#fb923c', icon: '🟠', title: 'גיוס משלים', color: '#c2410c' },
+                  poor: { bg: '#fee2e2', border: '#dc2626', icon: '🔴', title: 'גיוס לא מתאים', color: '#dc2626' },
+                }[category]
+
+                const tips: string[] = []
+                if (noDaysSelected) tips.push('בחרי לפחות יום אחד שהעובדת זמינה בו')
+                else if (pct >= 80) tips.push('העובדת סוגרת כמעט את כל החוסרים הקריטיים')
+                else {
+                  if (fridayUnmet) tips.push('חוסר שישי לא נסגר — נסי לוודא שהיא יכולה שישי, או גייסי עובדת נוספת לשישי')
+                  if (criticalGap) tips.push(`${criticalGap.day} ${criticalGap.shift} עדיין חסר ${criticalGap.gap} משמרות`)
+                  if (gapImpact.topRemaining.length > 0 && !criticalGap) tips.push(`חוסרים קטנים נשארים ב־${gapImpact.topRemaining.map(g => `${g.day} ${g.shift}`).join(', ')}`)
+                  if (tips.length === 0 && pct < 40) tips.push('הימים שנבחרו לא תואמים לחוסרים הקיימים — נסי ימים אחרים')
+                }
+
+                return (
+                  <div style={{
+                    background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 10, padding: 14,
+                  }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: cfg.color, marginBottom: 6 }}>
+                      {cfg.icon} {cfg.title}
+                      {!noDaysSelected && <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280', marginRight: 8 }}>— סוגרת {pct}% מהחוסרים</span>}
+                    </div>
+                    {tips.length > 0 && (
+                      <ul style={{ margin: '4px 0 0', paddingInlineStart: 20, fontSize: 13, color: '#475569', lineHeight: 1.7 }}>
+                        {tips.map((t, i) => <li key={i}>{t}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         )}
