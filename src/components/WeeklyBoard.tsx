@@ -109,8 +109,8 @@ const SLOT_DEFAULTS: Record<string, Record<string, SlotDefault[]>> = {
     'ערב':  [{ arrival: '14:00', departure: '21:00' }, { arrival: '15:00', departure: '21:00' }],
   },
   'רביעי':  {
-    'בוקר': [{ arrival: '07:00', departure: '15:00' }],
-    'ערב':  [{ arrival: '14:00', departure: '21:00' }, { arrival: '15:00', departure: '21:00' }, { arrival: '16:00', departure: '21:00' }],
+    'בוקר': [{ arrival: '06:55', departure: '14:00' }, { arrival: '07:00', departure: '15:00' }],
+    'ערב':  [{ arrival: '14:00', departure: '21:00' }, { arrival: '15:00', departure: '21:00' }],
   },
   'חמישי':  {
     'בוקר': [{ arrival: '06:30', departure: '14:00' }, { arrival: '06:45', departure: '14:30' }, { arrival: '07:00', departure: '15:00' }],
@@ -130,7 +130,7 @@ const MIYA_SCHEDULE: Record<string, { arrival: string; departure: string }> = {
   'ראשון':  { arrival: '07:00', departure: '15:00' },
   'שני':    { arrival: '07:00', departure: '15:00' },
   'שלישי':  { arrival: '07:00', departure: '15:00' },
-  'רביעי':  { arrival: '08:00', departure: '16:00' },
+  'רביעי':  { arrival: '08:00', departure: '17:00' },
   'חמישי':  { arrival: '10:00', departure: '19:00' },
   'שישי':   { arrival: '07:00', departure: '14:00' },
 };

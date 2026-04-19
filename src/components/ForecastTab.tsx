@@ -5,6 +5,7 @@ import type { Employee, AvailabilityForecast } from '../data/employees'
 import { supabase } from '../lib/supabaseClient'
 import { ISRAELI_HOLIDAYS } from '../data/holidays'
 import { HiringRecommendation } from './HiringRecommendation'
+import { SpecialDaysBoard } from './SpecialDaysBoard'
 import {
   DAYS, calculateGaps, simulateHire, summarizeGapImpact,
   type DayName,
@@ -404,6 +405,42 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
   }, [summaries])
   const forecastCount = activeEmployees.filter(e => (e.availabilityForecasts?.length ?? 0) > 0).length
 
+  // ═══ Friday-specific coverage per week ═══
+  const fridayData = useMemo(() => {
+    return weeks.map(week => {
+      // Friday standard: 6 unless the Friday is itself a holiday
+      const friDate = new Date(week.start)
+      friDate.setDate(friDate.getDate() + 5)
+      const friISO = `${friDate.getFullYear()}-${String(friDate.getMonth() + 1).padStart(2, '0')}-${String(friDate.getDate()).padStart(2, '0')}`
+      const friHoliday = ISRAELI_HOLIDAYS.find(h => h.date === friISO)
+      const isFridayClosed = friHoliday?.type === 'holiday'
+      const fridayRequired = isFridayClosed ? 0 : 6
+
+      // Friday covered: count active employees who are Friday-available that week
+      let fridayCovered = 0
+      for (const emp of activeEmployees) {
+        // Check if active and not on vacation/training
+        if (!isActiveInWeek(emp, week.startISO, week.endISO)) continue
+        if (isInTraining(emp, week.startISO, week.endISO)) continue
+        if (isOnVacation(emp, week.startISO, week.endISO)) continue
+        // Skip employees who work evening only (Friday is morning)
+        if (emp.shiftType === 'ערב') continue
+
+        // Check Friday availability
+        const override = emp.forecastOverrides?.[week.startISO]
+        const fc = getForecast(emp, week.startISO, week.endISO)
+        let fridayAvail: boolean
+        if (override) fridayAvail = override.friday
+        else if (fc) fridayAvail = fc.friday_available
+        else fridayAvail = emp.fridayAvailability !== 'never'
+
+        if (fridayAvail) fridayCovered += 1
+      }
+
+      return { fridayRequired, fridayCovered }
+    })
+  }, [weeks, activeEmployees])
+
   // ═══ Chart data ═══
   const chartData = useMemo(() => ({
     labels: weeks.map(w => w.label),
@@ -438,18 +475,50 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
         pointRadius: 0,
         fill: false,
       },
+      {
+        label: 'צפי שישי',
+        data: fridayData.map(f => f.fridayCovered),
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37,99,235,0.08)',
+        borderWidth: 2,
+        tension: 0.3,
+        pointRadius: 3,
+        fill: false,
+        yAxisID: 'y1',
+      },
+      {
+        label: 'נדרש שישי',
+        data: fridayData.map(f => f.fridayRequired),
+        borderColor: '#60a5fa',
+        borderWidth: 2,
+        borderDash: [4, 2],
+        tension: 0,
+        pointRadius: 0,
+        fill: false,
+        yAxisID: 'y1',
+      },
     ],
-  }), [weeks, summaries])
+  }), [weeks, summaries, fridayData])
 
   const chartOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { position: 'top' as const, labels: { font: { family: 'Heebo', size: 12 } } },
+      legend: { position: 'top' as const, labels: { font: { family: 'Heebo', size: 12 }, boxWidth: 14 } },
       tooltip: { titleFont: { family: 'Heebo' }, bodyFont: { family: 'Heebo' } },
     },
     scales: {
-      y: { beginAtZero: false, min: 0, ticks: { font: { family: 'Heebo', size: 11 } } },
+      y: {
+        beginAtZero: false, min: 0, position: 'right' as const,
+        title: { display: true, text: 'סה"כ משמרות בשבוע', font: { family: 'Heebo', size: 11 } },
+        ticks: { font: { family: 'Heebo', size: 11 } },
+      },
+      y1: {
+        beginAtZero: true, min: 0, max: 10, position: 'left' as const,
+        grid: { drawOnChartArea: false },
+        title: { display: true, text: 'משמרות שישי', font: { family: 'Heebo', size: 11 }, color: '#2563eb' },
+        ticks: { font: { family: 'Heebo', size: 11 }, color: '#2563eb' },
+      },
       x: { ticks: { font: { family: 'Heebo', size: 10 }, maxRotation: 45 } },
     },
   }), [])
@@ -1009,6 +1078,9 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
         <span><LegendDot color="#FEF3E2" /> 100-125%</span>
         <span><LegendDot color="#fee2e2" /> מתחת 100%</span>
       </div>
+
+      {/* ═══ Special Days Board (info-only) ═══ */}
+      <SpecialDaysBoard />
 
       {/* ═══ Hiring Simulator ═══ */}
       <div style={{ marginTop: 20 }}>
