@@ -13,6 +13,7 @@ import {
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
 const MIYA_NAME = 'מיה'
+const MIYA_WEEKLY_SHIFTS = 6  // Miya's fixed schedule: 6 morning shifts per week (Sun-Fri)
 const WEEKS_AHEAD = 12
 const STANDARD_SLOTS = 30
 const TARGET_RATIO = 1.25
@@ -151,7 +152,7 @@ interface CellData {
 }
 
 function isActiveInWeek(emp: Employee, wStart: string, wEnd: string): boolean {
-  if (emp.name === MIYA_NAME || emp.isTrainee) return false
+  if (emp.isTrainee) return false
   const startDate = emp.shiftsStart || emp.availableFromDate
   if (startDate && wEnd < startDate) return false
   if (emp.availableToDate && wStart > emp.availableToDate) return false
@@ -203,6 +204,10 @@ function computeAutoCell(emp: Employee, week: WeekInfo): CellData {
   const fc = getForecast(emp, week.startISO, week.endISO)
   if (fc) {
     return { value: fc.expected_shifts, source: 'forecast', forecast: fc, fridayAvailable: fc.friday_available, autoValue: fc.expected_shifts }
+  }
+  // Miya has a fixed schedule of 6 morning shifts/week
+  if (emp.name === MIYA_NAME) {
+    return { value: MIYA_WEEKLY_SHIFTS, source: 'default', fridayAvailable: true, autoValue: MIYA_WEEKLY_SHIFTS }
   }
   return { value: emp.shiftsPerWeek, source: 'default', fridayAvailable: emp.fridayAvailability !== 'never', autoValue: emp.shiftsPerWeek }
 }
@@ -291,10 +296,15 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
 
   const weeks = useMemo(generateWeeks, [])
 
-  const activeEmployees = useMemo(() =>
-    employees.filter(e => e.name !== MIYA_NAME && !e.isTrainee)
-      .sort((a, b) => a.name.localeCompare(b.name, 'he'))
-  , [employees])
+  const activeEmployees = useMemo(() => {
+    const list = employees.filter(e => !e.isTrainee)
+    // Miya first (fixed schedule), rest sorted alphabetically in Hebrew
+    return list.sort((a, b) => {
+      if (a.name === MIYA_NAME) return -1
+      if (b.name === MIYA_NAME) return 1
+      return a.name.localeCompare(b.name, 'he')
+    })
+  }, [employees])
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
