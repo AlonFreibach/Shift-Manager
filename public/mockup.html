@@ -147,9 +147,11 @@
     table.prefs .cell-assigned { color: #2D5016; background: #c8e6c9; }
     table.prefs .cell-assigned-only { color: #1976d2; background: #e3f2fd; }
     table.prefs .cell-locked {
-      background: #fff3cd !important; color: #8a6d3b; cursor: not-allowed;
+      background: #fff3cd !important; color: #8a6d3b;
     }
-    table.prefs .cell-locked:hover { outline: none; }
+    table.prefs .cell-locked:hover {
+      outline: 2px solid #c17f3b; outline-offset: -2px;
+    }
     table.prefs tbody tr:hover td:not(.col-name):not(.col-num):not(.col-actions) {
       background-color: #fef9e8;
     }
@@ -196,7 +198,7 @@
     <div class="legend">
       <span class="leg-item"><span class="leg-box leg-submitted">✓</span> הגישה</span>
       <span class="leg-item"><span class="leg-box leg-assigned">✓</span> שובצה (לחיצה לביטול)</span>
-      <span class="leg-item"><span class="leg-box leg-fixed">🔒</span> נעול/קבוע</span>
+      <span class="leg-item"><span class="leg-box leg-fixed">🔒</span> קבוע (ניתן לביטול חד-פעמי)</span>
       <span class="leg-hint">לחיצה על תא = שיבוץ/ביטול</span>
     </div>
 
@@ -312,15 +314,15 @@
             // Count submitted even if not assigned (for the הגישה column)
             // (already counted above when isSubmitted)
 
-            if (!isLocked) {
-              td.addEventListener('click', () => {
-                if (assigned[asKey]) delete assigned[asKey];
-                else assigned[asKey] = true;
-                render();
-              });
-              td.title = isAssigned ? 'לחיצה לביטול השיבוץ' : 'לחיצה לשיבוץ';
+            td.addEventListener('click', () => {
+              if (assigned[asKey]) delete assigned[asKey];
+              else assigned[asKey] = true;
+              render();
+            });
+            if (isLocked) {
+              td.title = 'משמרת קבועה (מיה) — לחיצה לביטול חד-פעמי לשבוע זה';
             } else {
-              td.title = 'משמרת קבועה — לא ניתן לבטל מכאן';
+              td.title = isAssigned ? 'לחיצה לביטול השיבוץ' : 'לחיצה לשיבוץ';
             }
 
             tr.appendChild(td);
