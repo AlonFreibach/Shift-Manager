@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0" />
+  <title>תצוגת טבלה (BETA) — מוקאפ</title>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Heebo', sans-serif;
+      background: #F5F0E8;
+      color: #1A3008;
+      margin: 0;
+      padding: 12px;
+    }
+    .wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .banner {
+      background: #fff7e6;
+      border: 1px solid #c17f3b;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: #92400E;
+    }
+    h2 {
+      color: #1a4a2e;
+      margin: 8px 0 16px;
+      font-size: 20px;
+    }
+
+    /* Week picker */
+    .week-picker {
+      display: flex; align-items: center; justify-content: center; gap: 16px;
+      background: white; border-radius: 10px; padding: 10px 16px;
+      border: 1px solid #e8e0d4; margin-bottom: 8px;
+    }
+    .week-picker button {
+      width: 32px; height: 32px; border-radius: 8px; border: 1px solid #C8DBA0;
+      background: white; cursor: pointer; font-size: 16px; color: #2D5016;
+    }
+    .week-picker .label {
+      font-size: 15px; font-weight: 600; min-width: 140px; text-align: center;
+    }
+
+    .tabs {
+      display: flex; justify-content: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .tabs button {
+      padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      cursor: pointer; background: #EBF3D8; color: #2D5016; border: 1px solid #C8DBA0;
+    }
+    .tabs button.active { background: #2D5016; color: white; }
+
+    .toggle {
+      display: flex; justify-content: center; gap: 0; margin-bottom: 12px;
+    }
+    .toggle button {
+      padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+      background: white; color: #1A3008; border: 1px solid #C8DBA0;
+    }
+    .toggle button:first-child { border-radius: 999px 0 0 999px; }
+    .toggle button:last-child { border-radius: 0 999px 999px 0; display: flex; align-items: center; gap: 6px; }
+    .toggle button.active { background: #1a4a2e; color: white; }
+    .beta-badge {
+      font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+      background: #c17f3b; color: white;
+    }
+
+    .toolbar {
+      display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .toolbar button {
+      padding: 7px 14px; border-radius: 8px; border: 1px solid #C8DBA0;
+      background: #EBF3D8; color: #2D5016; font-size: 13px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; gap: 6px;
+    }
+    .toolbar button.danger { border-color: #f5c6cb; background: #fff5f5; color: #e74c3c; }
+    .toolbar button.warn { border-color: #c17f3b; background: #fef3e2; color: #92400E; }
+
+    /* Legend */
+    .legend {
+      display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+      padding: 8px 12px; margin-bottom: 8px; background: #f9f6f0;
+      border: 1px solid #e8e0d4; border-radius: 8px; font-size: 11px;
+    }
+    .legend .leg-item { display: inline-flex; align-items: center; gap: 5px; }
+    .legend .leg-box {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; border-radius: 3px; border: 1px solid #d9d4c8;
+      font-weight: 700; font-size: 11px;
+    }
+    .legend .leg-submitted { background: white; color: #2D5016; }
+    .legend .leg-assigned { background: #c8e6c9; color: #2D5016; }
+    .legend .leg-fixed { background: #fff3cd; color: #8a6d3b; font-size: 9px; }
+    .legend .leg-hint {
+      margin-right: auto; font-style: italic; color: #5A8A1F;
+    }
+
+    /* Table */
+    .table-wrap {
+      background: white; border-radius: 12px; border: 1px solid #e8e0d4; padding: 12px;
+    }
+    .table-scroll { overflow-x: auto; }
+    table.prefs {
+      width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed;
+    }
+    table.prefs th, table.prefs td {
+      border: 1px solid #d9d4c8; padding: 4px;
+      text-align: center; vertical-align: middle;
+    }
+    table.prefs thead th {
+      background: #f5f0e8; font-weight: 700; font-size: 11px;
+      color: #1A3008; padding: 6px 4px;
+    }
+    table.prefs .col-name {
+      text-align: right; font-weight: 600; background: #f9f6f0;
+      width: 80px; white-space: nowrap; padding: 4px 8px;
+    }
+    table.prefs .col-day { color: #1a4a2e; font-size: 12px; }
+    table.prefs .col-shift {
+      font-size: 10px; font-weight: 500; color: #5A8A1F; background: #fdfaf3;
+    }
+    table.prefs .col-num {
+      font-weight: 700; color: #1A3008; background: #f9f6f0; width: 42px;
+    }
+    table.prefs .col-received { background: #e8f5e9; color: #1b5e20; }
+    table.prefs .col-notes {
+      text-align: right; font-size: 11px; color: #3a3a3a;
+      width: 180px; white-space: normal; padding: 4px 8px;
+    }
+    table.prefs .col-actions { width: 56px; background: #f9f6f0; white-space: nowrap; }
+
+    table.prefs .cell {
+      font-weight: 700; font-size: 14px; color: transparent;
+      height: 24px; cursor: pointer; transition: background 0.1s, transform 0.05s;
+    }
+    table.prefs .cell:hover {
+      outline: 2px solid #5A8A1F; outline-offset: -2px;
+    }
+    table.prefs .cell:active { transform: scale(0.93); }
+    table.prefs .cell-submitted { color: #2D5016; background: white; }
+    table.prefs .cell-assigned { color: #2D5016; background: #c8e6c9; }
+    table.prefs .cell-assigned-only { color: #1976d2; background: #e3f2fd; }
+    table.prefs .cell-locked {
+      background: #fff3cd !important; color: #8a6d3b; cursor: not-allowed;
+    }
+    table.prefs .cell-locked:hover { outline: none; }
+    table.prefs tbody tr:hover td:not(.col-name):not(.col-num):not(.col-actions) {
+      background-color: #fef9e8;
+    }
+    table.prefs tbody tr:hover .cell-assigned { background-color: #b0d9b1; }
+
+    .row-btn {
+      width: 24px; height: 24px; border-radius: 4px; border: 1px solid #e8e0d4;
+      background: white; cursor: pointer; font-size: 12px; margin: 0 1px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="banner">
+      <strong>📋 מוקאפ אינטראקטיבי</strong> — תצוגת "טבלה" החדשה ב-"העדפות שהוגשו". לחיצה על תא = שיבוץ/ביטול. הנתונים מקומיים בלבד ומתאפסים ב-refresh.
+    </div>
+
+    <h2>העדפות שהוגשו</h2>
+
+    <div class="week-picker">
+      <button>→</button>
+      <span class="label" id="weekLabel">17/5 — 22/5</span>
+      <button>←</button>
+    </div>
+
+    <div class="tabs">
+      <button class="active">17/5–22/5</button>
+      <button>24/5–29/5</button>
+      <button>31/5–5/6</button>
+    </div>
+
+    <div class="toggle">
+      <button>כרטיסיות</button>
+      <button class="active">טבלה <span class="beta-badge">BETA</span></button>
+    </div>
+
+    <div class="toolbar">
+      <button>🖨️ הדפס</button>
+      <button>📋 העתק לווטסאפ</button>
+      <button class="danger">🗑️ אפס העדפות</button>
+      <button class="warn">⚡ שבץ אוטומטי</button>
+    </div>
+
+    <div class="legend">
+      <span class="leg-item"><span class="leg-box leg-submitted">✓</span> הגישה</span>
+      <span class="leg-item"><span class="leg-box leg-assigned">✓</span> שובצה (לחיצה לביטול)</span>
+      <span class="leg-item"><span class="leg-box leg-fixed">🔒</span> נעול/קבוע</span>
+      <span class="leg-hint">לחיצה על תא = שיבוץ/ביטול</span>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table class="prefs" id="tbl">
+          <thead>
+            <tr>
+              <th rowspan="2" class="col-name">שם</th>
+              <th colspan="2" class="col-day">ראשון</th>
+              <th colspan="2" class="col-day">שני</th>
+              <th colspan="2" class="col-day">שלישי</th>
+              <th colspan="2" class="col-day">רביעי</th>
+              <th colspan="2" class="col-day">חמישי</th>
+              <th class="col-day">שישי</th>
+              <th rowspan="2" class="col-num">צפי</th>
+              <th rowspan="2" class="col-num">הגישה</th>
+              <th rowspan="2" class="col-num">קיבלה</th>
+              <th rowspan="2" class="col-notes">הערות</th>
+              <th rowspan="2" class="col-actions"></th>
+            </tr>
+            <tr>
+              <th class="col-shift">בוקר</th><th class="col-shift">ערב</th>
+              <th class="col-shift">בוקר</th><th class="col-shift">ערב</th>
+              <th class="col-shift">בוקר</th><th class="col-shift">ערב</th>
+              <th class="col-shift">בוקר</th><th class="col-shift">ערב</th>
+              <th class="col-shift">בוקר</th><th class="col-shift">ערב</th>
+              <th class="col-shift">בוקר</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ─── Mock data ───
+    const DAYS = ['ראשון','שני','שלישי','רביעי','חמישי','שישי'];
+    const SHIFTS = ['morning','evening'];
+
+    // Each employee: name, forecast, submitted shifts, note, isMiya?
+    const EMPLOYEES = [
+      { id: 'miya',    name: 'מיה',    forecast: 6, submitted: {}, note: '', miya: true },
+      { id: 'agam',    name: 'אגם',    forecast: 3, submitted: {'0_morning':1,'2_morning':1,'4_morning':1}, note: '' },
+      { id: 'ayalet',  name: 'איילת',  forecast: 8, submitted: {'0_morning':1,'1_morning':1,'1_evening':1,'2_morning':1,'3_morning':1,'4_morning':1,'4_evening':1,'5_morning':1}, note: '' },
+      { id: 'alin',    name: 'אלין',   forecast: 2, submitted: {'2_evening':1,'3_morning':1,'4_morning':1}, note: '' },
+      { id: 'elad',    name: 'אלעד',   forecast: 8, submitted: {'0_morning':1,'1_morning':1,'1_evening':1,'2_morning':1,'3_morning':1,'3_evening':1,'4_morning':1,'5_morning':1}, note: 'יכול כפולות בשני ורביעי' },
+      { id: 'gali',    name: 'גלי',    forecast: 2, submitted: {'2_evening':1,'3_morning':1}, note: 'שבין 14 ל-20 במאי אני לא אוכל לעבוד' },
+      { id: 'dana',    name: 'דנה ב.', forecast: 1, submitted: {'4_evening':1}, note: '' },
+      { id: 'liel',    name: 'ליאל',   forecast: 2, submitted: {'3_evening':1,'4_evening':1}, note: 'יום חמישי החל מ-15:30' },
+      { id: 'moh',     name: 'מוחמד',  forecast: 4, submitted: {'0_morning':1,'1_morning':1,'2_morning':1,'3_morning':1}, note: '' },
+      { id: 'neta',    name: 'נטע',    forecast: 4, submitted: {'1_evening':1,'2_evening':1,'3_evening':1,'5_morning':1}, note: '' },
+      { id: 'tahel',   name: 'תהל',    forecast: 4, submitted: {'1_evening':1,'3_evening':1,'4_evening':1,'5_morning':1}, note: '' },
+      { id: 'tamar',   name: 'תמר',    forecast: 2, submitted: {'4_morning':1,'5_morning':1}, note: 'אם אפשר לבוא בשמונה בשישי 🙏' },
+    ];
+
+    // Initial assignments (mock — what Maya already decided)
+    // Pre-assign Miya to all mornings (locked) + a few sample assignments
+    const assigned = {}; // key: empId_day_shift => true (or 'locked')
+    DAYS.forEach((_, di) => {
+      assigned[`miya_${di}_morning`] = 'locked'; // Miya is fixed every morning
+    });
+    // Sample pre-assignments
+    assigned['ayalet_4_morning'] = true;
+    assigned['ayalet_5_morning'] = true;
+    assigned['elad_1_morning'] = true;
+    assigned['elad_3_evening'] = true;
+
+    // ─── Render ───
+    function render() {
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = '';
+
+      EMPLOYEES.forEach(emp => {
+        const tr = document.createElement('tr');
+
+        // Name cell
+        const nameTd = document.createElement('td');
+        nameTd.className = 'col-name';
+        nameTd.textContent = emp.name;
+        tr.appendChild(nameTd);
+
+        // Cells (day × shift, with Friday morning only)
+        let received = 0;
+        let submitted = 0;
+        DAYS.forEach((_, di) => {
+          SHIFTS.forEach(shift => {
+            if (di === 5 && shift === 'evening') return;
+
+            const td = document.createElement('td');
+            td.className = 'cell';
+            const subKey = `${di}_${shift}`;
+            const asKey = `${emp.id}_${di}_${shift}`;
+            const isSubmitted = !!emp.submitted[subKey];
+            const isAssigned = !!assigned[asKey];
+            const isLocked = assigned[asKey] === 'locked';
+
+            if (isAssigned && isSubmitted) td.classList.add('cell-assigned');
+            else if (isAssigned) td.classList.add('cell-assigned-only');
+            else if (isSubmitted) td.classList.add('cell-submitted');
+            if (isLocked) td.classList.add('cell-locked');
+
+            if (isAssigned) {
+              td.textContent = isLocked ? '🔒' : '✓';
+              received++;
+              if (isSubmitted) submitted++;
+            } else if (isSubmitted) {
+              td.textContent = '✓';
+              submitted++;
+            }
+
+            // Count submitted even if not assigned (for the הגישה column)
+            // (already counted above when isSubmitted)
+
+            if (!isLocked) {
+              td.addEventListener('click', () => {
+                if (assigned[asKey]) delete assigned[asKey];
+                else assigned[asKey] = true;
+                render();
+              });
+              td.title = isAssigned ? 'לחיצה לביטול השיבוץ' : 'לחיצה לשיבוץ';
+            } else {
+              td.title = 'משמרת קבועה — לא ניתן לבטל מכאן';
+            }
+
+            tr.appendChild(td);
+          });
+        });
+
+        // Actually count submitted separately (was being double-counted)
+        submitted = Object.keys(emp.submitted).filter(k => emp.submitted[k]).length;
+
+        // צפי
+        const forecastTd = document.createElement('td');
+        forecastTd.className = 'col-num';
+        forecastTd.textContent = emp.forecast;
+        tr.appendChild(forecastTd);
+
+        // הגישה
+        const submittedTd = document.createElement('td');
+        submittedTd.className = 'col-num';
+        submittedTd.textContent = emp.miya ? '—' : submitted;
+        tr.appendChild(submittedTd);
+
+        // קיבלה (highlighted)
+        const receivedTd = document.createElement('td');
+        receivedTd.className = 'col-num col-received';
+        receivedTd.textContent = received;
+        tr.appendChild(receivedTd);
+
+        // הערות
+        const notesTd = document.createElement('td');
+        notesTd.className = 'col-notes';
+        notesTd.textContent = emp.note;
+        tr.appendChild(notesTd);
+
+        // Actions
+        const actionsTd = document.createElement('td');
+        actionsTd.className = 'col-actions';
+        actionsTd.innerHTML = '<button class="row-btn" title="ערוך">✏️</button><button class="row-btn" title="מחק">🗑️</button>';
+        tr.appendChild(actionsTd);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    render();
+  </script>
+</body>
+</html>
