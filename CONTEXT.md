@@ -411,4 +411,18 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 
 ---
 
-*עדכון אחרון: 2026-05-18*
+---
+
+## סיבוב 6 — מאי 2026
+
+### תיקונים ושיפורים ב-PreferencesView
+- **תיקון עובדות חסרות:** `notSubmitted` השתמש ב-`today` כ-cutoff — עובדות שמתחילות שבוע הבא לא הופיעו בטבלת התכנון של אותו שבוע. תוקן: הפילטר עכשיו משתמש ב-`weekStart`/`weekEnd` (תחילת/סוף השבוע המתוכנן) כדי לכלול כל עובדת פעילה בשבוע הנבחר.
+- **כפתור הדפסה — שינוי פורמט:** כפתור 🖨️ בתצוגת הטבלה פותח כעת את **לוח השיבוץ המוכן להפצה לעובדות** (אותו פורמט WeeklyBoard), ולא את טבלת ההעדפות של המנהלת.
+- **חילוץ `printSchedule` ל-utility:** לוגיקת ה-print הועברה מ-`WeeklyBoard.tsx` ל-`src/utils/printSchedule.ts` — shared בין WeeklyBoard ו-PreferencesView. WeeklyBoard עדיין עובד אותו דבר.
+
+### קבצים חדשים/ששונו
+- `src/utils/printSchedule.ts` — utility חדש: `printSchedule(weekKeys, employees)` פותח חלון HTML מוכן להדפסה
+- `src/components/WeeklyBoard.tsx` — `generatePDF` מאצילה ל-`printSchedule`
+- `src/components/PreferencesView.tsx` — כפתור הדפסה → `printSchedule([weekStart], employees)`
+
+*עדכון אחרון: 2026-05-20*
