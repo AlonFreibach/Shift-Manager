@@ -45,22 +45,22 @@ export const ISRAELI_HOLIDAYS: IsraeliHoliday[] = [
   { date: '2026-04-08', name: 'שביעי של פסח', type: 'holiday' },
 
   // April — Memorial days (legal: regular work; demand: BBQ supplies for Yom HaAtzmaut)
-  { date: '2026-04-15', name: 'ערב יום השואה', type: 'memorial', demand: 'normal' },
-  { date: '2026-04-16', name: 'יום השואה', type: 'memorial', demand: 'normal' },
-  { date: '2026-04-21', name: 'ערב יום הזיכרון', type: 'memorial', demand: 'normal' },
-  { date: '2026-04-22', name: 'יום הזיכרון / ערב יום העצמאות', type: 'holiday_eve', demand: 'high',
+  { date: '2026-04-13', name: 'ערב יום השואה', type: 'memorial', demand: 'normal' },
+  { date: '2026-04-14', name: 'יום השואה', type: 'memorial', demand: 'normal' },
+  { date: '2026-04-20', name: 'ערב יום הזיכרון', type: 'memorial', demand: 'normal' },
+  { date: '2026-04-21', name: 'יום הזיכרון / ערב יום העצמאות', type: 'holiday_eve', demand: 'high',
     demandNote: 'ערב יום העצמאות — ביקוש מוגבר לירקות/פירות לעל האש' },
   // Per Mia's decision: יום העצמאות — open as a regular work day (not closed)
-  { date: '2026-04-23', name: 'יום העצמאות', type: 'memorial', demand: 'high',
+  { date: '2026-04-22', name: 'יום העצמאות', type: 'memorial', demand: 'high',
     demandNote: 'יום העצמאות — פתוח רגיל (החלטה של מיה). ביקוש גבוה — על האש, פיקניקים' },
 
   // May — Lag BaOmer, Yom Yerushalayim, Shavuot
   { date: '2026-05-05', name: 'ל"ג בעומר', type: 'memorial', demand: 'normal',
     demandNote: 'ל"ג בעומר — ביקוש מוגבר לעל האש' },
-  { date: '2026-05-12', name: 'ערב שבועות', type: 'holiday_eve', demand: 'peak',
-    demandNote: 'ערב שבועות — פירות וירקות למנות חלביות, סלטים, עוגות גבינה' },
-  { date: '2026-05-13', name: 'שבועות', type: 'holiday' },
   { date: '2026-05-15', name: 'יום ירושלים', type: 'memorial', demand: 'normal' },
+  { date: '2026-05-21', name: 'ערב שבועות', type: 'holiday_eve', demand: 'peak',
+    demandNote: 'ערב שבועות — פירות וירקות למנות חלביות, סלטים, עוגות גבינה' },
+  { date: '2026-05-22', name: 'שבועות', type: 'holiday' },
 
   // July — Tisha B'Av
   { date: '2026-07-23', name: 'תשעה באב', type: 'holiday_eve', demand: 'low',
@@ -101,39 +101,60 @@ export const ISRAELI_HOLIDAYS: IsraeliHoliday[] = [
   { date: '2027-01-22', name: 'ט"ו בשבט', type: 'memorial', demand: 'peak',
     demandNote: 'ט"ו בשבט — חג האילנות, פסגת ביקוש לפירות יבשים ופירות טריים' },
 
-  // March — Purim 2027
-  { date: '2027-03-22', name: 'פורים', type: 'memorial', demand: 'peak',
+  // March — Purim 2027 (5787 is a leap year — Purim falls on 14 Adar II)
+  { date: '2027-03-22', name: 'תענית אסתר', type: 'memorial', demand: 'high',
+    demandNote: 'ערב פורים — הכנת משלוחי מנות, ביקוש גבוה' },
+  { date: '2027-03-23', name: 'פורים', type: 'memorial', demand: 'peak',
     demandNote: 'פורים — פסגת ביקוש: פירות יבשים, אגוזים, פירות למשלוחי מנות' },
-  { date: '2027-03-23', name: 'שושן פורים (ירושלים)', type: 'memorial', demand: 'normal' },
+  { date: '2027-03-24', name: 'שושן פורים (ירושלים)', type: 'memorial', demand: 'normal' },
 
   // April 2027 — Passover
-  { date: '2027-04-20', name: 'ערב פסח', type: 'holiday_eve', demand: 'peak',
+  { date: '2027-04-21', name: 'ערב פסח', type: 'holiday_eve', demand: 'peak',
     demandNote: 'ערב פסח — היום הכי עמוס בשנה' },
-  { date: '2027-04-21', name: 'פסח א׳', type: 'holiday' },
-  { date: '2027-04-22', name: 'חול המועד פסח', type: 'memorial', demand: 'high' },
+  { date: '2027-04-22', name: 'פסח א׳', type: 'holiday' },
   { date: '2027-04-23', name: 'חול המועד פסח', type: 'memorial', demand: 'high' },
   { date: '2027-04-24', name: 'חול המועד פסח', type: 'memorial', demand: 'high' },
   { date: '2027-04-25', name: 'חול המועד פסח', type: 'memorial', demand: 'high' },
-  { date: '2027-04-26', name: 'חול המועד פסח — ערב שביעי', type: 'holiday_eve', demand: 'high' },
-  { date: '2027-04-27', name: 'שביעי של פסח', type: 'holiday' },
+  { date: '2027-04-26', name: 'חול המועד פסח', type: 'memorial', demand: 'high' },
+  { date: '2027-04-27', name: 'חול המועד פסח — ערב שביעי', type: 'holiday_eve', demand: 'high' },
+  { date: '2027-04-28', name: 'שביעי של פסח', type: 'holiday' },
 
   // Memorial days 2027
-  { date: '2027-05-04', name: 'ערב יום השואה', type: 'memorial', demand: 'normal' },
-  { date: '2027-05-05', name: 'יום השואה', type: 'memorial', demand: 'normal' },
+  { date: '2027-05-03', name: 'ערב יום השואה', type: 'memorial', demand: 'normal' },
+  { date: '2027-05-04', name: 'יום השואה', type: 'memorial', demand: 'normal' },
   { date: '2027-05-10', name: 'ערב יום הזיכרון', type: 'memorial', demand: 'normal' },
   { date: '2027-05-11', name: 'יום הזיכרון / ערב יום העצמאות', type: 'holiday_eve', demand: 'high' },
   // Per Mia's decision: יום העצמאות — open as a regular work day
   { date: '2027-05-12', name: 'יום העצמאות', type: 'memorial', demand: 'high',
     demandNote: 'יום העצמאות — פתוח רגיל. ביקוש גבוה — על האש, פיקניקים' },
-  { date: '2027-05-31', name: 'ערב שבועות', type: 'holiday_eve', demand: 'peak' },
-  { date: '2027-06-01', name: 'שבועות', type: 'holiday' },
+  { date: '2027-06-10', name: 'ערב שבועות', type: 'holiday_eve', demand: 'peak',
+    demandNote: 'ערב שבועות — פירות וירקות למנות חלביות, סלטים, עוגות גבינה' },
+  { date: '2027-06-11', name: 'שבועות', type: 'holiday' },
 
-  // Tishrei 2027
-  { date: '2027-09-01', name: 'ראש השנה א׳', type: 'holiday' },
-  { date: '2027-09-02', name: 'ראש השנה ב׳', type: 'holiday' },
-  { date: '2027-09-09', name: 'יום כיפור', type: 'holiday' },
-  { date: '2027-09-14', name: 'סוכות א׳', type: 'holiday' },
-  { date: '2027-09-21', name: 'שמיני עצרת / שמחת תורה', type: 'holiday' },
+  // Tishrei 2027 — Rosh Hashana 5788 falls on Saturday Oct 2
+  { date: '2027-10-01', name: 'ערב ראש השנה', type: 'holiday_eve', demand: 'peak',
+    demandNote: 'ערב ראש השנה — פסגת ביקוש: סימנים, פירות לקערה, ירקות לארוחת חג' },
+  { date: '2027-10-02', name: 'ראש השנה א׳', type: 'holiday' },
+  { date: '2027-10-03', name: 'ראש השנה ב׳', type: 'holiday' },
+  { date: '2027-10-10', name: 'ערב יום כיפור', type: 'holiday_eve', demand: 'high',
+    demandNote: 'ערב יום כיפור — ארוחה מפסקת, ביקוש גבוה במיוחד בבוקר' },
+  { date: '2027-10-11', name: 'יום כיפור', type: 'holiday' },
+  { date: '2027-10-15', name: 'ערב סוכות', type: 'holiday_eve', demand: 'peak',
+    demandNote: 'ערב סוכות — ירקות לסוכה, אירוח אורחים, ביקוש גבוה מאוד' },
+  { date: '2027-10-16', name: 'סוכות א׳', type: 'holiday' },
+  { date: '2027-10-17', name: 'חול המועד סוכות', type: 'memorial', demand: 'high',
+    demandNote: 'חול המועד סוכות — אירוח משפחתי, ביקוש מוגבר' },
+  { date: '2027-10-18', name: 'חול המועד סוכות', type: 'memorial', demand: 'high',
+    demandNote: 'חול המועד סוכות' },
+  { date: '2027-10-19', name: 'חול המועד סוכות', type: 'memorial', demand: 'high',
+    demandNote: 'חול המועד סוכות' },
+  { date: '2027-10-20', name: 'חול המועד סוכות', type: 'memorial', demand: 'high',
+    demandNote: 'חול המועד סוכות' },
+  { date: '2027-10-21', name: 'חול המועד סוכות', type: 'memorial', demand: 'high',
+    demandNote: 'חול המועד סוכות' },
+  { date: '2027-10-22', name: 'הושענא רבה', type: 'holiday_eve', demand: 'high',
+    demandNote: 'הושענא רבה — ערב שמיני עצרת, ביקוש גבוה' },
+  { date: '2027-10-23', name: 'שמיני עצרת / שמחת תורה', type: 'holiday' },
 ]
 
 const holidayMap = new Map(ISRAELI_HOLIDAYS.map(h => [h.date, h]))

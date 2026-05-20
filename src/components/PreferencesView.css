@@ -56,7 +56,10 @@
 .prefs-legend .leg-fixed {
   background: #fff3cd;
   color: #8a6d3b;
-  font-size: 9px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.15;
+  padding: 0 2px;
 }
 .prefs-legend .leg-hint {
   margin-right: auto;

@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from 'react'
+import { useMemo, useEffect, useState, useRef, useCallback } from 'react'
 import {
   loadSchedule,
   saveSchedule as saveScheduleToStorage,
@@ -76,6 +76,36 @@ export function PreferencesTableView({
 }: Props) {
   const [schedule, setSchedule] = useState<Schedule>({})
 
+  // ── Undo stack ──
+  const undoStackRef = useRef<Schedule[]>([])
+  const [undoCount, setUndoCount] = useState(0)
+
+  function pushUndo(snap: Schedule) {
+    undoStackRef.current.push(JSON.parse(JSON.stringify(snap)))
+    if (undoStackRef.current.length > 20) undoStackRef.current.shift()
+    setUndoCount(undoStackRef.current.length)
+  }
+
+  const undo = useCallback(() => {
+    const prev = undoStackRef.current.pop()
+    if (!prev) return
+    setSchedule(prev)
+    saveScheduleToStorage(weekStart, prev)
+    setUndoCount(undoStackRef.current.length)
+  }, [weekStart])
+
+  // Ctrl+Z shortcut
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [undo])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -100,7 +130,11 @@ export function PreferencesTableView({
   const weekEndISO = useMemo(() => {
     const d = new Date(weekStart + 'T00:00:00')
     d.setDate(d.getDate() + 5)
-    return d.toISOString().slice(0, 10)
+    // Use local date components to avoid UTC timezone shift (Israel is UTC+3)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
   }, [weekStart])
 
   // Date string for each day of the week (Sunday=0 … Friday=5)
@@ -108,7 +142,11 @@ export function PreferencesTableView({
     return DAY_NAMES.map((_, i) => {
       const d = new Date(weekStart + 'T00:00:00')
       d.setDate(d.getDate() + i)
-      return d.toISOString().slice(0, 10)
+      // Use local date components to avoid UTC timezone shift (Israel is UTC+3)
+      const y = d.getFullYear()
+      const mo = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${mo}-${day}`
     })
   }, [weekStart])
 
@@ -166,6 +204,7 @@ export function PreferencesTableView({
   }
 
   function toggleAssignment(empId: string, dayIdx: number, shiftType: 'morning' | 'evening') {
+    pushUndo(schedule)
     const dayName = DAY_NAMES[dayIdx]
     const shiftName = shiftType === 'morning' ? 'בוקר' : 'ערב'
     const cellKey = `${dayName}_${shiftName}`
@@ -213,11 +252,34 @@ export function PreferencesTableView({
         <h3>העדפות שהוגשו — שבוע {weekLabel}</h3>
       </div>
 
+      {/* ── Undo button ── */}
+      <div className="print-hide" style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 8 }}>
+        <button
+          onClick={undo}
+          disabled={undoCount === 0}
+          title="בטל פעולה אחרונה (Ctrl+Z)"
+          style={{
+            padding: '5px 14px', borderRadius: 7, border: '1px solid #C8DBA0',
+            background: undoCount === 0 ? '#f5f0e8' : '#1a4a2e',
+            color: undoCount === 0 ? '#94a3b8' : 'white',
+            fontSize: 13, fontWeight: 600,
+            cursor: undoCount === 0 ? 'default' : 'pointer',
+            opacity: undoCount === 0 ? 0.5 : 1,
+            display: 'flex', alignItems: 'center', gap: 5,
+          }}
+        >
+          ↩ בטל
+        </button>
+      </div>
+
       <div className="prefs-legend print-hide">
         <span className="leg-item"><span className="leg-box leg-submitted">✓</span> ביקשה (לא שובצה)</span>
         <span className="leg-item"><span className="leg-box leg-assigned">✓</span> ביקשה + שובצה</span>
         <span className="leg-item"><span className="leg-box leg-assigned-no-req"> </span> שובצה (לא ביקשה)</span>
-        <span className="leg-item"><span className="leg-box leg-fixed">🔒</span> קבוע (ניתן לביטול חד-פעמי)</span>
+        <span className="leg-item">
+          <span className="leg-box leg-fixed" style={{ fontSize: 8, lineHeight: 1.1 }}>✓ קבועה</span>
+          משמרת קבועה (לחיצה לביטול חד-פעמי)
+        </span>
         <span className="leg-hint">לחיצה על תא = שיבוץ/ביטול</span>
       </div>
 
@@ -357,11 +419,18 @@ export function PreferencesTableView({
                       if (isLocked) cellClass += ' cell-locked'
 
                       // Content:
-                      // locked → 🔒
+                      // locked → ✓ + "קבועה" label (yellow bg via cell-locked)
                       // submitted (whether or not assigned) → ✓
                       // not submitted + assigned → (green, no mark)
                       // not submitted + not assigned → (empty)
-                      const content = isLocked ? '🔒' : (submitted ? '✓' : '')
+                      const cellContent = isLocked
+                        ? (
+                          <div style={{ lineHeight: 1.1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                            <span>✓</span>
+                            <span style={{ fontSize: 7, fontWeight: 600, color: '#8a6d3b', letterSpacing: 0 }}>קבועה</span>
+                          </div>
+                        )
+                        : (submitted ? '✓' : '')
 
                       const title = isLocked
                         ? 'משמרת קבועה — לחיצה לביטול חד-פעמי לשבוע זה'
@@ -376,9 +445,10 @@ export function PreferencesTableView({
                           key={key}
                           className={cellClass}
                           title={title}
+                          style={isLocked ? { height: 'auto', minHeight: 32 } : undefined}
                           onClick={() => toggleAssignment(row.id, di, t)}
                         >
-                          {content}
+                          {cellContent}
                         </td>
                       )
                     })
