@@ -1,17 +1,31 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import { useSupabaseEmployees } from './hooks/useSupabaseEmployees'
 import { supabase } from './lib/supabaseClient'
-import { WeeklyBoard } from './components/WeeklyBoard'
-import { EmployeesTab } from './components/EmployeesTab'
-import { FairnessTab } from './components/FairnessTab'
 import { AuthScreen } from './components/AuthScreen'
-import { EmployeeDashboard } from './components/EmployeeDashboard'
-import { PreferencesView } from './components/PreferencesView'
-import { ForecastTab } from './components/ForecastTab'
-import { JoinPage } from './pages/JoinPage'
 import './App.css'
+
+// Lazy-loaded — each becomes its own JS chunk, keeping the initial bundle small.
+const WeeklyBoard = lazy(() => import('./components/WeeklyBoard').then(m => ({ default: m.WeeklyBoard })))
+const EmployeesTab = lazy(() => import('./components/EmployeesTab').then(m => ({ default: m.EmployeesTab })))
+const FairnessTab = lazy(() => import('./components/FairnessTab').then(m => ({ default: m.FairnessTab })))
+const EmployeeDashboard = lazy(() => import('./components/EmployeeDashboard').then(m => ({ default: m.EmployeeDashboard })))
+const PreferencesView = lazy(() => import('./components/PreferencesView').then(m => ({ default: m.PreferencesView })))
+const ForecastTab = lazy(() => import('./components/ForecastTab').then(m => ({ default: m.ForecastTab })))
+const JoinPage = lazy(() => import('./pages/JoinPage').then(m => ({ default: m.JoinPage })))
+
+/** Spinner shown while a lazy-loaded tab/route chunk downloads. */
+function TabLoading() {
+  return (
+    <div dir="rtl" style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
+      <div
+        className="w-10 h-10 border-4 rounded-full animate-spin"
+        style={{ borderColor: '#e8e0d4', borderTopColor: '#1a4a2e' }}
+      />
+    </div>
+  )
+}
 
 type TabId = 'board' | 'employees' | 'preferences' | 'fairness' | 'forecast';
 
@@ -120,7 +134,11 @@ function AppContent() {
         </div>
       )
     }
-    return <EmployeeDashboard employee={employeeData} signOut={signOut} />
+    return (
+      <Suspense fallback={<TabLoading />}>
+        <EmployeeDashboard employee={employeeData} signOut={signOut} />
+      </Suspense>
+    )
   }
 
   // Admin view
@@ -217,27 +235,29 @@ function AppContent() {
 
       {/* Tab Content */}
       <main style={{ width: '100%', padding: '16px 24px' }}>
-        {currentTab === 'board' && (
-          <WeeklyBoard
-            employees={activeEmployees}
-            refreshEmployees={refreshEmployees}
-            autoScheduleRequest={autoScheduleRequest}
-            onAutoScheduleHandled={() => setAutoScheduleRequest(null)}
-            onNavigateToPreferences={() => setCurrentTab('preferences')}
-          />
-        )}
-        {currentTab === 'employees' && (
-          <EmployeesTab employees={employees} onRefresh={refreshEmployees} />
-        )}
-        {currentTab === 'preferences' && (
-          <PreferencesView onAutoSchedule={handleAutoSchedule} employees={employees} />
-        )}
-        {currentTab === 'fairness' && (
-          <FairnessTab employees={activeEmployees} />
-        )}
-        {currentTab === 'forecast' && (
-          <ForecastTab employees={employees} onRefresh={refreshEmployees} />
-        )}
+        <Suspense fallback={<TabLoading />}>
+          {currentTab === 'board' && (
+            <WeeklyBoard
+              employees={activeEmployees}
+              refreshEmployees={refreshEmployees}
+              autoScheduleRequest={autoScheduleRequest}
+              onAutoScheduleHandled={() => setAutoScheduleRequest(null)}
+              onNavigateToPreferences={() => setCurrentTab('preferences')}
+            />
+          )}
+          {currentTab === 'employees' && (
+            <EmployeesTab employees={employees} onRefresh={refreshEmployees} />
+          )}
+          {currentTab === 'preferences' && (
+            <PreferencesView onAutoSchedule={handleAutoSchedule} employees={employees} />
+          )}
+          {currentTab === 'fairness' && (
+            <FairnessTab employees={activeEmployees} />
+          )}
+          {currentTab === 'forecast' && (
+            <ForecastTab employees={employees} onRefresh={refreshEmployees} />
+          )}
+        </Suspense>
       </main>
     </div>
   )
@@ -245,10 +265,12 @@ function AppContent() {
 
 function App() {
   return (
-    <Routes>
-      <Route path="/join/:token" element={<JoinPage />} />
-      <Route path="*" element={<AppContent />} />
-    </Routes>
+    <Suspense fallback={<TabLoading />}>
+      <Routes>
+        <Route path="/join/:token" element={<JoinPage />} />
+        <Route path="*" element={<AppContent />} />
+      </Routes>
+    </Suspense>
   )
 }
 

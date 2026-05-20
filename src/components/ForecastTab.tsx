@@ -1,11 +1,14 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, lazy, Suspense } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from 'chart.js'
 import type { Employee, AvailabilityForecast } from '../data/employees'
 import { supabase } from '../lib/supabaseClient'
 import { ISRAELI_HOLIDAYS } from '../data/holidays'
-import { HiringRecommendation } from './HiringRecommendation'
 import { SpecialDaysBoard } from './SpecialDaysBoard'
+
+// Lazy-loaded — pulls the jsPDF export bundle out of the main forecast chunk.
+const HiringRecommendation = lazy(() =>
+  import('./HiringRecommendation').then(m => ({ default: m.HiringRecommendation })))
 import {
   DAYS, calculateGaps, simulateHire, summarizeGapImpact,
   type DayName,
@@ -1327,7 +1330,9 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
       </div>
 
       {/* ═══ Hiring Recommendation ═══ */}
-      <HiringRecommendation employees={employees} />
+      <Suspense fallback={null}>
+        <HiringRecommendation employees={employees} />
+      </Suspense>
 
       {/* ═══ Toast ═══ */}
       {toast && (
