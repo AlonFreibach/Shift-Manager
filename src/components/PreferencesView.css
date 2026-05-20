@@ -49,6 +49,10 @@
   background: #c8e6c9;
   color: #2D5016;
 }
+.prefs-legend .leg-assigned-no-req {
+  background: #c8e6c9;
+  color: transparent; /* empty content, just green bg */
+}
 .prefs-legend .leg-fixed {
   background: #fff3cd;
   color: #8a6d3b;
@@ -139,14 +143,11 @@
   background: #ffffff;
 }
 
+/* assigned: always green bg.
+   ✓ shows only when submitted (content='✓'); no mark when not submitted (content=''). */
 .prefs-table .cell-assigned {
   color: #2D5016;
   background: #c8e6c9;
-}
-
-.prefs-table .cell-assigned-only {
-  color: #1976d2;
-  background: #e3f2fd;
 }
 
 .prefs-table .cell-clickable {
@@ -172,6 +173,11 @@
 }
 
 .prefs-table .col-received {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.prefs-table thead .col-received-hdr {
   background: #e8f5e9;
   color: #1b5e20;
 }

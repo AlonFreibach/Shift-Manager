@@ -8,9 +8,21 @@ import {
 } from '../lib/scheduleStorage'
 import type { Employee } from '../data/employees'
 import { expectedShiftsThisWeek } from '../utils/forecastGaps'
+import { ISRAELI_HOLIDAYS } from '../data/holidays'
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
 const SHIFT_TYPES = ['morning', 'evening'] as const
+
+// Required headcount per shift (SLOT_DEFAULTS employees + Miya locked slot).
+// Miya works every day morning — she accounts for +1 on every morning shift.
+const SHIFT_REQUIRED: Record<string, Partial<Record<'morning' | 'evening', number>>> = {
+  'ראשון':  { morning: 2, evening: 2 },
+  'שני':    { morning: 2, evening: 2 },
+  'שלישי':  { morning: 2, evening: 2 },
+  'רביעי':  { morning: 3, evening: 2 },
+  'חמישי':  { morning: 4, evening: 3 },
+  'שישי':   { morning: 6 },
+}
 
 type GroupedEmployee = {
   employeeId: string
@@ -34,16 +46,22 @@ type Props = {
   allEmployees: Employee[]
 }
 
-// Default arrival/departure for a new slot created from this view.
-// Matches WeeklyBoard SLOT_DEFAULTS approximately — Maya can fine-tune in WeeklyBoard.
 function defaultSlotTimes(dayIdx: number, shift: 'morning' | 'evening'): { arrival: string; departure: string } {
   if (shift === 'morning') {
-    if (dayIdx === 5) return { arrival: '07:00', departure: '15:30' } // Friday
-    if (dayIdx === 3) return { arrival: '07:00', departure: '15:00' } // Wed
-    if (dayIdx === 4) return { arrival: '06:45', departure: '14:30' } // Thu
+    if (dayIdx === 5) return { arrival: '07:00', departure: '15:30' }
+    if (dayIdx === 3) return { arrival: '07:00', departure: '15:00' }
+    if (dayIdx === 4) return { arrival: '06:45', departure: '14:30' }
     return { arrival: '07:00', departure: '15:00' }
   }
-  return { arrival: '14:00', departure: '21:00' } // evening
+  return { arrival: '14:00', departure: '21:00' }
+}
+
+function holidayBadge(type: 'holiday' | 'holiday_eve' | 'memorial', demand?: string) {
+  if (type === 'holiday') return { emoji: '🔴', label: 'סגור', bg: '#fee2e2', color: '#b91c1c' }
+  if (type === 'holiday_eve') return { emoji: '🟡', label: 'ערב חג', bg: '#fef9c3', color: '#92400e' }
+  if (demand === 'peak') return { emoji: '🔴', label: 'פסגה', bg: '#fce7f3', color: '#9d174d' }
+  if (demand === 'high') return { emoji: '🟠', label: 'גבוה', bg: '#fff7ed', color: '#c2410c' }
+  return { emoji: '⚪', label: '', bg: '#f9fafb', color: '#6b7280' }
 }
 
 export function PreferencesTableView({
@@ -56,7 +74,6 @@ export function PreferencesTableView({
   notSubmittedEmployees,
   allEmployees,
 }: Props) {
-  // Load schedule from Supabase (with localStorage fallback). Subscribe to realtime.
   const [schedule, setSchedule] = useState<Schedule>({})
 
   useEffect(() => {
@@ -74,29 +91,40 @@ export function PreferencesTableView({
     }
   }, [weekStart])
 
-  // Build a quick employee-id -> Employee map (for forecast computation)
   const empById = useMemo(() => {
     const m = new Map<string, Employee>()
     for (const e of allEmployees) m.set(e.id, e)
     return m
   }, [allEmployees])
 
-  // Week end ISO (5 days after weekStart for Sunday→Friday)
   const weekEndISO = useMemo(() => {
     const d = new Date(weekStart + 'T00:00:00')
     d.setDate(d.getDate() + 5)
     return d.toISOString().slice(0, 10)
   }, [weekStart])
 
-  // Build assignment map: empId -> Set of "dayIdx_shiftType"
+  // Date string for each day of the week (Sunday=0 … Friday=5)
+  const dayDates = useMemo(() => {
+    return DAY_NAMES.map((_, i) => {
+      const d = new Date(weekStart + 'T00:00:00')
+      d.setDate(d.getDate() + i)
+      return d.toISOString().slice(0, 10)
+    })
+  }, [weekStart])
+
+  // Holidays per day
+  const dayHolidays = useMemo(() => {
+    return dayDates.map(iso => ISRAELI_HOLIDAYS.filter(h => h.date === iso))
+  }, [dayDates])
+
+  // Assignment map: empId → Set<"dayIdx_shiftType">
   const assignedByEmp = useMemo(() => {
     const map = new Map<string, Set<string>>()
     for (const [cellKey, slots] of Object.entries(schedule)) {
       const [dayName, shiftName] = cellKey.split('_')
       const dayIdx = DAY_NAMES.indexOf(dayName)
       if (dayIdx < 0) continue
-      const shiftType =
-        shiftName === 'בוקר' ? 'morning' : shiftName === 'ערב' ? 'evening' : null
+      const shiftType = shiftName === 'בוקר' ? 'morning' : shiftName === 'ערב' ? 'evening' : null
       if (!shiftType) continue
       for (const slot of slots) {
         if (!slot.employeeId) continue
@@ -105,6 +133,15 @@ export function PreferencesTableView({
       }
     }
     return map
+  }, [schedule])
+
+  // Assigned count per schedule cell (e.g. "ראשון_בוקר" → 2)
+  const assignedCountPerCell = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const [cellKey, slots] of Object.entries(schedule)) {
+      counts[cellKey] = slots.filter(s => s.employeeId !== null).length
+    }
+    return counts
   }, [schedule])
 
   function countSubmitted(emp: GroupedEmployee): number {
@@ -128,9 +165,6 @@ export function PreferencesTableView({
     return expectedShiftsThisWeek(emp, weekStart, weekEndISO)
   }
 
-  // ─── Click-to-assign handler ───
-  // Toggle: if employee is already in a slot for this cell, remove that slot.
-  // Otherwise, append a new slot with the employee.
   function toggleAssignment(empId: string, dayIdx: number, shiftType: 'morning' | 'evening') {
     const dayName = DAY_NAMES[dayIdx]
     const shiftName = shiftType === 'morning' ? 'בוקר' : 'ערב'
@@ -141,10 +175,6 @@ export function PreferencesTableView({
 
     const existingIdx = slots.findIndex(s => s.employeeId === empId)
     if (existingIdx >= 0) {
-      // Allow toggling off even locked/fixed slots — Maya wants to make
-      // per-week exceptions (e.g. Miya sick on Monday). We keep the slot
-      // structure (with its locked/isFixed metadata) but clear employeeId,
-      // so WeeklyBoard's auto-populate won't re-add the employee.
       slots[existingIdx] = { ...slots[existingIdx], employeeId: null }
     } else {
       const { arrival, departure } = defaultSlotTimes(dayIdx, shiftType)
@@ -154,7 +184,6 @@ export function PreferencesTableView({
         departureTime: departure,
         station: '',
       }
-      // Prefer filling an empty (employeeId=null) non-locked slot before appending.
       const emptyIdx = slots.findIndex(s => !s.locked && !s.isFixed && s.employeeId === null)
       if (emptyIdx >= 0) slots[emptyIdx] = newSlot
       else slots.push(newSlot)
@@ -164,7 +193,6 @@ export function PreferencesTableView({
     saveScheduleToStorage(weekStart, next)
   }
 
-  // Rows: submitted employees first, then "not submitted" (still planable)
   const allRows = useMemo(() => {
     const submittedIds = new Set(grouped.map(g => g.employeeId))
     const rows: { id: string; name: string; group?: GroupedEmployee; submitted: boolean }[] = []
@@ -186,8 +214,9 @@ export function PreferencesTableView({
       </div>
 
       <div className="prefs-legend print-hide">
-        <span className="leg-item"><span className="leg-box leg-submitted">✓</span> הגישה</span>
-        <span className="leg-item"><span className="leg-box leg-assigned">✓</span> שובצה (לחיצה לביטול)</span>
+        <span className="leg-item"><span className="leg-box leg-submitted">✓</span> ביקשה (לא שובצה)</span>
+        <span className="leg-item"><span className="leg-box leg-assigned">✓</span> ביקשה + שובצה</span>
+        <span className="leg-item"><span className="leg-box leg-assigned-no-req"> </span> שובצה (לא ביקשה)</span>
         <span className="leg-item"><span className="leg-box leg-fixed">🔒</span> קבוע (ניתן לביטול חד-פעמי)</span>
         <span className="leg-hint">לחיצה על תא = שיבוץ/ביטול</span>
       </div>
@@ -195,35 +224,90 @@ export function PreferencesTableView({
       <div className="prefs-table-scroll">
         <table className="prefs-table" dir="rtl">
           <thead>
+            {/* ── Row 1: column group headers ── */}
             <tr>
               <th rowSpan={2} className="col-name">שם</th>
+
+              {/* Summary columns — right of שם, before the day grid */}
+              <th rowSpan={2} className="col-num">צפי</th>
+              <th rowSpan={2} className="col-num">הגישה</th>
+              <th rowSpan={2} className="col-num col-received-hdr">קיבלה</th>
+              <th rowSpan={2} className="col-notes">הערות</th>
+
+              {/* Day columns with optional holiday badge */}
               {DAY_NAMES.map((d, idx) => {
                 const isFriday = idx === 5
+                const holidays = dayHolidays[idx]
+                const dateStr = dayDates[idx]
+                const dateFmt = dateStr.slice(8, 10) + '.' + dateStr.slice(5, 7)
                 return (
                   <th key={d} colSpan={isFriday ? 1 : 2} className="col-day">
-                    {d}
+                    <div style={{ fontWeight: 700 }}>{d}</div>
+                    <div style={{ fontSize: 10, fontWeight: 400, color: '#888', marginBottom: holidays.length ? 2 : 0 }}>
+                      {dateFmt}
+                    </div>
+                    {holidays.map(h => {
+                      const badge = holidayBadge(h.type, h.demand)
+                      return (
+                        <div
+                          key={h.name}
+                          title={h.demandNote || h.name}
+                          style={{
+                            display: 'inline-block', fontSize: 9, fontWeight: 700,
+                            padding: '1px 5px', borderRadius: 4, marginTop: 2,
+                            background: badge.bg, color: badge.color,
+                            whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {badge.emoji} {h.name}
+                        </div>
+                      )
+                    })}
                   </th>
                 )
               })}
-              <th rowSpan={2} className="col-num">צפי</th>
-              <th rowSpan={2} className="col-num">הגישה</th>
-              <th rowSpan={2} className="col-num">קיבלה</th>
-              <th rowSpan={2} className="col-notes">הערות</th>
+
               <th rowSpan={2} className="col-actions print-hide"></th>
             </tr>
+
+            {/* ── Row 2: shift sub-headers with (assigned/required) counter ── */}
             <tr>
               {DAY_NAMES.map((d, idx) => {
                 const isFriday = idx === 5
                 if (isFriday) {
-                  return <th key={`${d}-b`} className="col-shift">בוקר</th>
+                  const required = SHIFT_REQUIRED[d]?.morning ?? 0
+                  const cellKey = `${d}_בוקר`
+                  const assigned = assignedCountPerCell[cellKey] ?? 0
+                  const full = assigned >= required
+                  return (
+                    <th key={`${d}-b`} className="col-shift">
+                      <div>בוקר</div>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: full ? '#16a34a' : '#b45309' }}>
+                        {assigned}/{required}
+                      </div>
+                    </th>
+                  )
                 }
-                return [
-                  <th key={`${d}-b`} className="col-shift">בוקר</th>,
-                  <th key={`${d}-e`} className="col-shift">ערב</th>,
-                ]
+                return SHIFT_TYPES.map(t => {
+                  const shiftHebrew = t === 'morning' ? 'בוקר' : 'ערב'
+                  const required = SHIFT_REQUIRED[d]?.[t] ?? 0
+                  const cellKey = `${d}_${shiftHebrew}`
+                  const assigned = assignedCountPerCell[cellKey] ?? 0
+                  const full = assigned >= required
+                  return (
+                    <th key={`${d}-${t}`} className="col-shift">
+                      <div>{shiftHebrew}</div>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: full ? '#16a34a' : '#b45309' }}>
+                        {assigned}/{required}
+                      </div>
+                    </th>
+                  )
+                })
               })}
             </tr>
           </thead>
+
           <tbody>
             {allRows.length === 0 && (
               <tr>
@@ -241,7 +325,16 @@ export function PreferencesTableView({
 
               return (
                 <tr key={row.id} className={row.submitted ? '' : 'prefs-not-submitted'}>
+                  {/* שם */}
                   <td className="col-name">{row.name}</td>
+
+                  {/* Summary columns — immediately after שם */}
+                  <td className="col-num">{forecast ?? '—'}</td>
+                  <td className="col-num">{row.submitted ? submittedCount : '—'}</td>
+                  <td className="col-num col-received">{receivedCount}</td>
+                  <td className="col-notes">{row.group?.note ?? ''}</td>
+
+                  {/* Day×Shift cells */}
                   {DAY_NAMES.map((dayName, di) =>
                     SHIFT_TYPES.map(t => {
                       if (di === 5 && t === 'evening') return null
@@ -249,26 +342,34 @@ export function PreferencesTableView({
                       const submitted = !!row.group?.shifts[key]
                       const assigned = assignedSet.has(key)
 
-                      // Find the slot for this cell (if assigned) to check locked/isFixed
                       const cellKey = `${dayName}_${t === 'morning' ? 'בוקר' : 'ערב'}`
                       const slot = schedule[cellKey]?.find(s => s.employeeId === row.id)
                       const isLocked = !!(slot?.locked || slot?.isFixed)
 
+                      // Coloring:
+                      // assigned (any) → green
+                      // not assigned + submitted → white with ✓
+                      // not assigned + not submitted → empty
+                      // locked → yellow (overrides green)
                       let cellClass = 'cell cell-clickable'
-                      if (assigned && submitted) cellClass += ' cell-assigned'
-                      else if (assigned) cellClass += ' cell-assigned-only'
+                      if (assigned) cellClass += ' cell-assigned'
                       else if (submitted) cellClass += ' cell-submitted'
                       if (isLocked) cellClass += ' cell-locked'
 
-                      const content = assigned
-                        ? (isLocked ? '🔒' : '✓')
-                        : (submitted ? '✓' : '')
+                      // Content:
+                      // locked → 🔒
+                      // submitted (whether or not assigned) → ✓
+                      // not submitted + assigned → (green, no mark)
+                      // not submitted + not assigned → (empty)
+                      const content = isLocked ? '🔒' : (submitted ? '✓' : '')
 
                       const title = isLocked
                         ? 'משמרת קבועה — לחיצה לביטול חד-פעמי לשבוע זה'
                         : assigned
                           ? 'לחיצה לביטול השיבוץ'
-                          : 'לחיצה לשיבוץ'
+                          : submitted
+                            ? 'לחיצה לשיבוץ (ביקשה משמרת זו)'
+                            : 'לחיצה לשיבוץ'
 
                       return (
                         <td
@@ -282,36 +383,16 @@ export function PreferencesTableView({
                       )
                     })
                   )}
-                  <td className="col-num">{forecast ?? '—'}</td>
-                  <td className="col-num">{row.submitted ? submittedCount : '—'}</td>
-                  <td className="col-num col-received">{receivedCount}</td>
-                  <td className="col-notes">{row.group?.note ?? ''}</td>
+
+                  {/* Actions */}
                   <td className="col-actions print-hide">
                     {row.group ? (
                       <>
-                        <button
-                          className="row-btn"
-                          onClick={() => onEdit(row.group!)}
-                          title="ערוך"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          className="row-btn row-btn-del"
-                          onClick={() => onDelete(row.group!)}
-                          title="מחק"
-                        >
-                          🗑️
-                        </button>
+                        <button className="row-btn" onClick={() => onEdit(row.group!)} title="ערוך">✏️</button>
+                        <button className="row-btn row-btn-del" onClick={() => onDelete(row.group!)} title="מחק">🗑️</button>
                       </>
                     ) : (
-                      <button
-                        className="row-btn"
-                        onClick={() => onManualEntry(row.id)}
-                        title="הזן ידנית"
-                      >
-                        +
-                      </button>
+                      <button className="row-btn" onClick={() => onManualEntry(row.id)} title="הזן ידנית">+</button>
                     )}
                   </td>
                 </tr>
