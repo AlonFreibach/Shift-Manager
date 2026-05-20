@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { calculateFairnessScore, calculateFlexibilityScore, calculateStabilityScore } from '../utils/fairnessScore';
-import { withAccumulatedHistory, resetAccumulatedData } from '../utils/fairnessAccumulator';
+import {
+  withAccumulatedHistory,
+  resetAccumulatedData,
+  snapshotAccumulatedStorage,
+  restoreAccumulatedStorage,
+} from '../utils/fairnessAccumulator';
+import { useUndoStack } from '../hooks/useUndoStack';
+import { UndoButton } from './UndoButton';
 import type { Employee } from '../data/employees';
 
 interface FairnessTabProps {
@@ -18,6 +25,13 @@ function flexDisplayInfo(score: number | null): { text: string; color: string } 
 export function FairnessTab({ employees }: FairnessTabProps) {
   const [, forceUpdate] = useState(0);
 
+  const undo = useUndoStack<Record<string, string>>({
+    onRestore: (snap) => {
+      restoreAccumulatedStorage(snap);
+      forceUpdate(n => n + 1);
+    },
+  });
+
   const rows = employees.filter(e => !e.isTrainee).map(emp => {
     const enriched = withAccumulatedHistory(emp);
     const fairness = calculateFairnessScore(enriched);
@@ -34,7 +48,8 @@ export function FairnessTab({ employees }: FairnessTabProps) {
   rows.sort((a, b) => b.composite - a.composite);
 
   function handleReset() {
-    if (window.confirm('האם לאפס את כל היסטוריית הצדק? פעולה זו אינה ניתנת לביטול.')) {
+    if (window.confirm('האם לאפס את כל היסטוריית הצדק? ניתן לשחזר עם כפתור "בטל".')) {
+      undo.push(snapshotAccumulatedStorage());
       resetAccumulatedData();
       forceUpdate(n => n + 1);
     }
@@ -44,21 +59,25 @@ export function FairnessTab({ employees }: FairnessTabProps) {
     <div style={{ background: 'white', borderRadius: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', padding: 24, border: '1px solid #e8e0d4' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>טבלת צדק</h2>
-        <button
-          onClick={handleReset}
-          style={{
-            padding: '8px 16px',
-            fontSize: 13,
-            background: '#fee2e2',
-            color: '#dc2626',
-            border: '1px solid #fca5a5',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          אפס היסטוריה
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <UndoButton onUndo={undo.undo} canUndo={undo.canUndo} />
+          <button
+            onClick={handleReset}
+            aria-label="אפס היסטוריית צדק"
+            style={{
+              padding: '8px 16px',
+              fontSize: 13,
+              background: '#fee2e2',
+              color: '#dc2626',
+              border: '1px solid #fca5a5',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            אפס היסטוריה
+          </button>
+        </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

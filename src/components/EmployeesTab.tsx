@@ -4,6 +4,8 @@ import { CreateUserModal } from './CreateUserModal';
 import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 import { supabase } from '../lib/supabaseClient';
 import type { SupabaseEmployee } from '../lib/supabaseClient';
+import { useUndoStack } from '../hooks/useUndoStack';
+import { UndoButton } from './UndoButton';
 
 interface EmployeesTabProps {
   employees: Employee[];
@@ -274,6 +276,26 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     setCardEditDirty(false);
   };
 
+  // ── Undo (snapshot-based: restores the whole employees table to a prior state) ──
+  const employeesUndo = useUndoStack<SupabaseEmployee[]>({
+    onRestore: async (snapshot) => {
+      // Upsert snapshot rows — restores deleted rows and reverts edits.
+      await supabase.from('employees').upsert(snapshot);
+      // Remove any employee created after the snapshot was taken.
+      const snapIds = new Set(snapshot.map(r => r.id));
+      const { data: current } = await supabase.from('employees').select('id');
+      const extras = (current || []).filter(r => !snapIds.has(r.id)).map(r => r.id);
+      if (extras.length) await supabase.from('employees').delete().in('id', extras);
+      onRefresh();
+    },
+  });
+
+  // Snapshot the full employees table before a mutation, so it can be undone.
+  const snapshotEmployees = async () => {
+    const { data } = await supabase.from('employees').select('*');
+    if (data) employeesUndo.push(data as SupabaseEmployee[]);
+  };
+
   const saveCardEdit = async () => {
     if (!draftEmployee || editingCardId === null) return;
     if (!draftEmployee.name?.trim()) {
@@ -304,6 +326,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     if ((draftEmployee as Record<string, unknown>).trainingStart !== undefined) updateData.training_start = (draftEmployee as Record<string, unknown>).trainingStart || null;
     if ((draftEmployee as Record<string, unknown>).shiftsStart !== undefined) updateData.shifts_start = (draftEmployee as Record<string, unknown>).shiftsStart || null;
 
+    await snapshotEmployees();
     const { error } = await supabase
       .from('employees')
       .update(updateData)
@@ -339,6 +362,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
   const formerEmployees = employees.filter(e => isInactive(e));
 
   const restoreEmployee = async (emp: Employee) => {
+    await snapshotEmployees();
     await supabase.from('employees').update({ active_until: null }).eq('id', emp.id);
     onRefresh();
   };
@@ -458,23 +482,26 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
     <div dir="rtl">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>עובדות/ים</h2>
-        {subTab === 'active' && (
-          <button
-            onClick={openAddModal}
-            style={{
-              padding: '8px 20px',
-              fontSize: 14,
-              fontWeight: 600,
-              background: '#1a4a2e',
-              color: 'white',
-              border: 'none',
-              borderRadius: 6,
-              cursor: 'pointer',
-            }}
-          >
-            + הוסף עובד/ת
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <UndoButton onUndo={employeesUndo.undo} canUndo={employeesUndo.canUndo} />
+          {subTab === 'active' && (
+            <button
+              onClick={openAddModal}
+              style={{
+                padding: '8px 20px',
+                fontSize: 14,
+                fontWeight: 600,
+                background: '#1a4a2e',
+                color: 'white',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+              }}
+            >
+              + הוסף עובד/ת
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sub-tabs */}
@@ -1073,7 +1100,8 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     </button>
                     <button
                       onClick={async () => {
-                        if (window.confirm(`האם למחוק את ${employee.name}? פעולה זו אינה ניתנת לביטול.`)) {
+                        if (window.confirm(`האם למחוק את ${employee.name}? ניתן לשחזר עם כפתור "בטל".`)) {
+                          await snapshotEmployees();
                           const { error } = await supabase.from('employees').delete().eq('id', employee.id);
                           if (error) { alert('שגיאה במחיקה: ' + error.message); return; }
                           onRefresh();

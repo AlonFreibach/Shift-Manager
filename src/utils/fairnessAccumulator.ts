@@ -42,6 +42,31 @@ export function resetAccumulatedData(): void {
 }
 
 /**
+ * Snapshot every fairness-related localStorage key (for undo of a reset).
+ */
+export function snapshotAccumulatedStorage(): Record<string, string> {
+  const snap: Record<string, string> = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && (k === STORAGE_KEY || k.startsWith('flexibility_history_'))) {
+      const v = localStorage.getItem(k);
+      if (v !== null) snap[k] = v;
+    }
+  }
+  return snap;
+}
+
+/**
+ * Restore fairness-related localStorage from a snapshot (undo of a reset).
+ */
+export function restoreAccumulatedStorage(snap: Record<string, string>): void {
+  resetAccumulatedData(); // clear current state first
+  for (const [k, v] of Object.entries(snap)) {
+    localStorage.setItem(k, v);
+  }
+}
+
+/**
  * Called when a schedule is saved. Adds fairness events for each assigned employee.
  * type 1 (3pts) = got a shift assigned this week.
  * One event per assigned shift.

@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { isWeekLocked, toggleWeekUnlock, fetchUnlockedWeeks } from '../utils/submissionWindow'
 import { UnsavedChangesDialog } from './UnsavedChangesDialog'
 import { PreferencesTableView } from './PreferencesTableView'
 import './PreferencesView.css'
 import { printSchedule } from '../utils/printSchedule'
+import { useUndoStack } from '../hooks/useUndoStack'
+import { UndoButton } from './UndoButton'
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
 const SHIFT_TYPES = ['morning', 'evening'] as const
@@ -216,12 +218,14 @@ function ManualEntryModal({
   onSaved,
   onClose,
   preselectedEmployeeId,
+  onBeforeSave,
 }: {
   employees: { id: string; name: string }[]
   weekStart: string
   onSaved: () => void
   onClose: () => void
   preselectedEmployeeId?: string
+  onBeforeSave?: () => void
 }) {
   const [selectedId, setSelectedId] = useState(preselectedEmployeeId || '')
   const [saving, setSaving] = useState(false)
@@ -259,6 +263,8 @@ function ManualEntryModal({
         })
       }
     }
+
+    onBeforeSave?.()
 
     await supabase.from('preferences').upsert(rows, {
       onConflict: 'employee_id,week_start,day_of_week,shift_type',
@@ -593,6 +599,34 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
     })
   }, [allEmployees, grouped, weekStart, selectedFriday])
 
+  // ── Undo for preference-data mutations (edit / delete / reset / manual entry) ──
+  const prefsRef = useRef<any[]>([])
+  useEffect(() => { prefsRef.current = prefs }, [prefs])
+
+  const prefsUndo = useUndoStack<any[]>({
+    enableHotkey: viewMode === 'cards',
+    onRestore: async (snapshot) => {
+      await supabase.from('preferences').delete().eq('week_start', weekStart)
+      const rows = snapshot.map(r => ({
+        employee_id: r.employee_id,
+        week_start: weekStart,
+        day_of_week: r.day_of_week,
+        shift_type: r.shift_type,
+        available: r.available,
+        note: r.note ?? '',
+        submitted_at: r.submitted_at || r.created_at || new Date().toISOString(),
+      }))
+      if (rows.length) await supabase.from('preferences').insert(rows)
+      fetchPreferences()
+      setToast('הפעולה בוטלה')
+    },
+  })
+  const { clear: clearPrefsUndo } = prefsUndo
+  // Undo is per-week — reset the stack when navigating to another week.
+  useEffect(() => { clearPrefsUndo() }, [weekStart, clearPrefsUndo])
+
+  const pushPrefsUndo = () => prefsUndo.push(prefsRef.current)
+
   // ─── Actions ───
 
   async function handleUnlockWeek() {
@@ -665,6 +699,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
   async function handleResetPreferences() {
     if (!confirm(`למחוק את כל ההעדפות לשבוע ${fmtDate(selectedSunday)} — ${fmtDate(selectedFriday)}?`)) return
 
+    pushPrefsUndo()
     await supabase
       .from('preferences')
       .delete()
@@ -675,6 +710,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
   }
 
   async function handleDeleteEmployee(emp: GroupedEmployee) {
+    pushPrefsUndo()
     await supabase
       .from('preferences')
       .delete()
@@ -688,6 +724,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
 
   async function handleEditSave(shifts: EditShifts, note: string) {
     if (!editingEmployee) return
+    pushPrefsUndo()
     setEditSaving(true)
 
     const rows: {
@@ -879,6 +916,9 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
       <div className="print-hide" style={{
         display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap',
       }}>
+        {viewMode === 'cards' && (
+          <UndoButton onUndo={prefsUndo.undo} canUndo={prefsUndo.canUndo} />
+        )}
         {viewMode === 'table' && (
           <button
             onClick={() => printSchedule([weekStart], allEmployeesFull)}
@@ -1186,6 +1226,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
             : allEmployees.filter(e => e.role !== 'admin')
           }
           weekStart={weekStart}
+          onBeforeSave={pushPrefsUndo}
           onSaved={() => {
             setManualEntryOpen(false)
             setManualEntryPreselected(undefined)

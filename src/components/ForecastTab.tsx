@@ -10,6 +10,8 @@ import {
   DAYS, calculateGaps, simulateHire, summarizeGapImpact,
   type DayName,
 } from '../utils/forecastGaps'
+import { useUndoStack } from '../hooks/useUndoStack'
+import { UndoButton } from './UndoButton'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -312,10 +314,41 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
     setTimeout(() => setToast(null), 2200)
   }, [])
 
+  // ── Undo for forecast overrides (standard column + per-employee cell overrides) ──
+  type ForecastUndoSnap =
+    | { kind: 'standard'; standard: Record<string, number> }
+    | { kind: 'cell'; empId: string; overrides: Record<string, { shifts: number; friday: boolean }> }
+
+  const forecastUndo = useUndoStack<ForecastUndoSnap>({
+    onRestore: async (snap) => {
+      if (snap.kind === 'standard') {
+        setStandardOverrides(snap.standard)
+        showToast('הפעולה בוטלה')
+        return
+      }
+      const emp = employees.find(e => e.id === snap.empId)
+      if (!emp) return
+      setSaving(true)
+      const restored = snap.overrides
+      const { error } = await supabase
+        .from('employees')
+        .update({ forecast_overrides: Object.keys(restored).length > 0 ? restored : null })
+        .eq('id', snap.empId)
+      setSaving(false)
+      if (!error) {
+        emp.forecastOverrides = restored
+        showToast('הפעולה בוטלה')
+        onRefresh?.()
+      }
+    },
+  })
+  const { push: pushForecastUndo } = forecastUndo
+
   // Save override for a specific employee cell
   const saveCellOverride = useCallback(async (empId: string, weekISO: string, shifts: number, friday: boolean) => {
     const emp = employees.find(e => e.id === empId)
     if (!emp) return
+    pushForecastUndo({ kind: 'cell', empId, overrides: { ...(emp.forecastOverrides || {}) } })
     setSaving(true)
     const current = { ...(emp.forecastOverrides || {}) }
     current[weekISO] = { shifts, friday }
@@ -329,11 +362,12 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
       showToast('נשמר ✓')
       onRefresh?.()
     }
-  }, [employees, showToast, onRefresh])
+  }, [employees, showToast, onRefresh, pushForecastUndo])
 
   const clearCellOverride = useCallback(async (empId: string, weekISO: string) => {
     const emp = employees.find(e => e.id === empId)
     if (!emp) return
+    pushForecastUndo({ kind: 'cell', empId, overrides: { ...(emp.forecastOverrides || {}) } })
     setSaving(true)
     const current = { ...(emp.forecastOverrides || {}) }
     delete current[weekISO]
@@ -347,7 +381,7 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
       showToast('אופס ✓')
       onRefresh?.()
     }
-  }, [employees, showToast, onRefresh])
+  }, [employees, showToast, onRefresh, pushForecastUndo])
 
   // Get effective standard for a week (override or auto)
   const getStandard = useCallback((week: WeekInfo) => {
@@ -706,6 +740,11 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
         </div>
       </div>
 
+      {/* ═══ Undo toolbar ═══ */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <UndoButton onUndo={forecastUndo.undo} canUndo={forecastUndo.canUndo} />
+      </div>
+
       {/* ═══ Forecast Grid ═══ */}
       <div style={{
         overflowX: 'auto', border: '1px solid #e8e0d4', borderRadius: 10,
@@ -808,7 +847,8 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
                         onChange={e => setEditStdValue(e.target.value)}
                         onBlur={() => {
                           const val = parseInt(editStdValue)
-                          if (!isNaN(val) && val >= 0) {
+                          if (!isNaN(val) && val >= 0 && val !== std) {
+                            pushForecastUndo({ kind: 'standard', standard: standardOverrides })
                             if (val === row.week.autoStandard) {
                               setStandardOverrides(p => { const n = { ...p }; delete n[row.week.startISO]; return n })
                             } else {
