@@ -111,6 +111,8 @@ interface ForecastExclusion {
 - `employee_tokens` — PIN login, email, magic links
 - `preferences` — העדפות משמרות (week_start, day, shift, available, note)
 - `special_shifts` — משמרות מיוחדות + UNLOCK markers
+- `closed_shifts` — משמרות סגורות (week_start, day, shift)
+- `schedules` — **חדש (מאי 2026)**: השיבוץ השבועי. עמודות: week_start (PK), data (jsonb), updated_at. מאוחסן כ-JSONB עם מבנה `{ "ראשון_בוקר": [Slot, ...], ... }`. מסונכרן בזמן אמת בין מכשירים.
 
 ---
 
@@ -154,6 +156,10 @@ interface ForecastExclusion {
 - תצוגת העדפות שהוגשו לפי שבוע
 - עריכה ידנית של העדפות כל עובדת
 - כפתור "שיבוץ אוטומטי"
+- **toggle BETA "כרטיסיות / טבלה"** — שתי תצוגות:
+  - **כרטיסיות (ברירת מחדל)**: התצוגה המקורית — כרטיסיה לכל עובדת
+  - **טבלה (BETA)**: טבלה אחת בסגנון Excel של מיה — שורה לעובדת, עמודות = ימים×משמרות, וי ירוק לקיבלה (מ-WeeklyBoard), עמודות סיכום (הגישה/קיבלה/הערות). כפתור 🖨️ הדפס → CSS @media print לעמוד A4 landscape אחד.
+- 3 טאבי קיצור לשבועות הקרובים + חיצי ניווט.
 
 ### 4. טבלת צדק (FairnessTab)
 - 3 מדדים: צדק (0–10+), גמישות (100–200+), יציבות (0–10)
@@ -370,7 +376,39 @@ interface IsraeliHoliday {
 4. **נגישות** — ללא ARIA labels
 5. **Error boundary** — אין global error handling
 6. **דריסת רצוי** — כרגע ב-localStorage (לא Supabase), לא מסתנכרן בין מכשירים
+7. **voltFlags / customShifts** — עדיין ב-localStorage, צריך להעביר ל-Supabase כמו `schedules`
 
 ---
 
-*עדכון אחרון: 2026-04-19*
+## סיבוב 5 — מאי 2026
+
+### תצוגת טבלה חדשה ב-PreferencesView (BETA) — כלי תכנון
+- בקשה של מיה: לסדר את ההעדפות כמו שהיא מסדרת באקסל שלה — שורה לעובדת, עמודות יום×משמרת, וי ירוק על שיבוץ בפועל, נכנס במסך אחד וניתן להדפיס בעמוד A4 landscape אחד.
+- קומפוננטה חדשה: `PreferencesTableView.tsx` + `PreferencesView.css` (print styles).
+- Toggle כרטיסיות/טבלה ב-PreferencesView, נשמר ב-localStorage (`preferences_view_mode`).
+- 3 טאבי קיצור לשבועות הקרובים בנוסף לחיצים.
+- **עמודת צפי**: מ-`expectedShiftsThisWeek` (utils/forecastGaps.ts) — אותה לוגיקה כמו ForecastTab.
+- **כלי תכנון אינטראקטיבי**: לחיצה על תא = הקצאת/ביטול משמרת לעובדת. נשמר ב-`schedules` (Supabase) ולכן מסונכרן עם WeeklyBoard.
+- **קיבלה** (עמודה ירוקה): מספר השיבוצים הפעילים של העובדת מתעדכן בזמן אמת.
+- משמרות locked / isFixed (כולל מיה) מוצגות עם 🔒 ולא ניתן לבטל אותן מהתצוגה הזו (רק מ-WeeklyBoard).
+
+### שיבוצים → Supabase
+- `schedules` table חדשה: `week_start (PK)`, `data (jsonb)`, `updated_at`.
+- מודול חדש: `src/lib/scheduleStorage.ts` — load/save/subscribe + מיגרציה אוטומטית מ-localStorage.
+- WeeklyBoard.tsx + PreferencesTableView.tsx משתמשים בו עם realtime subscription.
+- localStorage נשאר כ-cache למהירות.
+- **SQL להריץ ב-Supabase (פעם אחת):**
+```sql
+CREATE TABLE IF NOT EXISTS schedules (
+  week_start date PRIMARY KEY,
+  data jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "schedules_all" ON schedules FOR ALL USING (true) WITH CHECK (true);
+ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
+```
+
+---
+
+*עדכון אחרון: 2026-05-18*

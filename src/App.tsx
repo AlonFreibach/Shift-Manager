@@ -230,7 +230,7 @@ function AppContent() {
           <EmployeesTab employees={employees} onRefresh={refreshEmployees} />
         )}
         {currentTab === 'preferences' && (
-          <PreferencesView onAutoSchedule={handleAutoSchedule} />
+          <PreferencesView onAutoSchedule={handleAutoSchedule} employees={employees} />
         )}
         {currentTab === 'fairness' && (
           <FairnessTab employees={activeEmployees} />

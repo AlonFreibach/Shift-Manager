@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { isWeekLocked, toggleWeekUnlock, fetchUnlockedWeeks } from '../utils/submissionWindow'
 import { UnsavedChangesDialog } from './UnsavedChangesDialog'
+import { PreferencesTableView } from './PreferencesTableView'
+import './PreferencesView.css'
+import { printSchedule } from '../utils/printSchedule'
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
 const SHIFT_TYPES = ['morning', 'evening'] as const
@@ -48,8 +51,11 @@ type GroupedEmployee = {
 
 type EditShifts = Record<string, boolean>
 
+import type { Employee } from '../data/employees'
+
 type Props = {
   onAutoSchedule: (weekKey: string) => void
+  employees: Employee[]
 }
 
 // ─── Shift Edit Modal (shared for edit + manual entry) ───
@@ -444,7 +450,7 @@ function ShiftEditModalInner({
 }
 
 // ─── Main PreferencesView ───
-export function PreferencesView({ onAutoSchedule }: Props) {
+export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }: Props) {
   const [weekOffset, setWeekOffset] = useState(0)
   const [prefs, setPrefs] = useState<any[]>([])
   const [allEmployees, setAllEmployees] = useState<{ id: string; name: string; role: string; active_from?: string; active_until?: string }[]>([])
@@ -459,6 +465,15 @@ export function PreferencesView({ onAutoSchedule }: Props) {
   const [toast, setToast] = useState<string | null>(null)
   const [unlockTrigger, setUnlockTrigger] = useState(0)
   const [unlockedWeeks, setUnlockedWeeks] = useState<string[]>([])
+
+  // BETA view mode toggle: 'cards' (existing) or 'table' (new)
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>(() => {
+    const saved = localStorage.getItem('preferences_view_mode')
+    return saved === 'table' ? 'table' : 'cards'
+  })
+  useEffect(() => {
+    localStorage.setItem('preferences_view_mode', viewMode)
+  }, [viewMode])
 
   // Fetch unlocked weeks from Supabase
   useEffect(() => {
@@ -565,18 +580,18 @@ export function PreferencesView({ onAutoSchedule }: Props) {
     })
   }, [prefs])
 
-  // Employees who haven't submitted (active only)
+  // Employees who haven't submitted (active during the selected week)
   const notSubmitted = useMemo(() => {
     const submittedIds = new Set(grouped.map(g => g.employeeId))
-    const today = new Date().toISOString().split('T')[0]
+    const weekEnd = toISO(selectedFriday)
     return allEmployees.filter(e => {
       if (e.role === 'admin') return false
       if (submittedIds.has(e.id)) return false
-      if (e.active_from && today < e.active_from) return false
-      if (e.active_until && today > e.active_until) return false
+      if (e.active_from && weekEnd < e.active_from) return false
+      if (e.active_until && weekStart > e.active_until) return false
       return true
     })
-  }, [allEmployees, grouped])
+  }, [allEmployees, grouped, weekStart, selectedFriday])
 
   // ─── Actions ───
 
@@ -716,15 +731,15 @@ export function PreferencesView({ onAutoSchedule }: Props) {
   // ── Render ──
   return (
     <div dir="rtl">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div className="print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>העדפות שהוגשו</h2>
       </div>
 
-      {/* ═══ Week Picker ═══ */}
-      <div style={{
+      {/* ═══ Week Picker (arrows + 3 shortcut tabs) ═══ */}
+      <div className="print-hide" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
-        marginBottom: 12, background: 'white', borderRadius: 10, padding: '10px 16px',
-        border: '1px solid #e8e0d4',
+        marginBottom: 8, background: 'white', borderRadius: 10, padding: '10px 16px',
+        border: '1px solid #e8e0d4', flexWrap: 'wrap',
       }}>
         <button
           onClick={() => setWeekOffset(o => o - 1)}
@@ -751,8 +766,35 @@ export function PreferencesView({ onAutoSchedule }: Props) {
         </button>
       </div>
 
+      {/* 3 shortcut tabs for upcoming weeks */}
+      <div className="print-hide" style={{
+        display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap',
+      }}>
+        {[0, 1, 2].map(off => {
+          const d = new Date(baseNextSunday)
+          d.setDate(d.getDate() + off * 7)
+          const fri = new Date(d); fri.setDate(fri.getDate() + 5)
+          const isActive = weekOffset === off
+          return (
+            <button
+              key={off}
+              onClick={() => setWeekOffset(off)}
+              style={{
+                padding: '6px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+                cursor: 'pointer',
+                background: isActive ? '#2D5016' : '#EBF3D8',
+                color: isActive ? 'white' : '#2D5016',
+                border: '1px solid #C8DBA0',
+              }}
+            >
+              {fmtDate(d)}–{fmtDate(fri)}
+            </button>
+          )
+        })}
+      </div>
+
       {/* ═══ Lock Status Badge ═══ */}
-      <div style={{
+      <div className="print-hide" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         marginBottom: 12,
       }}>
@@ -799,10 +841,56 @@ export function PreferencesView({ onAutoSchedule }: Props) {
         )}
       </div>
 
+      {/* ═══ View Mode Toggle (BETA) ═══ */}
+      <div className="print-hide" style={{
+        display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 12,
+      }}>
+        <button
+          onClick={() => setViewMode('cards')}
+          style={{
+            padding: '6px 14px', borderRadius: '999px 0 0 999px',
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            background: viewMode === 'cards' ? '#1a4a2e' : 'white',
+            color: viewMode === 'cards' ? 'white' : '#1A3008',
+            border: '1px solid #C8DBA0', borderLeft: 'none',
+          }}
+        >
+          כרטיסיות
+        </button>
+        <button
+          onClick={() => setViewMode('table')}
+          style={{
+            padding: '6px 14px', borderRadius: '0 999px 999px 0',
+            fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+            background: viewMode === 'table' ? '#1a4a2e' : 'white',
+            color: viewMode === 'table' ? 'white' : '#1A3008',
+            border: '1px solid #C8DBA0',
+          }}
+        >
+          טבלה
+          <span style={{
+            fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 999,
+            background: '#c17f3b', color: 'white',
+          }}>BETA</span>
+        </button>
+      </div>
+
       {/* ═══ Toolbar ═══ */}
-      <div style={{
+      <div className="print-hide" style={{
         display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap',
       }}>
+        {viewMode === 'table' && (
+          <button
+            onClick={() => printSchedule([weekStart], allEmployeesFull)}
+            style={{
+              padding: '7px 14px', borderRadius: 8, border: '1px solid #C8DBA0',
+              background: '#EBF3D8', color: '#2D5016', fontSize: 13,
+              fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            🖨️ הדפס
+          </button>
+        )}
         <button
           onClick={handleCopyWhatsApp}
           style={{
@@ -852,8 +940,8 @@ export function PreferencesView({ onAutoSchedule }: Props) {
         </div>
       ) : (
         <>
-          {/* ═══ No submissions ═══ */}
-          {grouped.length === 0 && (
+          {/* ═══ No submissions (cards mode only) ═══ */}
+          {viewMode === 'cards' && grouped.length === 0 && (
             <div style={{
               textAlign: 'center', padding: 40, background: 'white',
               borderRadius: 12, border: '1px solid #e8e0d4',
@@ -862,7 +950,27 @@ export function PreferencesView({ onAutoSchedule }: Props) {
             </div>
           )}
 
+          {/* ═══ TABLE VIEW (BETA) ═══ */}
+          {viewMode === 'table' && (
+            <PreferencesTableView
+              grouped={grouped}
+              notSubmittedNames={notSubmitted.map(e => e.name)}
+              notSubmittedEmployees={notSubmitted.map(e => ({ id: e.id, name: e.name }))}
+              weekStart={weekStart}
+              weekEnd={toISO(selectedFriday)}
+              weekLabel={`${fmtDate(selectedSunday)}–${fmtDate(selectedFriday)}`}
+              allEmployees={allEmployeesFull}
+              onEdit={emp => setEditingEmployee(emp)}
+              onDelete={emp => setDeleteConfirm(emp)}
+              onManualEntry={empId => {
+                setManualEntryPreselected(empId)
+                setManualEntryOpen(true)
+              }}
+            />
+          )}
+
           {/* ═══ Employee Cards ═══ */}
+          {viewMode === 'cards' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {grouped.map(emp => (
               <div key={emp.employeeId} style={{
@@ -1005,9 +1113,10 @@ export function PreferencesView({ onAutoSchedule }: Props) {
               </div>
             ))}
           </div>
+          )}
 
-          {/* ═══ Not Submitted ═══ */}
-          {notSubmitted.length > 0 && (
+          {/* ═══ Not Submitted (cards mode only — table embeds this) ═══ */}
+          {viewMode === 'cards' && notSubmitted.length > 0 && (
             <div style={{
               marginTop: 16, padding: 14, borderRadius: 10,
               background: 'white', border: '1px solid #e8e0d4',
@@ -1039,7 +1148,7 @@ export function PreferencesView({ onAutoSchedule }: Props) {
           )}
 
           {/* ═══ Manual Entry Button ═══ */}
-          <div style={{ marginTop: 16, textAlign: 'center' }}>
+          <div className="print-hide" style={{ marginTop: 16, textAlign: 'center' }}>
             <button
               onClick={() => {
                 setManualEntryPreselected(undefined)

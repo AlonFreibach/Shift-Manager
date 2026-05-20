@@ -1,0 +1,329 @@
+/* ─── Preferences Table View (BETA) ─── */
+
+.prefs-table-wrap {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e8e0d4;
+  padding: 12px;
+}
+
+.prefs-table-scroll {
+  overflow-x: auto;
+}
+
+/* ─── Legend (above table) ─── */
+.prefs-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: #f9f6f0;
+  border: 1px solid #e8e0d4;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #1A3008;
+}
+.prefs-legend .leg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.prefs-legend .leg-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid #d9d4c8;
+  font-weight: 700;
+  font-size: 11px;
+}
+.prefs-legend .leg-submitted {
+  background: white;
+  color: #2D5016;
+}
+.prefs-legend .leg-assigned {
+  background: #c8e6c9;
+  color: #2D5016;
+}
+.prefs-legend .leg-fixed {
+  background: #fff3cd;
+  color: #8a6d3b;
+  font-size: 9px;
+}
+.prefs-legend .leg-hint {
+  margin-right: auto;
+  font-style: italic;
+  color: #5A8A1F;
+}
+
+.prefs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.prefs-table th,
+.prefs-table td {
+  border: 1px solid #d9d4c8;
+  padding: 4px 4px;
+  text-align: center;
+  vertical-align: middle;
+  word-wrap: break-word;
+}
+
+.prefs-table thead th {
+  background: #f5f0e8;
+  color: #1A3008;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 6px 4px;
+}
+
+.prefs-table .col-name {
+  text-align: right;
+  font-weight: 600;
+  background: #f9f6f0;
+  width: 80px;
+  white-space: nowrap;
+  padding: 4px 8px;
+}
+
+.prefs-table .col-day {
+  color: #1a4a2e;
+  font-size: 12px;
+}
+
+.prefs-table .col-shift {
+  font-size: 10px;
+  font-weight: 500;
+  color: #5A8A1F;
+  background: #fdfaf3;
+}
+
+.prefs-table .col-num {
+  font-weight: 700;
+  color: #1A3008;
+  background: #f9f6f0;
+  width: 42px;
+}
+
+.prefs-table .col-notes {
+  text-align: right;
+  font-size: 11px;
+  color: #3a3a3a;
+  width: 180px;
+  white-space: normal;
+  padding: 4px 8px;
+}
+
+.prefs-table .col-actions {
+  width: 56px;
+  background: #f9f6f0;
+  white-space: nowrap;
+}
+
+.prefs-table .cell {
+  font-weight: 700;
+  font-size: 14px;
+  color: transparent;
+  height: 24px;
+}
+
+.prefs-table .cell-submitted {
+  color: #2D5016;
+  background: #ffffff;
+}
+
+.prefs-table .cell-assigned {
+  color: #2D5016;
+  background: #c8e6c9;
+}
+
+.prefs-table .cell-assigned-only {
+  color: #1976d2;
+  background: #e3f2fd;
+}
+
+.prefs-table .cell-clickable {
+  cursor: pointer;
+  transition: background-color 0.1s, transform 0.05s;
+}
+.prefs-table .cell-clickable:hover {
+  outline: 2px solid #5A8A1F;
+  outline-offset: -2px;
+}
+.prefs-table .cell-clickable:active {
+  transform: scale(0.93);
+}
+
+.prefs-table .cell-locked {
+  background: #fff3cd !important;
+  color: #8a6d3b;
+  cursor: pointer;
+}
+.prefs-table .cell-locked:hover {
+  outline: 2px solid #c17f3b;
+  outline-offset: -2px;
+}
+
+.prefs-table .col-received {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.prefs-table tbody tr:nth-child(even) td:not(.col-name):not(.col-num):not(.col-actions) {
+  background-color: #fdfcf9;
+}
+
+.prefs-table tbody tr:hover td {
+  background-color: #fef9e8;
+}
+
+.prefs-table tbody tr:hover .cell-assigned {
+  background-color: #b0d9b1;
+}
+
+.prefs-table .row-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid #e8e0d4;
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+  margin: 0 1px;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.prefs-table .row-btn-del {
+  border-color: #f5c6cb;
+}
+
+.prefs-table .prefs-section-row td {
+  background: #f5f0e8;
+  font-weight: 700;
+  text-align: right;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #e74c3c;
+  border-top: 2px solid #d9d4c8;
+}
+
+.prefs-table .prefs-not-submitted .col-name {
+  color: #b13c2f;
+}
+
+/* Print-only header (hidden in screen) */
+.prefs-print-header {
+  display: none;
+}
+
+/* ─── Print Styles ─── */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .print-hide {
+    display: none !important;
+  }
+
+  .prefs-table-wrap {
+    border: none;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .prefs-print-header {
+    display: block;
+    text-align: right;
+    direction: rtl;
+    margin-bottom: 6px;
+  }
+
+  .prefs-print-header h3 {
+    margin: 0;
+    font-size: 14px;
+    color: black;
+    font-weight: 700;
+  }
+
+  .prefs-table {
+    font-size: 10px;
+    page-break-inside: avoid;
+  }
+
+  .prefs-table th,
+  .prefs-table td {
+    padding: 2px 3px;
+    border-color: #999;
+  }
+
+  .prefs-table thead th {
+    background: #eee !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: black;
+  }
+
+  .prefs-table .col-name {
+    width: 60px;
+    background: white !important;
+  }
+
+  .prefs-table .col-notes {
+    width: 130px;
+    font-size: 9px;
+  }
+
+  .prefs-table .col-actions {
+    display: none;
+  }
+
+  .prefs-table .cell {
+    height: 18px;
+  }
+
+  .prefs-table .cell-assigned {
+    background: #c8e6c9 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .prefs-table .cell-assigned-only {
+    background: #e3f2fd !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .prefs-table .cell-locked {
+    background: #fff3cd !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .prefs-table .col-received {
+    background: #e8f5e9 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .prefs-legend {
+    display: none !important;
+  }
+
+  .prefs-table tbody tr:hover td {
+    background-color: inherit;
+  }
+}
