@@ -373,7 +373,7 @@ interface IsraeliHoliday {
 4. ✅ **נגישות** — נוספו ARIA labels לניווט ולכפתורי אייקון (סיבוב 8). עדיין אפשר להרחיב.
 5. ✅ **Error boundary** — נוסף global ErrorBoundary (סיבוב 8).
 6. **דריסת רצוי** — כרגע ב-localStorage (לא Supabase), לא מסתנכרן בין מכשירים
-7. **voltFlags / customShifts** — מודול `boardSettingsStorage.ts` מוכן; ממתין להרצת SQL ידנית + חיבור WeeklyBoard (ראה `MANUAL_TASKS.md`).
+7. ✅ **voltFlags / customShifts** — סונכרנו ל-Supabase דרך טבלת `board_settings` (סיבוב 8).
 
 ---
 
@@ -479,8 +479,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 - כל הטאבים, EmployeeDashboard, JoinPage ו-HiringRecommendation הוסבו ל-`React.lazy`.
 - bundle ראשוני: 1,317KB → 426KB (-68%). אין יותר אזהרות chunk מעל 500KB.
 
-### 5. voltFlags/customShifts → Supabase (חלקי)
-- מודול `boardSettingsStorage.ts` נכתב (מראה את `scheduleStorage.ts`). הרצת SQL וחיבור WeeklyBoard — ב-`MANUAL_TASKS.md`.
+### 5. voltFlags/customShifts → Supabase ✅
+- מודול `boardSettingsStorage.ts` נכתב (מראה את `scheduleStorage.ts`).
+- טבלת `board_settings` נוצרה ב-Supabase (אלון הריץ את ה-SQL).
+- `WeeklyBoard.tsx` חובר: טעינה Supabase-first + cache ב-localStorage, סנכרון realtime, שמירה דרך Supabase. localStorage נשאר כ-fallback.
 
 ### 6. Unit tests
 - תוקן `vite.config` (vitest לא הריץ עוד את Playwright spec). תוקן טסט שקיבע תאריכי שבועות ישנים.
