@@ -10,6 +10,7 @@ import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 import { loadSchedule as loadScheduleFromStorage, saveSchedule as saveScheduleToStorage, subscribeToSchedule } from '../lib/scheduleStorage';
 import { loadBoardSettings, saveBoardSettings, subscribeToBoardSettings } from '../lib/boardSettingsStorage';
 import { printSchedule } from '../utils/printSchedule';
+import { UsageGuide } from './UsageGuide';
 
 interface WeeklyBoardProps {
   employees: Employee[];
@@ -2353,6 +2354,18 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
 
   return (
     <div dir="rtl" style={{ padding: '16px', fontFamily: 'inherit' }}>
+      <UsageGuide storageKey="board">
+        <p style={{ margin: '0 0 8px' }}>
+          כאן בונים את סידור העבודה השבועי. כל יום מחולק למשמרת בוקר ולמשמרת ערב.
+        </p>
+        <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+          <li>לחיצה על משבצת — הוספה או שיבוץ של עובדת.</li>
+          <li><strong>שיבוץ אוטומטי</strong> — מילוי הסידור לפי ההעדפות והאילוצים.</li>
+          <li>החיצים בראש העמוד — מעבר בין שבועות.</li>
+          <li><strong>↩ בטל</strong> (או Ctrl+Z) — ביטול הפעולה האחרונה.</li>
+          <li>אפשר לסגור משמרות, להגדיר משמרות קבועות ולשתף את הסידור לעובדות.</li>
+        </ul>
+      </UsageGuide>
       {/* Manual shortage alerts */}
       {manualShortages.length > 0 && (
         <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, padding: '12px 16px', marginBottom: 12 }}>

@@ -7,6 +7,7 @@ import './PreferencesView.css'
 import { printSchedule } from '../utils/printSchedule'
 import { useUndoStack } from '../hooks/useUndoStack'
 import { UndoButton } from './UndoButton'
+import { UsageGuide } from './UsageGuide'
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי']
 const SHIFT_TYPES = ['morning', 'evening'] as const
@@ -787,6 +788,18 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
   // ── Render ──
   return (
     <div dir="rtl">
+      <UsageGuide storageKey="preferences" className="print-hide">
+        <p style={{ margin: '0 0 8px' }}>
+          כאן רואים את ההעדפות שהעובדות הגישו לשבוע הנבחר.
+        </p>
+        <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+          <li>אפשר לעבור בין תצוגת <strong>כרטיסיות</strong> לתצוגת <strong>טבלה</strong> (כלי תכנון).</li>
+          <li>בתצוגת הטבלה — לחיצה על תא משבצת עובדת באותה משמרת.</li>
+          <li><strong>הזנה ידנית</strong> — הוספת העדפות עבור עובדת שלא הגישה.</li>
+          <li><strong>שיבוץ אוטומטי</strong> — מעבר ללוח השיבוץ עם סידור מוכן.</li>
+          <li>אפשר להעתיק את ההעדפות לוואטסאפ ולהדפיס את הסידור.</li>
+        </ul>
+      </UsageGuide>
       <div className="print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>העדפות שהוגשו</h2>
       </div>

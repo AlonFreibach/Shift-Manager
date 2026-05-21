@@ -8,6 +8,7 @@ import {
 } from '../utils/fairnessAccumulator';
 import { useUndoStack } from '../hooks/useUndoStack';
 import { UndoButton } from './UndoButton';
+import { UsageGuide } from './UsageGuide';
 import type { Employee } from '../data/employees';
 
 interface FairnessTabProps {
@@ -56,6 +57,19 @@ export function FairnessTab({ employees }: FairnessTabProps) {
   }
 
   return (
+    <div dir="rtl">
+    <UsageGuide storageKey="fairness">
+      <p style={{ margin: '0 0 8px' }}>
+        הטבלה מציגה שלושה מדדים לכל עובדת, ומדרגת אותן לפי ציון משוכלל.
+      </p>
+      <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+        <li><strong>ציון צדק</strong> — כמה משמרות העובדת קיבלה לאחרונה (נמוך = קופחה).</li>
+        <li><strong>ציון גמישות</strong> — כמה היא מגישה ביחס למה שהיא עובדת בפועל.</li>
+        <li><strong>ציון קביעות</strong> — עד כמה ההגשות שלה יציבות לאורך זמן.</li>
+        <li><strong>ציון משוכלל</strong> — שקלול השלושה (גמישות 50%, קביעות 40%, צדק 10%).</li>
+        <li><strong>אפס היסטוריה</strong> מאפס את הנתונים הנצברים — וניתן לביטול עם <strong>↩ בטל</strong>.</li>
+      </ul>
+    </UsageGuide>
     <div style={{ background: 'white', borderRadius: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', padding: 24, border: '1px solid #e8e0d4' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>טבלת צדק</h2>
@@ -106,6 +120,7 @@ export function FairnessTab({ employees }: FairnessTabProps) {
           </tbody>
         </table>
       </div>
+    </div>
     </div>
   );
 }

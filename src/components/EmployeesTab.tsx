@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabaseClient';
 import type { SupabaseEmployee } from '../lib/supabaseClient';
 import { useUndoStack } from '../hooks/useUndoStack';
 import { UndoButton } from './UndoButton';
+import { UsageGuide } from './UsageGuide';
 
 interface EmployeesTabProps {
   employees: Employee[];
@@ -480,6 +481,17 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
 
   return (
     <div dir="rtl">
+      <UsageGuide storageKey="employees">
+        <p style={{ margin: '0 0 8px' }}>
+          כאן מנהלים את כרטיסי העובדות — הפעילות וגם מי שעבדו בעבר.
+        </p>
+        <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+          <li><strong>+ הוסף עובד/ת</strong> — אשף בן 3 שלבים (פרטים → משמרות → לינק כניסה).</li>
+          <li>לחיצה על כרטיס פותחת עריכה — פרטים, משמרות קבועות ותקופות חופשה.</li>
+          <li><strong>הגדר כניסה</strong> — יצירת קוד PIN או לינק הצטרפות לעובדת.</li>
+          <li>מחיקת עובדת ניתנת לשחזור עם כפתור <strong>↩ בטל</strong>.</li>
+        </ul>
+      </UsageGuide>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>עובדות/ים</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
