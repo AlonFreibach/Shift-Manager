@@ -458,11 +458,11 @@ export function PreferencesTableView({
                   <td className="col-actions print-hide">
                     {row.group ? (
                       <>
-                        <button className="row-btn" onClick={() => onEdit(row.group!)} title="ערוך">✏️</button>
-                        <button className="row-btn row-btn-del" onClick={() => onDelete(row.group!)} title="מחק">🗑️</button>
+                        <button className="row-btn" onClick={() => onEdit(row.group!)} title="ערוך" aria-label={`ערוך — ${row.name}`}>✏️</button>
+                        <button className="row-btn row-btn-del" onClick={() => onDelete(row.group!)} title="מחק" aria-label={`מחק — ${row.name}`}>🗑️</button>
                       </>
                     ) : (
-                      <button className="row-btn" onClick={() => onManualEntry(row.id)} title="הזן ידנית">+</button>
+                      <button className="row-btn" onClick={() => onManualEntry(row.id)} title="הזן ידנית" aria-label={`הזן העדפות ידנית — ${row.name}`}>+</button>
                     )}
                   </td>
                 </tr>

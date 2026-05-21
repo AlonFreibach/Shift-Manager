@@ -1082,6 +1082,7 @@ export function EmployeesTab({ employees, onRefresh }: EmployeesTabProps) {
                     <button
                       onClick={() => setCreateUserTarget(employee)}
                       title="הגדר כניסה"
+                      aria-label={`הגדר כניסה — ${employee.name}`}
                       style={{
                         padding: '7px 12px',
                         fontSize: 13,

@@ -157,11 +157,12 @@ function AppContent() {
             <img src="/logo.png" style={{ height: 32, objectFit: 'contain' }} alt="לוגו נוי השדה" />
             נוי השדה — סניף שוהם
           </div>
-          <nav className="header-nav" style={{ display: 'flex', gap: 2, height: '100%' }}>
+          <nav className="header-nav" aria-label="ניווט ראשי" style={{ display: 'flex', gap: 2, height: '100%' }}>
             {TABS.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setCurrentTab(tab.id)}
+                aria-current={currentTab === tab.id ? 'page' : undefined}
                 style={{
                   padding: '0 18px',
                   fontSize: 14,
@@ -226,6 +227,7 @@ function AppContent() {
           </div>
           <button
             onClick={() => setExpiryBannerDismissed(true)}
+            aria-label="סגור התראה"
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#92400e', padding: '0 4px', lineHeight: 1, flexShrink: 0 }}
           >
             ✕

@@ -780,6 +780,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
       }}>
         <button
           onClick={() => setWeekOffset(o => o - 1)}
+          aria-label="שבוע קודם"
           style={{
             width: 32, height: 32, borderRadius: 8, border: '1px solid #C8DBA0',
             background: 'white', cursor: 'pointer', fontSize: 16, color: '#2D5016',
@@ -793,6 +794,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
         </span>
         <button
           onClick={() => setWeekOffset(o => o + 1)}
+          aria-label="שבוע הבא"
           style={{
             width: 32, height: 32, borderRadius: 8, border: '1px solid #C8DBA0',
             background: 'white', cursor: 'pointer', fontSize: 16, color: '#2D5016',
@@ -1040,6 +1042,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
                     <button
                       onClick={() => setEditingEmployee(emp)}
                       title="ערוך"
+                      aria-label={`ערוך העדפות — ${emp.employeeName}`}
                       style={{
                         width: 30, height: 30, borderRadius: 6, border: '1px solid #e8e0d4',
                         background: 'white', cursor: 'pointer', fontSize: 14,
@@ -1051,6 +1054,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
                     <button
                       onClick={() => setDeleteConfirm(emp)}
                       title="מחק"
+                      aria-label={`מחק העדפות — ${emp.employeeName}`}
                       style={{
                         width: 30, height: 30, borderRadius: 6, border: '1px solid #f5c6cb',
                         background: 'white', cursor: 'pointer', fontSize: 14,
