@@ -22,7 +22,7 @@
   background: #f9f6f0;
   border: 1px solid #e8e0d4;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: #1A3008;
 }
 .prefs-legend .leg-item {
@@ -70,14 +70,14 @@
 .prefs-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 14px;
   table-layout: fixed;
 }
 
 .prefs-table th,
 .prefs-table td {
   border: 1px solid #d9d4c8;
-  padding: 4px 4px;
+  padding: 3px 5px;
   text-align: center;
   vertical-align: middle;
   word-wrap: break-word;
@@ -87,26 +87,26 @@
   background: #f5f0e8;
   color: #1A3008;
   font-weight: 700;
-  font-size: 11px;
-  padding: 6px 4px;
+  font-size: 13px;
+  padding: 5px 4px;
 }
 
 .prefs-table .col-name {
   text-align: right;
   font-weight: 600;
   background: #f9f6f0;
-  width: 80px;
+  width: 100px;
   white-space: nowrap;
   padding: 4px 8px;
 }
 
 .prefs-table .col-day {
   color: #1a4a2e;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .prefs-table .col-shift {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   color: #5A8A1F;
   background: #fdfaf3;
@@ -116,15 +116,18 @@
   font-weight: 700;
   color: #1A3008;
   background: #f9f6f0;
-  width: 42px;
+  width: 46px;
 }
 
 .prefs-table .col-notes {
   text-align: right;
-  font-size: 11px;
+  font-size: 13px;
   color: #3a3a3a;
-  width: 180px;
-  white-space: normal;
+  width: 200px;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 4px 8px;
 }
 
@@ -136,9 +139,9 @@
 
 .prefs-table .cell {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 16px;
   color: transparent;
-  height: 24px;
+  height: 28px;
 }
 
 .prefs-table .cell-submitted {
@@ -185,16 +188,16 @@
   color: #1b5e20;
 }
 
-.prefs-table tbody tr:nth-child(even) td:not(.col-name):not(.col-num):not(.col-actions) {
+/* Zebra striping — never touch shift cells (.cell) so their state colour
+   (white / green / yellow) always wins regardless of row parity. */
+.prefs-table tbody tr:nth-child(even) td:not(.col-name):not(.col-num):not(.col-actions):not(.cell) {
   background-color: #fdfcf9;
 }
 
-.prefs-table tbody tr:hover td {
+/* Row hover — applies to summary columns only; shift cells keep their
+   state colour and get their own outline highlight via .cell-clickable:hover. */
+.prefs-table tbody tr:hover td:not(.cell) {
   background-color: #fef9e8;
-}
-
-.prefs-table tbody tr:hover .cell-assigned {
-  background-color: #b0d9b1;
 }
 
 .prefs-table .row-btn {
@@ -226,6 +229,52 @@
 
 .prefs-table .prefs-not-submitted .col-name {
   color: #b13c2f;
+}
+
+/* ─── Full note popup ─── */
+.prefs-note-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.prefs-note-popup {
+  background: white;
+  border-radius: 12px;
+  padding: 20px 22px;
+  width: 90%;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+.prefs-note-popup-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a4a2e;
+  margin-bottom: 10px;
+}
+.prefs-note-popup-body {
+  font-size: 14px;
+  color: #1A3008;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  background: #EBF3D8;
+  border-right: 3px solid #5A8A1F;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.prefs-note-popup-close {
+  padding: 7px 20px;
+  border-radius: 8px;
+  border: none;
+  background: #2D5016;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 /* Print-only header (hidden in screen) */

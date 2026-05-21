@@ -507,4 +507,36 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 `tests/unit/forecastGaps.test.ts`, `tests/unit/submissionWindow.test.ts`, `tests/unit/_employeeFactory.ts`,
 `MANUAL_TASKS.md`
 
-*עדכון אחרון: 2026-05-21*
+---
+
+## סיבוב 9 — מאי 2026 (הערות מיה לקראת פרזנטציה להנהלה)
+
+5 הערות של מיה על **תצוגת הטבלה (BETA)** ב-PreferencesView, לקראת הצגת המערכת להנהלת נוי השדה.
+
+### 1. באג שינוי צבע בתאים (PreferencesView.css)
+- **שורש:** כלל ה-zebra `tbody tr:nth-child(even) td...` היה בעל specificity גבוה מ-`.cell-assigned`, ולכן בשורות זוגיות תא משובץ לא נצבע ירוק.
+- **תיקון:** הוספת `:not(.cell)` לכלל ה-zebra וכלל ה-hover — תאי משמרת נצבעים אך ורק לפי מצבם (לבן/ירוק/צהוב), בעקביות בכל השורות. הוסר כלל `tr:hover .cell-assigned` המיותר.
+
+### 2. כל העובדות הפעילות מוצגות (PreferencesView.tsx)
+- לוח התכנון השתמש בסינון חלון-שבוע (`active_from`/`active_until`) + הסתרת `admin`, ולכן **מיה והיא לי** לא הופיעו.
+- נוסף `notSubmittedForTable` — מתיישר עם הגדרת "פעילה" של EmployeesTab (inactive רק כש-`active_until` עבר), כולל admin. נוסף `adminId`.
+
+### 3. מיון שורות + מיה ראשונה (PreferencesTableView.tsx)
+- `allRows` ממוין לפי שם (`localeCompare('he')`), ומיה (`adminId`) תמיד ראשונה.
+- שורת מיה: ללא סימון "לא הגישה" האדום; עמודות "צפי"/"הגישה" מציגות "—".
+
+### 4. הכל במסך אחד + הערות בשורה אחת
+- עמודת "הערות": שורה אחת עם `ellipsis`. הטקסט המלא נחשף ב-hover (`title`) וב-לחיצה (popup `.prefs-note-popup`).
+- צומצמו מרווחי הכותרת והסרגל ב-PreferencesView.
+
+### 5. הגדלת גופנים
+- גופני הטבלה הוגדלו (בסיס 12→14, כותרות 11→13, ✓ 14→16, ימים 12→14, משמרות 10→12, הערות 11→13). גובה תא 24→28.
+
+### משימה ידנית לאלון
+- חשבון הבדיקה **"Maya test"** מוגדר כפעיל ולכן מופיע בלוח — למחוק ב-EmployeesTab.
+- **היא לי** מוגדרת עם תאריך תחילה 01/09/2026 — מופיעה בלוח אך מתחילה רק בספטמבר. אם התאריך שגוי, לעדכן ב-EmployeesTab.
+
+### קבצים ששונו
+`src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`
+
+*עדכון אחרון: 2026-05-20*

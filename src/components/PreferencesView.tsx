@@ -599,6 +599,25 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
     })
   }, [allEmployees, grouped, weekStart, selectedFriday])
 
+  // ── Planning-table rows: ALL active-status employees ──
+  // Uses the same "active" definition as EmployeesTab — an employee is inactive
+  // only when active_until is a date that already passed. Includes the manager
+  // (admin) and is NOT week-scoped, so future-start staff still appear on the board.
+  const adminId = useMemo(
+    () => allEmployees.find(e => e.role === 'admin')?.id ?? null,
+    [allEmployees],
+  )
+
+  const notSubmittedForTable = useMemo(() => {
+    const submittedIds = new Set(grouped.map(g => g.employeeId))
+    const now = new Date()
+    return allEmployees.filter(e => {
+      if (submittedIds.has(e.id)) return false
+      if (e.active_until && new Date(e.active_until + 'T23:59:59') < now) return false
+      return true
+    })
+  }, [allEmployees, grouped])
+
   // ── Undo for preference-data mutations (edit / delete / reset / manual entry) ──
   const prefsRef = useRef<any[]>([])
   useEffect(() => { prefsRef.current = prefs }, [prefs])
@@ -768,7 +787,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
   // ── Render ──
   return (
     <div dir="rtl">
-      <div className="print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div className="print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1a4a2e' }}>העדפות שהוגשו</h2>
       </div>
 
@@ -916,7 +935,7 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
 
       {/* ═══ Toolbar ═══ */}
       <div className="print-hide" style={{
-        display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap',
+        display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap',
       }}>
         {viewMode === 'cards' && (
           <UndoButton onUndo={prefsUndo.undo} canUndo={prefsUndo.canUndo} />
@@ -997,7 +1016,8 @@ export function PreferencesView({ onAutoSchedule, employees: allEmployeesFull }:
             <PreferencesTableView
               grouped={grouped}
               notSubmittedNames={notSubmitted.map(e => e.name)}
-              notSubmittedEmployees={notSubmitted.map(e => ({ id: e.id, name: e.name }))}
+              notSubmittedEmployees={notSubmittedForTable.map(e => ({ id: e.id, name: e.name }))}
+              adminId={adminId}
               weekStart={weekStart}
               weekEnd={toISO(selectedFriday)}
               weekLabel={`${fmtDate(selectedSunday)}–${fmtDate(selectedFriday)}`}

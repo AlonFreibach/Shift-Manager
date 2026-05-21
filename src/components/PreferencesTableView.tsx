@@ -44,6 +44,7 @@ type Props = {
   onManualEntry: (employeeId?: string) => void
   notSubmittedEmployees: { id: string; name: string }[]
   allEmployees: Employee[]
+  adminId: string | null
 }
 
 function defaultSlotTimes(dayIdx: number, shift: 'morning' | 'evening'): { arrival: string; departure: string } {
@@ -73,8 +74,12 @@ export function PreferencesTableView({
   onManualEntry,
   notSubmittedEmployees,
   allEmployees,
+  adminId,
 }: Props) {
   const [schedule, setSchedule] = useState<Schedule>({})
+
+  // Full-text note popup (shown on click of a truncated note cell)
+  const [notePopup, setNotePopup] = useState<{ name: string; note: string } | null>(null)
 
   // ── Undo stack ──
   const undoStackRef = useRef<Schedule[]>([])
@@ -243,8 +248,14 @@ export function PreferencesTableView({
         rows.push({ id: e.id, name: e.name, submitted: false })
       }
     }
+    // Sort alphabetically (Hebrew); the manager (Miya) is always pinned first.
+    rows.sort((a, b) => {
+      if (a.id === adminId) return -1
+      if (b.id === adminId) return 1
+      return a.name.localeCompare(b.name, 'he')
+    })
     return rows
-  }, [grouped, notSubmittedEmployees])
+  }, [grouped, notSubmittedEmployees, adminId])
 
   return (
     <div className="prefs-table-wrap">
@@ -305,7 +316,7 @@ export function PreferencesTableView({
                 return (
                   <th key={d} colSpan={isFriday ? 1 : 2} className="col-day">
                     <div style={{ fontWeight: 700 }}>{d}</div>
-                    <div style={{ fontSize: 10, fontWeight: 400, color: '#888', marginBottom: holidays.length ? 2 : 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 400, color: '#888', marginBottom: holidays.length ? 2 : 0 }}>
                       {dateFmt}
                     </div>
                     {holidays.map(h => {
@@ -315,7 +326,7 @@ export function PreferencesTableView({
                           key={h.name}
                           title={h.demandNote || h.name}
                           style={{
-                            display: 'inline-block', fontSize: 9, fontWeight: 700,
+                            display: 'inline-block', fontSize: 10, fontWeight: 700,
                             padding: '1px 5px', borderRadius: 4, marginTop: 2,
                             background: badge.bg, color: badge.color,
                             whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden',
@@ -345,7 +356,7 @@ export function PreferencesTableView({
                   return (
                     <th key={`${d}-b`} className="col-shift">
                       <div>בוקר</div>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: full ? '#16a34a' : '#b45309' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: full ? '#16a34a' : '#b45309' }}>
                         {assigned}/{required}
                       </div>
                     </th>
@@ -360,7 +371,7 @@ export function PreferencesTableView({
                   return (
                     <th key={`${d}-${t}`} className="col-shift">
                       <div>{shiftHebrew}</div>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: full ? '#16a34a' : '#b45309' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: full ? '#16a34a' : '#b45309' }}>
                         {assigned}/{required}
                       </div>
                     </th>
@@ -384,17 +395,26 @@ export function PreferencesTableView({
               const receivedCount = countReceived(row.id)
               const assignedSet = assignedByEmp.get(row.id) ?? new Set()
               const forecast = forecastFor(row.id)
+              const isAdmin = row.id === adminId
+              const note = row.group?.note?.trim() ? row.group.note : ''
 
               return (
-                <tr key={row.id} className={row.submitted ? '' : 'prefs-not-submitted'}>
+                <tr key={row.id} className={row.submitted || isAdmin ? '' : 'prefs-not-submitted'}>
                   {/* שם */}
                   <td className="col-name">{row.name}</td>
 
                   {/* Summary columns — immediately after שם */}
-                  <td className="col-num">{forecast ?? '—'}</td>
-                  <td className="col-num">{row.submitted ? submittedCount : '—'}</td>
+                  <td className="col-num">{isAdmin ? '—' : (forecast ?? '—')}</td>
+                  <td className="col-num">{isAdmin ? '—' : (row.submitted ? submittedCount : '—')}</td>
                   <td className="col-num col-received">{receivedCount}</td>
-                  <td className="col-notes">{row.group?.note ?? ''}</td>
+                  <td
+                    className="col-notes"
+                    title={note}
+                    onClick={note ? () => setNotePopup({ name: row.name, note }) : undefined}
+                    style={{ cursor: note ? 'pointer' : 'default' }}
+                  >
+                    {note}
+                  </td>
 
                   {/* Day×Shift cells */}
                   {DAY_NAMES.map((dayName, di) =>
@@ -427,7 +447,7 @@ export function PreferencesTableView({
                         ? (
                           <div style={{ lineHeight: 1.1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                             <span>✓</span>
-                            <span style={{ fontSize: 7, fontWeight: 600, color: '#8a6d3b', letterSpacing: 0 }}>קבועה</span>
+                            <span style={{ fontSize: 8, fontWeight: 600, color: '#8a6d3b', letterSpacing: 0 }}>קבועה</span>
                           </div>
                         )
                         : (submitted ? '✓' : '')
@@ -471,6 +491,19 @@ export function PreferencesTableView({
           </tbody>
         </table>
       </div>
+
+      {/* ── Full note popup ── */}
+      {notePopup && (
+        <div className="prefs-note-popup-overlay print-hide" onClick={() => setNotePopup(null)}>
+          <div className="prefs-note-popup" dir="rtl" onClick={e => e.stopPropagation()}>
+            <div className="prefs-note-popup-title">הערה — {notePopup.name}</div>
+            <div className="prefs-note-popup-body">{notePopup.note}</div>
+            <button className="prefs-note-popup-close" onClick={() => setNotePopup(null)}>
+              סגור
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
