@@ -8,7 +8,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    exclude: ['tests/e2e.spec.ts', 'node_modules'],
+    // Only run Vitest unit tests — Playwright specs (*.spec.ts) are excluded.
+    include: ['tests/unit/**/*.test.ts'],
     reporters: ['verbose', './tests/unit/results-reporter.ts'],
   },
 })
