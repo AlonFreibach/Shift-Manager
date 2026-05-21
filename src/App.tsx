@@ -1,9 +1,11 @@
-import { useState, useMemo, lazy, Suspense } from 'react'
+import { useState, useMemo, useEffect, lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import { useSupabaseEmployees } from './hooks/useSupabaseEmployees'
 import { supabase } from './lib/supabaseClient'
 import { AuthScreen } from './components/AuthScreen'
+import { HelpModal } from './components/HelpModal'
+import { useFirstVisit } from './hooks/useFirstVisit'
 import './App.css'
 
 // Lazy-loaded — each becomes its own JS chunk, keeping the initial bundle small.
@@ -45,6 +47,8 @@ function AppContent() {
   const [currentTab, setCurrentTab] = useState<TabId>('board')
   const [autoScheduleRequest, setAutoScheduleRequest] = useState<string | null>(null)
   const [expiryBannerDismissed, setExpiryBannerDismissed] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [isFirstAdminVisit, markAdminVisited] = useFirstVisit('admin_help')
 
   const activeEmployees = useMemo(() => {
     const now = new Date();
@@ -74,6 +78,16 @@ function AppContent() {
   }, [employees])
 
   const loading = authLoading || empLoading
+
+  // Show the welcome guide once, on the admin's first visit.
+  useEffect(() => {
+    if (isFirstAdminVisit && role === 'admin') setHelpOpen(true)
+  }, [isFirstAdminVisit, role])
+
+  const closeHelp = () => {
+    setHelpOpen(false)
+    markAdminVisited()
+  }
 
   function handleAutoSchedule(targetWeekKey: string) {
     setAutoScheduleRequest(targetWeekKey)
@@ -192,11 +206,30 @@ function AppContent() {
               </button>
             ))}
           </nav>
-          {/* Sign out button */}
+          {/* Help + Sign out buttons */}
+          <button
+            onClick={() => setHelpOpen(true)}
+            aria-label="עזרה ומדריך"
+            title="עזרה ומדריך"
+            style={{
+              marginRight: 'auto',
+              width: 30,
+              height: 30,
+              fontSize: 15,
+              fontWeight: 700,
+              background: 'rgba(255,255,255,0.15)',
+              color: 'white',
+              border: '1px solid rgba(255,255,255,0.3)',
+              borderRadius: 6,
+              cursor: 'pointer',
+            }}
+          >
+            ?
+          </button>
           <button
             onClick={signOut}
             style={{
-              marginRight: 'auto',
+              marginRight: 8,
               padding: '6px 16px',
               fontSize: 13,
               fontWeight: 600,
@@ -261,6 +294,24 @@ function AppContent() {
           )}
         </Suspense>
       </main>
+
+      {helpOpen && (
+        <HelpModal title="ברוכים הבאים — מדריך מהיר" onClose={closeHelp}>
+          <p style={{ marginTop: 0 }}>
+            ברוכים הבאים למערכת ניהול המשמרות של נוי השדה. הנה סקירה קצרה של הלשוניות:
+          </p>
+          <ul style={{ paddingInlineStart: 20, margin: '8px 0' }}>
+            <li><strong>לוח שיבוץ</strong> — בניית הסידור השבועי: גרירת עובדות, שיבוץ אוטומטי והדפסה.</li>
+            <li><strong>עובדות/ים</strong> — ניהול כרטיסי עובדות: הוספה, עריכה, משמרות קבועות וחופשות.</li>
+            <li><strong>העדפות שהוגשו</strong> — צפייה בהעדפות לשבוע ותכנון בתצוגת טבלה.</li>
+            <li><strong>טבלת צדק</strong> — מדדי צדק, גמישות ויציבות לכל עובדת.</li>
+            <li><strong>תחזית כ״א</strong> — תחזית כוח אדם ל-12 שבועות וזיהוי חוסרים.</li>
+          </ul>
+          <p style={{ marginBottom: 0 }}>
+            💡 טיפ: כמעט בכל מסך יש כפתור <strong>↩ בטל</strong> לביטול הפעולה האחרונה (גם Ctrl+Z).
+          </p>
+        </HelpModal>
+      )}
     </div>
   )
 }
