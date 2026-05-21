@@ -352,16 +352,13 @@ interface IsraeliHoliday {
 
 ## בקלוג (לא בוצע)
 
-### 1. User Tutorial System — תכנון מוכן, לא נבנה
-מדריך אינטראקטיבי מלא לכל המערכת:
-- **גישה משולבת:** Onboarding אוטומטי בכניסה ראשונה + כפתורי "?" מרחפים + tooltips
-- **שלב 1:** תשתית (TooltipHint, HelpModal, useFirstVisit)
+### 1. User Tutorial System — שלב 1 בוצע (סיבוב 8), שלבים 2-6 פתוחים
+- ✅ **שלב 1 — תשתית:** `useFirstVisit`, `HelpModal`, `TooltipHint` נבנו. כפתור "?" בהדר + מדריך מהיר שנפתח אוטומטית בכניסה ראשונה של המנהלת.
 - **שלב 2:** Onboarding Tour עם spotlight על אלמנטים
 - **שלב 3:** ממשק עובדת
 - **שלב 4:** טאבים פשוטים (עובדות, העדפות, צדק)
 - **שלב 5:** טאבים מורכבים (לוח שיבוץ, תחזית כ"א)
 - **שלב 6:** ליטוש + הגדרות + תמונות/דוגמאות
-- *הסבר מקיף + דוגמאות בכניסה שניה ואילך*
 
 ### 2. רשימת החלטות של מיה (ממתינים)
 - שליחה חזרה עם ההחלטות הספציפיות לכל 29 מועד (סגור/קצר/רגיל/+X/לידיעה)
@@ -370,13 +367,13 @@ interface IsraeliHoliday {
 ---
 
 ## נקודות לשיפור אפשריות
-1. **WeeklyBoard.tsx** — קומפוננטה ענקית, מועמדת לפיצול
-2. **כיסוי בדיקות** — Playwright קיים אבל מוגבל; unit tests חסרים
-3. **ביצועים** — חלק מהחישובים כבדים (גם עם useMemo); bundle 1.3MB
-4. **נגישות** — ללא ARIA labels
-5. **Error boundary** — אין global error handling
+1. **WeeklyBoard.tsx** — עדיין גדולה (~4300 שורות). טייפים/קבועים/פונקציות טהורות חולצו (סיבוב 8); פיצול קומפוננטות-משנה נשאר כמשימה עתידית (עדיף בליווי).
+2. ✅ **כיסוי בדיקות** — הורחב מ-21 ל-72 unit tests (סיבוב 8).
+3. ✅ **ביצועים** — code splitting; bundle ראשוני 1.3MB → 426KB (סיבוב 8).
+4. ✅ **נגישות** — נוספו ARIA labels לניווט ולכפתורי אייקון (סיבוב 8). עדיין אפשר להרחיב.
+5. ✅ **Error boundary** — נוסף global ErrorBoundary (סיבוב 8).
 6. **דריסת רצוי** — כרגע ב-localStorage (לא Supabase), לא מסתנכרן בין מכשירים
-7. **voltFlags / customShifts** — עדיין ב-localStorage, צריך להעביר ל-Supabase כמו `schedules`
+7. **voltFlags / customShifts** — מודול `boardSettingsStorage.ts` מוכן; ממתין להרצת SQL ידנית + חיבור WeeklyBoard (ראה `MANUAL_TASKS.md`).
 
 ---
 
@@ -459,4 +456,50 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 - **כפתור ↩ בטל** + **Ctrl+Z** — undo stack עד 20 פעולות; כפתור מופיע מעל הלג'נד (disabled עד לאחר פעולה ראשונה)
 - **משמרת קבועה:** במקום 🔒 (emoji מנעול) + רקע צהוב, מוצג ✓ עם תווית קטנה "קבועה" מתחת + רקע צהוב נשמר לזיהוי. הלג'נד עודכן בהתאם.
 
-*עדכון אחרון: 2026-05-20*
+---
+
+## סיבוב 8 — מאי 2026 (עבודת לילה אוטונומית)
+
+8 משימות בקלוג בוצעו ברצף. כל commit אומת עם `tsc -b` + `vite build` לפני push (האתר חי).
+
+### 1. כפתור "בטל" בכל הלשוניות
+- `useUndoStack` hook גנרי חדש (מחסנית snapshots + Ctrl/Cmd+Z) + קומפוננטת `UndoButton` משותפת.
+- **טבלת צדק:** ביטול של "אפס היסטוריה" (snapshot של localStorage).
+- **העדפות שהוגשו:** ביטול עריכה/מחיקה/איפוס/הזנה ידנית (מצב כרטיסיות; מצב טבלה כבר היה).
+- **תחזית כ"א:** ביטול דריסות עמודת "רצוי" ודריסות תאים פר-עובדת.
+- **עובדות:** undo מבוסס snapshot שמשחזר את כל טבלת העובדים (עריכה/מחיקה/שחזור מארכיון).
+
+### 2. Global Error Boundary
+- `ErrorBoundary.tsx` — קריסה בקומפוננטה לא מפילה את כל האפליקציה; מסך שגיאה ידידותי + כפתור רענון.
+
+### 3. נגישות (ARIA)
+- ניווט ראשי: `aria-label` + `aria-current`. כפתורי אייקון (חיצים, עריכה/מחיקה, הזנה ידנית, כניסה) קיבלו `aria-label`.
+
+### 4. ביצועים — code splitting
+- כל הטאבים, EmployeeDashboard, JoinPage ו-HiringRecommendation הוסבו ל-`React.lazy`.
+- bundle ראשוני: 1,317KB → 426KB (-68%). אין יותר אזהרות chunk מעל 500KB.
+
+### 5. voltFlags/customShifts → Supabase (חלקי)
+- מודול `boardSettingsStorage.ts` נכתב (מראה את `scheduleStorage.ts`). הרצת SQL וחיבור WeeklyBoard — ב-`MANUAL_TASKS.md`.
+
+### 6. Unit tests
+- תוקן `vite.config` (vitest לא הריץ עוד את Playwright spec). תוקן טסט שקיבע תאריכי שבועות ישנים.
+- קבצים חדשים: `holidays.test.ts` (הורחב), `forecastGaps.test.ts`, `submissionWindow.test.ts`. סה"כ 21 → 72 טסטים.
+
+### 7. User Tutorial — שלב תשתית
+- `useFirstVisit`, `HelpModal`, `TooltipHint`. כפתור "?" בהדר פותח מדריך מהיר; נפתח אוטומטית בכניסה ראשונה.
+
+### 8. פיצול WeeklyBoard.tsx
+- חולצו טייפים → `WeeklyBoard.types.ts`, וקבועים + פונקציות טהורות → `WeeklyBoard.utils.ts` (~218 שורות).
+- רק קוד ברמת-מודול (טהור) הוזז — התנהגות זהה. פיצול קומפוננטות-משנה נשאר למשימה עתידית בליווי.
+
+### קבצים חדשים
+`src/hooks/useUndoStack.ts`, `src/hooks/useFirstVisit.ts`,
+`src/components/UndoButton.tsx`, `src/components/ErrorBoundary.tsx`,
+`src/components/HelpModal.tsx`, `src/components/TooltipHint.tsx`,
+`src/components/WeeklyBoard.types.ts`, `src/components/WeeklyBoard.utils.ts`,
+`src/lib/boardSettingsStorage.ts`,
+`tests/unit/forecastGaps.test.ts`, `tests/unit/submissionWindow.test.ts`, `tests/unit/_employeeFactory.ts`,
+`MANUAL_TASKS.md`
+
+*עדכון אחרון: 2026-05-21*
