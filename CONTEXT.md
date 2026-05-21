@@ -543,4 +543,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 ### קבצים ששונו
 `src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`
 
+### סטטוס
+✅ הועלה לפרודקשן ואומת חי (commit `2940852`) — נבדק מול ה-CSS המוגש מהאתר החי.
+
 *עדכון אחרון: 2026-05-20*
