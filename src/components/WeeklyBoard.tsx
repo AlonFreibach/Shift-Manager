@@ -8,6 +8,7 @@ import { ISRAELI_HOLIDAYS } from '../data/holidays';
 import { supabase } from '../lib/supabaseClient';
 import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 import { loadSchedule as loadScheduleFromStorage, saveSchedule as saveScheduleToStorage, subscribeToSchedule } from '../lib/scheduleStorage';
+import { loadBoardSettings, saveBoardSettings, subscribeToBoardSettings } from '../lib/boardSettingsStorage';
 import { printSchedule } from '../utils/printSchedule';
 
 interface WeeklyBoardProps {
@@ -574,11 +575,18 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       setSchedule(migrateScheduleIds(remote, employees));
     });
 
-    const savedVolt = localStorage.getItem(`voltFlags_${weekKey}`);
-    setVoltFlags(savedVolt ? JSON.parse(savedVolt) : {});
-
-    const savedCustomShifts = localStorage.getItem(`customShifts_${weekKey}`);
-    setCustomShifts(savedCustomShifts ? JSON.parse(savedCustomShifts) : {});
+    // Board settings (volt flags + custom shifts) — Supabase with localStorage cache.
+    void (async () => {
+      const settings = await loadBoardSettings(weekKey);
+      if (loadCancelled) return;
+      setVoltFlags(settings.voltFlags);
+      setCustomShifts(settings.customShifts);
+    })();
+    const unsubscribeBoardSettings = subscribeToBoardSettings(weekKey, settings => {
+      if (loadCancelled) return;
+      setVoltFlags(settings.voltFlags);
+      setCustomShifts(settings.customShifts);
+    });
 
     // Fetch closed shifts from Supabase
     void (async () => {
@@ -668,6 +676,7 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
       cancelled = true;
       loadCancelled = true;
       unsubscribeSchedule();
+      unsubscribeBoardSettings();
     };
   }, [weekKey, employees]);
 
@@ -779,7 +788,8 @@ export function WeeklyBoard({ employees, refreshEmployees, autoScheduleRequest, 
 
   function saveCustomShifts(newCustomShifts: Record<string, CustomShiftDef[]>) {
     setCustomShifts(newCustomShifts);
-    localStorage.setItem(`customShifts_${weekKey}`, JSON.stringify(newCustomShifts));
+    // Persist to localStorage cache + Supabase (so other devices stay in sync).
+    saveBoardSettings(weekKey, { voltFlags, customShifts: newCustomShifts });
   }
 
   function createCustomShift() {
