@@ -536,6 +536,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 - חשבון הבדיקה **"Maya test"** מוגדר כפעיל ולכן מופיע בלוח — למחוק ב-EmployeesTab.
 - **היא לי** מוגדרת עם תאריך תחילה 01/09/2026 — מופיעה בלוח אך מתחילה רק בספטמבר. אם התאריך שגוי, לעדכן ב-EmployeesTab.
 
+### סבב משוב שני ממיה
+- **סדר עמודות:** עמודות הסיכום (צפי/הגישה/קיבלה/הערות) הועברו מימין ליום ראשון ל**שמאל ליום שישי** — סדר: שם → ימים א׳–ו׳ → צפי/הגישה/קיבלה/הערות → פעולות.
+- **גופנים:** התאריכים ותוויות בוקר/ערב הוגדלו ל-14px (כגודל שמות העובדות).
+
 ### קבצים ששונו
 `src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`
 

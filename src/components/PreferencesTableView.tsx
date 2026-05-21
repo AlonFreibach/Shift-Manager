@@ -301,12 +301,6 @@ export function PreferencesTableView({
             <tr>
               <th rowSpan={2} className="col-name">שם</th>
 
-              {/* Summary columns — right of שם, before the day grid */}
-              <th rowSpan={2} className="col-num">צפי</th>
-              <th rowSpan={2} className="col-num">הגישה</th>
-              <th rowSpan={2} className="col-num col-received-hdr">קיבלה</th>
-              <th rowSpan={2} className="col-notes">הערות</th>
-
               {/* Day columns with optional holiday badge */}
               {DAY_NAMES.map((d, idx) => {
                 const isFriday = idx === 5
@@ -316,7 +310,7 @@ export function PreferencesTableView({
                 return (
                   <th key={d} colSpan={isFriday ? 1 : 2} className="col-day">
                     <div style={{ fontWeight: 700 }}>{d}</div>
-                    <div style={{ fontSize: 11, fontWeight: 400, color: '#888', marginBottom: holidays.length ? 2 : 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 400, color: '#888', marginBottom: holidays.length ? 2 : 0 }}>
                       {dateFmt}
                     </div>
                     {holidays.map(h => {
@@ -340,6 +334,12 @@ export function PreferencesTableView({
                   </th>
                 )
               })}
+
+              {/* Summary columns — left of שישי, after the day grid */}
+              <th rowSpan={2} className="col-num">צפי</th>
+              <th rowSpan={2} className="col-num">הגישה</th>
+              <th rowSpan={2} className="col-num col-received-hdr">קיבלה</th>
+              <th rowSpan={2} className="col-notes">הערות</th>
 
               <th rowSpan={2} className="col-actions print-hide"></th>
             </tr>
@@ -403,19 +403,6 @@ export function PreferencesTableView({
                   {/* שם */}
                   <td className="col-name">{row.name}</td>
 
-                  {/* Summary columns — immediately after שם */}
-                  <td className="col-num">{isAdmin ? '—' : (forecast ?? '—')}</td>
-                  <td className="col-num">{isAdmin ? '—' : (row.submitted ? submittedCount : '—')}</td>
-                  <td className="col-num col-received">{receivedCount}</td>
-                  <td
-                    className="col-notes"
-                    title={note}
-                    onClick={note ? () => setNotePopup({ name: row.name, note }) : undefined}
-                    style={{ cursor: note ? 'pointer' : 'default' }}
-                  >
-                    {note}
-                  </td>
-
                   {/* Day×Shift cells */}
                   {DAY_NAMES.map((dayName, di) =>
                     SHIFT_TYPES.map(t => {
@@ -473,6 +460,19 @@ export function PreferencesTableView({
                       )
                     })
                   )}
+
+                  {/* Summary columns — left of שישי, after the day grid */}
+                  <td className="col-num">{isAdmin ? '—' : (forecast ?? '—')}</td>
+                  <td className="col-num">{isAdmin ? '—' : (row.submitted ? submittedCount : '—')}</td>
+                  <td className="col-num col-received">{receivedCount}</td>
+                  <td
+                    className="col-notes"
+                    title={note}
+                    onClick={note ? () => setNotePopup({ name: row.name, note }) : undefined}
+                    style={{ cursor: note ? 'pointer' : 'default' }}
+                  >
+                    {note}
+                  </td>
 
                   {/* Actions */}
                   <td className="col-actions print-hide">
