@@ -541,6 +541,11 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 - **סדר עמודות:** עמודות הסיכום (צפי/הגישה/קיבלה/הערות) הועברו מימין ליום ראשון ל**שמאל ליום שישי** — סדר: שם → ימים א׳–ו׳ → צפי/הגישה/קיבלה/הערות → פעולות.
 - **גופנים:** התאריכים ותוויות בוקר/ערב הוגדלו ל-14px (כגודל שמות העובדות).
 
+### סבב משוב שלישי ממיה — טקסט בשורה אחת
+- **בעיה:** טקסט בתאים נשבר באמצע מילה (למשל "הגיש"+"ה") כי היה `word-wrap: break-word` והעמודות היו צרות מדי.
+- **תיקון (PreferencesView.css):** `white-space: nowrap` בכל תאי הטבלה — אף מילה לא נשברת. הורחבו `col-num` (46→54px) ו-`col-name` (100→110px).
+- **מובייל:** נוסף `min-width: 980px` לטבלה — במסכים צרים הטבלה נשארת ברוחב מלא ו-`.prefs-table-scroll` גולל אופקית במקום לשבור טקסט. עובד זהה בדסקטופ ובמובייל.
+
 ### קבצים ששונו
 `src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`
 

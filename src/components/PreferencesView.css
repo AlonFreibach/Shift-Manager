@@ -69,6 +69,10 @@
 
 .prefs-table {
   width: 100%;
+  /* Keep columns wide enough that no cell text ever wraps/breaks mid-word.
+     On narrow screens (mobile) the table keeps this width and the wrapper
+     (.prefs-table-scroll) scrolls horizontally instead of breaking text. */
+  min-width: 980px;
   border-collapse: collapse;
   font-size: 14px;
   table-layout: fixed;
@@ -80,7 +84,8 @@
   padding: 3px 5px;
   text-align: center;
   vertical-align: middle;
-  word-wrap: break-word;
+  /* Every cell stays on a single line — never split a word across rows. */
+  white-space: nowrap;
 }
 
 .prefs-table thead th {
@@ -95,7 +100,7 @@
   text-align: right;
   font-weight: 600;
   background: #f9f6f0;
-  width: 100px;
+  width: 110px;
   white-space: nowrap;
   padding: 4px 8px;
 }
@@ -116,7 +121,7 @@
   font-weight: 700;
   color: #1A3008;
   background: #f9f6f0;
-  width: 46px;
+  width: 54px;
 }
 
 .prefs-table .col-notes {
@@ -320,6 +325,7 @@
   .prefs-table {
     font-size: 10px;
     page-break-inside: avoid;
+    min-width: 0;
   }
 
   .prefs-table th,
