@@ -433,14 +433,22 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
     return result
   }, [summaries, weeks])
 
-  // Top metrics
-  const currentRatio = summaries[0]?.ratio ?? 0
+  // Top metrics — measured against the **baseline** weekly standard (30 shifts
+  // incl. Miya), not the per-week auto-adjusted standard. The summary cards
+  // answer "do we have enough people for a normal 30-shift week?" — a short
+  // holiday week shouldn't show 139% just because its auto-standard dropped.
+  // (The table below still uses the per-week adjusted standard for planning.)
+  const currentRatio = (summaries[0]?.total ?? 0) / STANDARD_SLOTS
   const worstIdx = useMemo(() => {
     let worst = 0
-    summaries.forEach((s, i) => { if (s.ratio < summaries[worst].ratio) worst = i })
+    let worstRatio = (summaries[0]?.total ?? 0) / STANDARD_SLOTS
+    summaries.forEach((s, i) => {
+      const r = s.total / STANDARD_SLOTS
+      if (r < worstRatio) { worst = i; worstRatio = r }
+    })
     return worst
   }, [summaries])
-  const forecastCount = activeEmployees.filter(e => (e.availabilityForecasts?.length ?? 0) > 0).length
+  const worstRatio = (summaries[worstIdx]?.total ?? 0) / STANDARD_SLOTS
 
   // ═══ Friday-specific coverage per week ═══
   const fridayData = useMemo(() => {
@@ -690,19 +698,13 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
           label="כיסוי שבוע נוכחי"
           value={`${Math.round(currentRatio * 100)}%`}
           color={coverageTextColor(currentRatio)}
-          sub={`${summaries[0]?.total ?? 0} / ${summaries[0]?.standard ?? STANDARD_SLOTS}`}
+          sub={`${summaries[0]?.total ?? 0} / ${STANDARD_SLOTS}`}
         />
         <SummaryCard
           label="שבוע הכי בעייתי"
-          value={`${Math.round(summaries[worstIdx]?.ratio * 100)}%`}
-          color={coverageTextColor(summaries[worstIdx]?.ratio ?? 0)}
+          value={`${Math.round(worstRatio * 100)}%`}
+          color={coverageTextColor(worstRatio)}
           sub={weeks[worstIdx]?.label ?? ''}
-        />
-        <SummaryCard
-          label="עובדות עם תחזית"
-          value={`${forecastCount} / ${activeEmployees.length}`}
-          color={forecastCount >= activeEmployees.length / 2 ? '#16a34a' : '#c17f3b'}
-          sub=""
         />
       </div>
 

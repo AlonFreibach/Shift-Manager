@@ -321,6 +321,7 @@ interface IsraeliHoliday {
 6. **מיה היא עמודה בטבלה** — עם 6 ברירת מחדל, ניתן לערוך (למקרה חולי/חופש)
 7. **חגים לידיעה בלבד** כברירת מחדל — מיה תשלח רשימת החלטות סופית
 8. **תשעה באב = יום עבודה רגיל** (לא ערב חג) — חמישי שבו חל תשעה באב נשאר 7 משמרות, ושבוע 19.7–24.7/2026 נשאר 30 משמרות.
+9. **קלפי סיכום בתחזית כ"א מחושבים מול תקן 30** — לא מול התקן המותאם-חגים. השאלה היא "האם יש מספיק כ"א לשבוע 30-משמרות רגיל?" — שבוע קצר של חג לא צריך להראות 139% רק כי התקן שלו ירד ל-23. הטבלה עצמה ממשיכה להשתמש בתקן מותאם-חגים לתכנון מפורט.
 
 ---
 
@@ -547,6 +548,11 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 - **תיקון (PreferencesView.css):** `white-space: nowrap` בכל תאי הטבלה — אף מילה לא נשברת. הורחבו `col-num` (46→54px) ו-`col-name` (100→110px).
 - **מובייל:** נוסף `min-width: 980px` לטבלה — במסכים צרים הטבלה נשארת ברוחב מלא ו-`.prefs-table-scroll` גולל אופקית במקום לשבור טקסט. עובד זהה בדסקטופ ובמובייל.
 
+### סבב משוב חמישי — תחזית כ"א: קלפי סיכום + הסרת קלף "עובדות עם תחזית"
+- **בעיה:** הקלפים "כיסוי שבוע נוכחי" ו"שבוע הכי בעייתי" השתמשו ב-`summaries[i].ratio` שמחושב מול התקן המותאם-חגים — בשבוע של שבועות זה ירד ל-23, ולכן 32 משמרות צפויות הציגו 139% (מטעה).
+- **תיקון (ForecastTab.tsx):** `currentRatio` ו-`worstIdx` מחושבים עכשיו מול `STANDARD_SLOTS = 30` קבוע. הטבלה למטה ממשיכה להשתמש ב-`getStandard(week)` המותאם-חגים — היא לתכנון מפורט; הקלפים לתמונה מנהלית.
+- **קלף "עובדות עם תחזית" הוסר** לבקשת מיה — נחשב מיותר לפרזנטציה. הוסר גם המשתנה `forecastCount`.
+
 ### ⚠️ סבב משוב רביעי — ניסיון הקפאת כותרת בוטל
 - **מה ניסינו (commit `d5f5295`):** sticky thead — `.prefs-table-scroll` עם `max-height: calc(100vh - 290px)` + `overflow: auto`, ו-`.prefs-table thead { position: sticky; top: 0 }`.
 - **למה זה לא עבד:** ה-`max-height` יצר תיבת גלילה פנימית לטבלה — ובדפדפן זה גרם לכך שהפקדים שמעל הטבלה (כותרת, בוחר שבוע, סרגל) נראו כ"מוקפאים" יחד עם הטבלה, ולא ניתן היה לראות את כל הטבלה במסך מחשב. מיה ביקשה לבטל.
@@ -554,7 +560,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 - **לזכור לעתיד:** אם נחזור לפיצ'ר הזה, הפתרון הנכון יהיה כנראה `position: sticky` ברמת ה-`<th>` עם offset מחושב לשורה שנייה, **בלי** להפוך את עטיפת הטבלה ל-scroll box. הניסיון הנוכחי לא טוב.
 
 ### קבצים ששונו
-`src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`
+`src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`, `src/components/ForecastTab.tsx`, `src/data/holidays.ts`
 
 ### סטטוס
 ✅ commit פעיל בפרודקשן: `2118400` (revert לסיבוב 9 בלי הקפאת כותרת). אומת חי
