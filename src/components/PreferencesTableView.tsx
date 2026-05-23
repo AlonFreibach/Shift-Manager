@@ -408,7 +408,11 @@ export function PreferencesTableView({
                     SHIFT_TYPES.map(t => {
                       if (di === 5 && t === 'evening') return null
                       const key = `${di}_${t}`
-                      const submitted = !!row.group?.shifts[key]
+                      // Admin (Miya) has a virtual fixed-morning "submission":
+                      // she works every morning Sun–Fri, so her 6 morning cells
+                      // always render as if submitted, even before WeeklyBoard
+                      // has populated the schedule for that week.
+                      const submitted = !!row.group?.shifts[key] || (isAdmin && t === 'morning')
                       const assigned = assignedSet.has(key)
 
                       const cellKey = `${dayName}_${t === 'morning' ? 'בוקר' : 'ערב'}`
@@ -463,7 +467,7 @@ export function PreferencesTableView({
 
                   {/* Summary columns — left of שישי, after the day grid */}
                   <td className="col-num">{isAdmin ? '—' : (forecast ?? '—')}</td>
-                  <td className="col-num">{isAdmin ? '—' : (row.submitted ? submittedCount : '—')}</td>
+                  <td className="col-num">{isAdmin ? 6 : (row.submitted ? submittedCount : '—')}</td>
                   <td className="col-num col-received">{receivedCount}</td>
                   <td
                     className="col-notes"
