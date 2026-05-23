@@ -546,11 +546,18 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 - **תיקון (PreferencesView.css):** `white-space: nowrap` בכל תאי הטבלה — אף מילה לא נשברת. הורחבו `col-num` (46→54px) ו-`col-name` (100→110px).
 - **מובייל:** נוסף `min-width: 980px` לטבלה — במסכים צרים הטבלה נשארת ברוחב מלא ו-`.prefs-table-scroll` גולל אופקית במקום לשבור טקסט. עובד זהה בדסקטופ ובמובייל.
 
+### ⚠️ סבב משוב רביעי — ניסיון הקפאת כותרת בוטל
+- **מה ניסינו (commit `d5f5295`):** sticky thead — `.prefs-table-scroll` עם `max-height: calc(100vh - 290px)` + `overflow: auto`, ו-`.prefs-table thead { position: sticky; top: 0 }`.
+- **למה זה לא עבד:** ה-`max-height` יצר תיבת גלילה פנימית לטבלה — ובדפדפן זה גרם לכך שהפקדים שמעל הטבלה (כותרת, בוחר שבוע, סרגל) נראו כ"מוקפאים" יחד עם הטבלה, ולא ניתן היה לראות את כל הטבלה במסך מחשב. מיה ביקשה לבטל.
+- **בוטל ב-commit `2118400`** (revert של `d5f5295` + `86d6044`). חזרה מלאה למצב לפני הניסיון.
+- **לזכור לעתיד:** אם נחזור לפיצ'ר הזה, הפתרון הנכון יהיה כנראה `position: sticky` ברמת ה-`<th>` עם offset מחושב לשורה שנייה, **בלי** להפוך את עטיפת הטבלה ל-scroll box. הניסיון הנוכחי לא טוב.
+
 ### קבצים ששונו
 `src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`
 
 ### סטטוס
-✅ הועלה לפרודקשן ואומת חי (commit `154fc0c`) — נבדק מול ה-CSS המוגש מהאתר החי
+✅ commit פעיל בפרודקשן: `2118400` (revert לסיבוב 9 בלי הקפאת כותרת). אומת חי
+מול ה-CSS המוגש: `.prefs-table-scroll{overflow-x:auto}` בלבד, ללא `position:sticky`.
 (`white-space:nowrap`, `col-num:54px`, `min-width:980px`).
 
 ---
