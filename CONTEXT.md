@@ -559,8 +559,8 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 `src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`
 
 ### סטטוס
-✅ הועלה לפרודקשן ואומת חי (commit `154fc0c`) — נבדק מול ה-CSS המוגש מהאתר החי
-(`white-space:nowrap`, `col-num:54px`, `min-width:980px`).
+✅ הועלה לפרודקשן ואומת חי (commit `d5f5295`) — נבדק מול ה-CSS המוגש מהאתר החי
+(`thead {position:sticky; top:0}`, `.prefs-table-scroll {overflow:auto; max-height:…}`).
 
 ---
 
