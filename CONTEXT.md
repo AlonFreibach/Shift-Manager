@@ -571,7 +571,9 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 `src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`, `src/components/ForecastTab.tsx`, `src/data/holidays.ts`
 
 ### סטטוס
-✅ commit פעיל בפרודקשן: `f6d8594`. אומת חי:
+✅ commit פעיל בפרודקשן: `7ee367c`. אומת חי:
+- שורת מיה ב-PreferencesTableView: הצ'אנק מכיל
+  `.shifts[i]||u&&r===\`morning\`` — 6 משמרות הבוקר שלה נדלקות כמוגשות.
 - ForecastTab בלי הקלף "עובדות עם תחזית" וללא `forecastCount`.
 - תשעה באב מסווג כ-`memorial` בצ'אנק `holidays-*.js`.
 - ה-CSS של PreferencesTableView ללא `position:sticky` ועם `white-space:nowrap`.
