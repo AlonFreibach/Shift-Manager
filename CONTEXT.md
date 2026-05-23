@@ -563,9 +563,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 `src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`, `src/components/ForecastTab.tsx`, `src/data/holidays.ts`
 
 ### סטטוס
-✅ commit פעיל בפרודקשן: `2118400` (revert לסיבוב 9 בלי הקפאת כותרת). אומת חי
-מול ה-CSS המוגש: `.prefs-table-scroll{overflow-x:auto}` בלבד, ללא `position:sticky`.
-(`white-space:nowrap`, `col-num:54px`, `min-width:980px`).
+✅ commit פעיל בפרודקשן: `f6d8594`. אומת חי:
+- ForecastTab בלי הקלף "עובדות עם תחזית" וללא `forecastCount`.
+- תשעה באב מסווג כ-`memorial` בצ'אנק `holidays-*.js`.
+- ה-CSS של PreferencesTableView ללא `position:sticky` ועם `white-space:nowrap`.
 
 ---
 
