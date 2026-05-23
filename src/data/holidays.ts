@@ -63,8 +63,9 @@ export const ISRAELI_HOLIDAYS: IsraeliHoliday[] = [
   { date: '2026-05-22', name: 'שבועות', type: 'holiday' },
 
   // July — Tisha B'Av
-  { date: '2026-07-23', name: 'תשעה באב', type: 'holiday_eve', demand: 'low',
-    demandNote: 'תשעה באב — יום אבל, ביקוש נמוך, לעתים סגירה מוקדמת' },
+  // תשעה באב: יום עבודה רגיל לחנות (החלטת מיה — לא ערב חג, לא מפחית תקן).
+  { date: '2026-07-23', name: 'תשעה באב', type: 'memorial', demand: 'low',
+    demandNote: 'תשעה באב — יום אבל, ביקוש נמוך (יום עבודה רגיל)' },
 
   // September — Tishrei holidays (Rosh Hashana, Yom Kippur, Sukkot)
   { date: '2026-09-11', name: 'ערב ראש השנה', type: 'holiday_eve', demand: 'peak',
