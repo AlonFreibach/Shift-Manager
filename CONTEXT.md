@@ -546,21 +546,12 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 - **תיקון (PreferencesView.css):** `white-space: nowrap` בכל תאי הטבלה — אף מילה לא נשברת. הורחבו `col-num` (46→54px) ו-`col-name` (100→110px).
 - **מובייל:** נוסף `min-width: 980px` לטבלה — במסכים צרים הטבלה נשארת ברוחב מלא ו-`.prefs-table-scroll` גולל אופקית במקום לשבור טקסט. עובד זהה בדסקטופ ובמובייל.
 
-### סבב משוב רביעי ממיה — הקפאת שורות הכותרת
-- **בקשה:** ששתי שורות הכותרת (שורת השם+הימים, ושורת בוקר/ערב) יישארו מוקפאות בגלילה למטה.
-- **תיקון (PreferencesView.css):**
-  - `.prefs-table-scroll` הפך לתיבת גלילה דו-צירית: `overflow: auto` + `max-height: calc(100vh - 290px)`.
-  - `.prefs-table thead` קיבל `position: sticky; top: 0; z-index: 2` — כל ה-`thead` (2 השורות) נצמד יחד, ללא תלות בגובה משתנה של שורת החגים.
-  - `box-shadow: inset 0 -1px 0` על תאי הכותרת — קו מפריד אמין מתחת לכותרת המוקפאת (border-collapse עלול להשמיט את הגבול המשותף בעת sticky).
-  - `@media print`: ביטול ה-scroll box וה-sticky כדי שהטבלה תזרום בהדפסה.
-- עובד זהה בדסקטופ ובמובייל. ערך ה-`max-height` ניתן לכוונון אם צריך תיבה גבוהה/נמוכה יותר.
-
 ### קבצים ששונו
 `src/components/PreferencesView.tsx`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`
 
 ### סטטוס
-✅ הועלה לפרודקשן ואומת חי (commit `d5f5295`) — נבדק מול ה-CSS המוגש מהאתר החי
-(`thead {position:sticky; top:0}`, `.prefs-table-scroll {overflow:auto; max-height:…}`).
+✅ הועלה לפרודקשן ואומת חי (commit `154fc0c`) — נבדק מול ה-CSS המוגש מהאתר החי
+(`white-space:nowrap`, `col-num:54px`, `min-width:980px`).
 
 ---
 

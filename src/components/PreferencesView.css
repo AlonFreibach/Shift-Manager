@@ -8,10 +8,7 @@
 }
 
 .prefs-table-scroll {
-  /* 2-axis scroll box: horizontal for the wide table, vertical so the
-     header rows can freeze (position: sticky) while the body scrolls. */
-  overflow: auto;
-  max-height: calc(100vh - 290px);
+  overflow-x: auto;
 }
 
 /* ─── Legend (above table) ─── */
@@ -91,22 +88,12 @@
   white-space: nowrap;
 }
 
-/* Freeze both header rows when scrolling the body vertically. */
-.prefs-table thead {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
 .prefs-table thead th {
   background: #f5f0e8;
   color: #1A3008;
   font-weight: 700;
   font-size: 13px;
   padding: 5px 4px;
-  /* Reliable divider line under the frozen header (border-collapse can
-     drop the shared border once the header is sticky). */
-  box-shadow: inset 0 -1px 0 #d9d4c8;
 }
 
 .prefs-table .col-name {
@@ -319,16 +306,6 @@
     border: none;
     padding: 0;
     box-shadow: none;
-  }
-
-  /* Printing: no scroll box / no sticky header — let the table flow. */
-  .prefs-table-scroll {
-    overflow: visible;
-    max-height: none;
-  }
-
-  .prefs-table thead {
-    position: static;
   }
 
   .prefs-print-header {
