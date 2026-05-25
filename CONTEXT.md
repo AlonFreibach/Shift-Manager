@@ -591,4 +591,23 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 ### קבצים
 חדש: `src/components/UsageGuide.tsx`. שונו: `WeeklyBoard.tsx`, `EmployeesTab.tsx`, `PreferencesView.tsx`, `FairnessTab.tsx`.
 
-*עדכון אחרון: 2026-05-21*
+---
+
+## סיבוב 11 — מאי 2026
+
+### תיקון: שחזור צבע חום של משמרת קבועה בטבלת העדפות
+
+**הבעיה:** בטבלה שבלשונית "העדפות שהוגשו" (BETA), לחיצה על משבצת של משמרת קבועה (חום, ✓ קבועה) ביטלה את השיבוץ — וכשמיה לחצה שוב כדי "לחזור אחורה", המערכת יצרה שיבוץ ירוק רגיל במקום לשחזר את המשמרת הקבועה (חום).
+
+**שורש:** ב-`toggleAssignment` (PreferencesTableView), ביטול שיבוץ של slot קבוע איפס את ה-employeeId אבל שמר את הדגלים `locked`/`isFixed`. הלחיצה הבאה לא ידעה לאיזה slot להחזיר את העובדת, ולכן יצרה slot חדש בלי הדגלים הללו → ירוק במקום חום.
+
+**תיקון:**
+- נוסף שדה אופציונלי `originalEmployeeId?: string | null` ל-`Slot` (scheduleStorage.ts).
+- ב-ביטול שיבוץ של slot קבוע: נשמר ה-`originalEmployeeId` של העובדת המקורית.
+- ב-שיבוץ מחדש: לפני יצירת slot חדש, נבדק אם יש slot קבוע עם `originalEmployeeId === empId` שמחכה לשחזור — ואם כן, הוא מתמלא מחדש (המשמרת חוזרת חום).
+- מצב ביניים חדש: `.cell-locked-cancelled` — רקע חום בהיר עם "✓" חצוי וקו ותווית "בוטלה". טולטיפ: "משמרת קבועה בוטלה לשבוע זה — לחיצה לשחזור".
+- עדכון לג'נד: "משמרת קבועה (לחיצה לביטול, לחיצה נוספת לשחזור)".
+
+**קבצים ששונו:** `src/lib/scheduleStorage.ts`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`.
+
+*עדכון אחרון: 2026-05-25*

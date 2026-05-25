@@ -219,18 +219,37 @@ export function PreferencesTableView({
 
     const existingIdx = slots.findIndex(s => s.employeeId === empId)
     if (existingIdx >= 0) {
-      slots[existingIdx] = { ...slots[existingIdx], employeeId: null }
-    } else {
-      const { arrival, departure } = defaultSlotTimes(dayIdx, shiftType)
-      const newSlot: Slot = {
-        employeeId: empId,
-        arrivalTime: arrival,
-        departureTime: departure,
-        station: '',
+      // Unassign. If this was a fixed/locked slot, remember the original
+      // employee so the next click restores the brown (fixed) state instead
+      // of creating a new green non-locked assignment.
+      const slot = slots[existingIdx]
+      if (slot.locked || slot.isFixed) {
+        slots[existingIdx] = { ...slot, employeeId: null, originalEmployeeId: empId }
+      } else {
+        slots[existingIdx] = { ...slot, employeeId: null }
       }
-      const emptyIdx = slots.findIndex(s => !s.locked && !s.isFixed && s.employeeId === null)
-      if (emptyIdx >= 0) slots[emptyIdx] = newSlot
-      else slots.push(newSlot)
+    } else {
+      // Re-assign. First try restoring a previously-cancelled fixed slot for
+      // this employee so the cell goes back to brown.
+      const restoreIdx = slots.findIndex(
+        s => s.employeeId === null && (s.locked || s.isFixed) && s.originalEmployeeId === empId
+      )
+      if (restoreIdx >= 0) {
+        const slot = slots[restoreIdx]
+        const { originalEmployeeId: _orig, ...rest } = slot
+        slots[restoreIdx] = { ...rest, employeeId: empId }
+      } else {
+        const { arrival, departure } = defaultSlotTimes(dayIdx, shiftType)
+        const newSlot: Slot = {
+          employeeId: empId,
+          arrivalTime: arrival,
+          departureTime: departure,
+          station: '',
+        }
+        const emptyIdx = slots.findIndex(s => !s.locked && !s.isFixed && s.employeeId === null)
+        if (emptyIdx >= 0) slots[emptyIdx] = newSlot
+        else slots.push(newSlot)
+      }
     }
 
     setSchedule(next)
@@ -289,7 +308,7 @@ export function PreferencesTableView({
         <span className="leg-item"><span className="leg-box leg-assigned-no-req"> </span> שובצה (לא ביקשה)</span>
         <span className="leg-item">
           <span className="leg-box leg-fixed" style={{ fontSize: 8, lineHeight: 1.1 }}>✓ קבועה</span>
-          משמרת קבועה (לחיצה לביטול חד-פעמי)
+          משמרת קבועה (לחיצה לביטול, לחיצה נוספת לשחזור)
         </span>
         <span className="leg-hint">לחיצה על תא = שיבוץ/ביטול</span>
       </div>
@@ -418,22 +437,28 @@ export function PreferencesTableView({
                       const cellKey = `${dayName}_${t === 'morning' ? 'בוקר' : 'ערב'}`
                       const slot = schedule[cellKey]?.find(s => s.employeeId === row.id)
                       const isLocked = !!(slot?.locked || slot?.isFixed)
+                      // Fixed slot that was cancelled for this week — slot still
+                      // exists (locked/isFixed) but employeeId is null. We track
+                      // the original employee so a second click can restore it.
+                      const cancelledFixedSlot = !slot
+                        ? schedule[cellKey]?.find(
+                            s => s.employeeId === null && (s.locked || s.isFixed) && s.originalEmployeeId === row.id
+                          )
+                        : undefined
+                      const isCancelledFixed = !isLocked && !!cancelledFixedSlot
 
                       // Coloring:
                       // assigned (any) → green
                       // not assigned + submitted → white with ✓
                       // not assigned + not submitted → empty
                       // locked → yellow (overrides green)
+                      // cancelled fixed → dimmed yellow with strikethrough (click to restore)
                       let cellClass = 'cell cell-clickable'
                       if (assigned) cellClass += ' cell-assigned'
                       else if (submitted) cellClass += ' cell-submitted'
                       if (isLocked) cellClass += ' cell-locked'
+                      else if (isCancelledFixed) cellClass += ' cell-locked-cancelled'
 
-                      // Content:
-                      // locked → ✓ + "קבועה" label (yellow bg via cell-locked)
-                      // submitted (whether or not assigned) → ✓
-                      // not submitted + assigned → (green, no mark)
-                      // not submitted + not assigned → (empty)
                       const cellContent = isLocked
                         ? (
                           <div style={{ lineHeight: 1.1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
@@ -441,15 +466,24 @@ export function PreferencesTableView({
                             <span style={{ fontSize: 8, fontWeight: 600, color: '#8a6d3b', letterSpacing: 0 }}>קבועה</span>
                           </div>
                         )
-                        : (submitted ? '✓' : '')
+                        : isCancelledFixed
+                          ? (
+                            <div style={{ lineHeight: 1.1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                              <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>✓</span>
+                              <span style={{ fontSize: 8, fontWeight: 600, color: '#8a6d3b', letterSpacing: 0 }}>בוטלה</span>
+                            </div>
+                          )
+                          : (submitted ? '✓' : '')
 
                       const title = isLocked
                         ? 'משמרת קבועה — לחיצה לביטול חד-פעמי לשבוע זה'
-                        : assigned
-                          ? 'לחיצה לביטול השיבוץ'
-                          : submitted
-                            ? 'לחיצה לשיבוץ (ביקשה משמרת זו)'
-                            : 'לחיצה לשיבוץ'
+                        : isCancelledFixed
+                          ? 'משמרת קבועה בוטלה לשבוע זה — לחיצה לשחזור'
+                          : assigned
+                            ? 'לחיצה לביטול השיבוץ'
+                            : submitted
+                              ? 'לחיצה לשיבוץ (ביקשה משמרת זו)'
+                              : 'לחיצה לשיבוץ'
 
                       return (
                         <td

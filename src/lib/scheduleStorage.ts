@@ -22,6 +22,10 @@ export type Slot = {
   locked?: boolean
   isFixed?: boolean
   voltResponsible?: boolean
+  // Remembers who a locked/fixed slot was originally assigned to after a
+  // one-time cancellation from PreferencesTableView, so a second click can
+  // restore the fixed (brown) assignment instead of creating a new green one.
+  originalEmployeeId?: string | null
 }
 
 export type Schedule = Record<string, Slot[]>

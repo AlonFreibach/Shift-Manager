@@ -183,6 +183,18 @@
   outline-offset: -2px;
 }
 
+/* Fixed shift that was cancelled for this week — dimmed brown to hint
+   that another click restores the locked (brown) state. */
+.prefs-table .cell-locked-cancelled {
+  background: #fdf4d8 !important;
+  color: #8a6d3b;
+  cursor: pointer;
+}
+.prefs-table .cell-locked-cancelled:hover {
+  outline: 2px solid #c17f3b;
+  outline-offset: -2px;
+}
+
 .prefs-table .col-received {
   background: #e8f5e9;
   color: #1b5e20;
