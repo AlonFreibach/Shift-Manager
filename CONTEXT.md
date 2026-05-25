@@ -610,4 +610,6 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 
 **קבצים ששונו:** `src/lib/scheduleStorage.ts`, `src/components/PreferencesTableView.tsx`, `src/components/PreferencesView.css`.
 
+**סטטוס:** ✅ commit `42294fa` פעיל בפרודקשן. אומת חי ב-`PreferencesView-CUHFkkjI.js`: הצ'אנק מכיל את `originalEmployeeId`, `cell-locked-cancelled`, "בוטלה" ו-"לשחזור".
+
 *עדכון אחרון: 2026-05-25*
