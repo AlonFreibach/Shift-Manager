@@ -624,6 +624,13 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 - **graceful degradation:** הקוד עובד גם לפני שהטבלה קיימת (fallback ל-localStorage), כמו שהיה עם `board_settings`.
 - **משימה ידנית לאלון:** הרצת SQL ליצירת טבלת `app_settings` (ראה `MANUAL_TASKS.md`). עד אז — localStorage בלבד, ללא סנכרון.
 
+### בורר טווח תחזית (12 / 24 / 52 שבועות) — בקשת מיה
+- **רקע (הערות מיה לפני פרזנטציה):** הטבלה הסתיימה ב-12 שבועות (≈אוגוסט). מיה צריכה לראות חודשים רבים קדימה כדי שאחוז הכיסוי "ייפול" כשעובדות עוזבות (אוגוסט/ספטמבר/אוקטובר) — וכך לדעת מתי להתחיל לגייס.
+- **פתרון:** בורר טווח מעל הטבלה — 12 / 24 (½ שנה) / 52 (שנה). הבחירה נשמרת ב-localStorage (`forecast_horizon_weeks`). ברירת מחדל 12 (לא מעמיס).
+- `generateWeeks(weeksAhead)` עברה פרמטריזציה; `weeks` תלוי ב-state `horizon`. כל הנגזרות (grid, summaries, alerts, fridayData, גרף) מסתגלות אוטומטית. כותרת הגרף וטקסט המדריך דינמיים.
+- **הלוגיקה כבר תמכה בעזיבות:** `isActiveInWeek` מוציא עובדת אחרי `expectedDeparture`/`availableToDate` → התא הופך `departed` (0) → הכיסוי יורד. הרחבת הטווח רק חושפת זאת ויזואלית.
+- **scope:** השינוי לטבלה+גרף בלבד. `forecastGaps.ts` (ממליץ הגיוס) נשאר 12 שבועות — לוגיקת ניתוח קצר-טווח נפרדת.
+
 ### קבצים ששונו/חדשים
 חדש: `src/lib/appSettingsStorage.ts`. שונה: `src/components/ForecastTab.tsx`, `MANUAL_TASKS.md`.
 

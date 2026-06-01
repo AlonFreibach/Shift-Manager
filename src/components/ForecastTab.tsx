@@ -21,9 +21,22 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 
 const MIYA_NAME = 'מיה'
 const MIYA_WEEKLY_SHIFTS = 6  // Miya's fixed schedule: 6 morning shifts per week (Sun-Fri)
-const WEEKS_AHEAD = 12
+const WEEKS_AHEAD = 12        // default forecast horizon
 const STANDARD_SLOTS = 30
 const TARGET_RATIO = 1.25
+
+// Forecast horizon — Miya needs to look further than 12 weeks (employees with
+// departure dates in Aug/Sep/Oct only show their coverage drop further out).
+// Selectable; persisted in localStorage so her choice sticks.
+const HORIZON_OPTIONS = [12, 24, 52] as const
+const HORIZON_KEY = 'forecast_horizon_weeks'
+function loadHorizon(): number {
+  try {
+    const raw = parseInt(localStorage.getItem(HORIZON_KEY) || '')
+    if (HORIZON_OPTIONS.includes(raw as typeof HORIZON_OPTIONS[number])) return raw
+  } catch { /* ignore */ }
+  return WEEKS_AHEAD
+}
 
 // ═══ Utility functions ═══
 
@@ -129,10 +142,10 @@ function calcAutoStandard(startISO: string): {
   }
 }
 
-function generateWeeks(): WeekInfo[] {
+function generateWeeks(weeksAhead: number = WEEKS_AHEAD): WeekInfo[] {
   const sunday = getSunday(new Date())
   const weeks: WeekInfo[] = []
-  for (let w = 0; w < WEEKS_AHEAD; w++) {
+  for (let w = 0; w < weeksAhead; w++) {
     const start = addDays(sunday, w * 7)
     const startISO = toISO(start)
     const endISO = toISO(addDays(start, 5))
@@ -315,7 +328,13 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
 
   const [hoveredCell, setHoveredCell] = useState<{ empIdx: number; weekIdx: number } | null>(null)
 
-  const weeks = useMemo(generateWeeks, [])
+  const [horizon, setHorizonState] = useState<number>(() => loadHorizon())
+  const setHorizon = useCallback((weeks: number) => {
+    setHorizonState(weeks)
+    try { localStorage.setItem(HORIZON_KEY, String(weeks)) } catch { /* ignore */ }
+  }, [])
+
+  const weeks = useMemo(() => generateWeeks(horizon), [horizon])
 
   const activeEmployees = useMemo(() => {
     const list = employees.filter(e => !e.isTrainee)
@@ -618,8 +637,10 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>מה רואים כאן?</div>
             <p style={{ margin: '0 0 12px' }}>
-              הדף מציג תחזית של כוח האדם ל-12 שבועות קדימה. כל שורה היא שבוע, וכל עמודה היא עובדת.
+              הדף מציג תחזית של כוח האדם ל-{horizon} שבועות קדימה. כל שורה היא שבוע, וכל עמודה היא עובדת.
               המספר בתא הוא כמה משמרות העובדת צפויה לעבוד באותו שבוע.
+              ניתן לשנות את <strong>טווח התצוגה</strong> (12 / 24 / 52 שבועות) בכפתורים שמעל הטבלה —
+              טווח ארוך מציג כיצד אחוז הכיסוי יורד כשעובדות מסיימות, כדי לדעת מתי להתחיל לגייס.
             </p>
 
             <div style={{ fontWeight: 600, color: '#1a4a2e', marginBottom: 8, fontSize: 14 }}>מקרא צבעים — עמודת "צפי"</div>
@@ -753,15 +774,41 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
         border: '1px solid #e8e0d4', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
       }}>
         <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#1A3008' }}>
-          מגמת כיסוי — 12 שבועות
+          מגמת כיסוי — {horizon} שבועות
         </h3>
         <div style={{ height: 260 }}>
           <Line data={chartData} options={chartOptions} />
         </div>
       </div>
 
-      {/* ═══ Undo toolbar ═══ */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+      {/* ═══ Toolbar: horizon picker + undo ═══ */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#3a4a2a' }}>טווח תצוגה:</span>
+          <div role="group" aria-label="טווח תצוגת התחזית" style={{ display: 'inline-flex', border: '1px solid #cdd6bd', borderRadius: 8, overflow: 'hidden' }}>
+            {HORIZON_OPTIONS.map(opt => {
+              const active = horizon === opt
+              const months = Math.round(opt / 4.345)
+              return (
+                <button
+                  key={opt}
+                  onClick={() => setHorizon(opt)}
+                  aria-pressed={active}
+                  title={`${opt} שבועות (כ-${months} חודשים)`}
+                  style={{
+                    border: 'none', cursor: 'pointer', padding: '6px 14px', fontSize: 13,
+                    fontWeight: active ? 700 : 500,
+                    background: active ? '#2D5016' : 'white',
+                    color: active ? 'white' : '#3a4a2a',
+                    borderLeft: opt !== HORIZON_OPTIONS[0] ? '1px solid #cdd6bd' : 'none',
+                  }}
+                >
+                  {opt === 12 ? '12 שבועות' : opt === 24 ? '24 (½ שנה)' : '52 (שנה)'}
+                </button>
+              )
+            })}
+          </div>
+        </div>
         <UndoButton onUndo={forecastUndo.undo} canUndo={forecastUndo.canUndo} />
       </div>
 
