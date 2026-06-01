@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, lazy, Suspense } from 'react'
+import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend } from 'chart.js'
 import type { Employee, AvailabilityForecast } from '../data/employees'
@@ -15,6 +15,7 @@ import {
 } from '../utils/forecastGaps'
 import { useUndoStack } from '../hooks/useUndoStack'
 import { UndoButton } from './UndoButton'
+import { loadSetting, saveSetting, subscribeToSetting } from '../lib/appSettingsStorage'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -251,6 +252,8 @@ interface ForecastTabProps {
 const STANDARD_OVERRIDES_KEY = 'forecast_standard_overrides'
 
 function loadStandardOverrides(): Record<string, number> {
+  // Synchronous initial read from the localStorage cache for instant first paint;
+  // the authoritative cross-device value is reconciled from Supabase on mount.
   try {
     const raw = localStorage.getItem(STANDARD_OVERRIDES_KEY)
     if (raw) return JSON.parse(raw)
@@ -259,9 +262,8 @@ function loadStandardOverrides(): Record<string, number> {
 }
 
 function saveStandardOverrides(overrides: Record<string, number>) {
-  try {
-    localStorage.setItem(STANDARD_OVERRIDES_KEY, JSON.stringify(overrides))
-  } catch { /* ignore */ }
+  // Persist to localStorage (instant) + Supabase (cross-device sync).
+  saveSetting(STANDARD_OVERRIDES_KEY, overrides)
 }
 
 export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
@@ -272,6 +274,19 @@ export function ForecastTab({ employees, onRefresh }: ForecastTabProps) {
       saveStandardOverrides(next)
       return next
     })
+  }, [])
+
+  // Reconcile standard ("רצוי") overrides from Supabase on mount + live-sync across
+  // devices. Applied via the raw state setter so we don't echo a redundant save back.
+  useEffect(() => {
+    let alive = true
+    void loadSetting<Record<string, number>>(STANDARD_OVERRIDES_KEY, {}).then(remote => {
+      if (alive) setStandardOverridesState(remote)
+    })
+    const unsub = subscribeToSetting<Record<string, number>>(STANDARD_OVERRIDES_KEY, remote => {
+      setStandardOverridesState(remote)
+    })
+    return () => { alive = false; unsub() }
   }, [])
   const [editingCell, setEditingCell] = useState<{ empId: string; weekISO: string } | null>(null)
   const [editValue, setEditValue] = useState('')

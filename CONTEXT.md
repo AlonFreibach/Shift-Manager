@@ -378,7 +378,7 @@ interface IsraeliHoliday {
 3. ✅ **ביצועים** — code splitting; bundle ראשוני 1.3MB → 426KB (סיבוב 8).
 4. ✅ **נגישות** — נוספו ARIA labels לניווט ולכפתורי אייקון (סיבוב 8). עדיין אפשר להרחיב.
 5. ✅ **Error boundary** — נוסף global ErrorBoundary (סיבוב 8).
-6. **דריסת רצוי** — כרגע ב-localStorage (לא Supabase), לא מסתנכרן בין מכשירים
+6. ✅ **דריסת רצוי** — סונכרנה ל-Supabase דרך טבלת `app_settings` (סיבוב 12). cache ב-localStorage נשאר.
 7. ✅ **voltFlags / customShifts** — סונכרנו ל-Supabase דרך טבלת `board_settings` (סיבוב 8).
 
 ---
@@ -612,4 +612,19 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 
 **סטטוס:** ✅ commit `42294fa` פעיל בפרודקשן. אומת חי ב-`PreferencesView-CUHFkkjI.js`: הצ'אנק מכיל את `originalEmployeeId`, `cell-locked-cancelled`, "בוטלה" ו-"לשחזור".
 
-*עדכון אחרון: 2026-05-25*
+---
+
+## סיבוב 12 — יוני 2026
+
+### דריסת "רצוי" → Supabase (סנכרון בין מכשירים)
+- **רקע:** דריסות עמודת "רצוי" בתחזית כ"א (`forecast_standard_overrides`) נשמרו רק ב-localStorage ולא הסתנכרנו בין מכשירים (נקודת שיפור #6).
+- **מודול חדש:** `src/lib/appSettingsStorage.ts` — storage גנרי global key→jsonb (Supabase + cache ב-localStorage + realtime + מיגרציה אוטומטית), במראה של `boardSettingsStorage.ts`. מיועד גם לשימוש עתידי ב-settings גלובליים נוספים.
+- **טבלה גנרית:** `app_settings` (`key text PK`, `data jsonb`, `updated_at`) — שורה אחת לכל setting גלובלי.
+- **ForecastTab.tsx:** `saveStandardOverrides` שומר עכשיו דרך `saveSetting` (local + Supabase). נוסף `useEffect` שטוען מ-Supabase במאונט + subscribe ל-realtime (מוחל דרך ה-state setter הגולמי כדי לא להחזיר save מיותר).
+- **graceful degradation:** הקוד עובד גם לפני שהטבלה קיימת (fallback ל-localStorage), כמו שהיה עם `board_settings`.
+- **משימה ידנית לאלון:** הרצת SQL ליצירת טבלת `app_settings` (ראה `MANUAL_TASKS.md`). עד אז — localStorage בלבד, ללא סנכרון.
+
+### קבצים ששונו/חדשים
+חדש: `src/lib/appSettingsStorage.ts`. שונה: `src/components/ForecastTab.tsx`, `MANUAL_TASKS.md`.
+
+*עדכון אחרון: 2026-06-01*
