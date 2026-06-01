@@ -634,4 +634,9 @@ ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
 ### קבצים ששונו/חדשים
 חדש: `src/lib/appSettingsStorage.ts`. שונה: `src/components/ForecastTab.tsx`, `MANUAL_TASKS.md`.
 
+### ⚠️ סטטוס deploy
+שני ה-commits (`fd5d222`, `b768166`) על `origin/main` ואומתו מקומית (tsc --force + build + 72 טסטים).
+**אך ה-deploy האוטומטי של Vercel לא התניע** — האתר החי עדיין על ה-bundle הישן.
+דורש פעולה ידנית של אלון (ראה `MANUAL_TASKS.md` סעיף 0). הקוד תקין — זו בעיית תשתית בלבד.
+
 *עדכון אחרון: 2026-06-01*
